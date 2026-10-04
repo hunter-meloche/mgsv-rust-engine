@@ -144,6 +144,65 @@ impl Ftex {
     }
 }
 
+impl Ftex {
+    /// Rebuild a texture whose `.ftex` header is missing from the `.ftexs`
+    /// parts alone (some TPP textures ship only their largest mips). Each
+    /// part is taken to hold one mip at offset 0 (largest in the highest
+    /// part), whose first chunk header points just past the chunk table;
+    /// sizes are taken as square. `parts` is `(part number, contents)`.
+    pub fn from_parts(format: PixelFormat, parts: &[(u8, Vec<u8>)]) -> Result<(Self, Vec<Vec<u8>>)> {
+        let mut parts: Vec<&(u8, Vec<u8>)> = parts.iter().collect();
+        parts.sort_by_key(|p| std::cmp::Reverse(p.0));
+        let mut mips_out: Vec<Vec<u8>> = Vec::new();
+        let mut mips = Vec::new();
+        let mut side = 0u32;
+        for (k, (n, file)) in parts.iter().enumerate() {
+            let first = u32_at(file, 4)? & 0x7FFF_FFFF;
+            if first == 0 || first % 8 != 0 {
+                return Err(FtexError::Invalid(format!("part {n}: no chunk table")));
+            }
+            // Decode with the decompressed size unknown: sum the chunk sizes.
+            let chunks = (first / 8) as u16;
+            let size: u32 = (0..chunks as usize)
+                .map(|c| u16_at(file, c * 8 + 2).map(|s| if s == 0 { 0x10000 } else { s as u32 }))
+                .sum::<Result<u32>>()?;
+            let mip = Mip {
+                offset: 0,
+                size,
+                stored_size: file.len() as u32,
+                index: k as u8,
+                file: *n,
+                chunks,
+            };
+            let data = read_mip(file, &mip)?;
+            if k == 0 {
+                let bytes_per_block = if format == PixelFormat::Bc1 { 8 } else { 16 };
+                let blocks = data.len() / bytes_per_block;
+                let s = (blocks as f64).sqrt() as u32;
+                if s * s != blocks as u32 {
+                    return Err(FtexError::Invalid(format!("{} bytes is not a square {format:?} image", data.len())));
+                }
+                side = s * 4;
+            } else if format.image_size(side >> k, side >> k) != Some(data.len()) {
+                break; // not the next mip down
+            }
+            mips.push(mip);
+            mips_out.push(data);
+        }
+        Ok((
+            Self {
+                version: 2.03,
+                format,
+                width: side,
+                height: side,
+                depth: 1,
+                mips,
+            },
+            mips_out,
+        ))
+    }
+}
+
 fn read_mip(file: &[u8], mip: &Mip) -> Result<Vec<u8>> {
     let base = mip.offset as usize;
     let mut out = Vec::with_capacity(mip.size as usize);

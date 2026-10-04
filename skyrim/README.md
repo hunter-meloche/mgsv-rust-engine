@@ -38,9 +38,13 @@ MGSV's specular map as the mask). The plugin loads it with
 Snake's grip each frame while aiming or reloading; otherwise it rides on
 its MGSV holster point (`CNP_ASRROOT`, at the left hip), placed relative to
 Skyrim's `NPC Spine2` (snake_retarget_weapon_place). Third person only for
-now. The WU S.Pistol's textures are incomplete in the install
-(only the two largest mips exist, no `.ftex` headers), so it exports
-untextured.
+now. The WU S.Pistol's textures ship without `.ftex` headers
+(only the two largest mips exist); the export rebuilds them from the
+`.ftexs` parts (`Ftex::from_parts`: chunk table at offset 0, square size,
+format from the slot). Keys **1** / **2** switch between the MRS-4 and the
+pistol (one mesh per weapon, all attached to the hand); the pistol has no
+holster point on Snake's body, so it is hidden when lowered, and has no
+gunshot sound chosen yet.
 
 Muzzle flash: `meshes\snake\muzzle_flash.nif`, built from MGSV's own flame
 flipbook (`fx_mzffir01`) as additive crossed quads, attached beside the gun

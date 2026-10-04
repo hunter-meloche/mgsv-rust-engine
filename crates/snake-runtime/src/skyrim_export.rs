@@ -46,13 +46,23 @@ struct Texture {
     mips: Vec<Vec<u8>>,
 }
 
-fn read_texture(vfs: &Vfs, path_code: u64) -> Result<Texture> {
+/// `format` is the expected pixel format, used only when the `.ftex` header
+/// is missing and the texture is rebuilt from its `.ftexs` parts.
+fn read_texture(vfs: &Vfs, path_code: u64, format: PixelFormat) -> Result<Texture> {
     let stem = path_code & ((1u64 << 51) - 1);
     let read = |ext: &str| {
         vfs.lookup_hash(((fox_hash::extension_id(ext) as u64) << 51) | stem)
             .and_then(|r| vfs.read_ref(r).ok())
     };
-    let header = read("ftex").with_context(|| format!("texture {path_code:#x} not found"))?;
+    let Some(header) = read("ftex") else {
+        let parts: Vec<(u8, Vec<u8>)> = (1..=6u8)
+            .filter_map(|n| read(&format!("{n}.ftexs")).map(|d| (n, d)))
+            .collect();
+        anyhow::ensure!(!parts.is_empty(), "texture {path_code:#x} not found");
+        let (ftex, mips) = Ftex::from_parts(format, &parts)
+            .with_context(|| format!("texture {path_code:#x} (no .ftex header)"))?;
+        return Ok(Texture { ftex, mips });
+    };
     let ftex = Ftex::parse(&header)?;
     let mips = ftex.read_mips(|n| read(&format!("{n}.ftexs")))?;
     anyhow::ensure!(!mips.is_empty(), "texture {path_code:#x}: no mip data");
@@ -69,7 +79,9 @@ fn material_texture(vfs: &Vfs, m: &Fmdl, mi: usize, slot: &str) -> Option<Result
     })?;
     let tex = m.textures.get(param.reference as usize)?;
     let pc = *m.path_code64s.get(tex.reference as usize)?;
-    Some(read_texture(vfs, pc))
+    // TPP normal maps are BC3 (x in alpha, y in green); the rest BC1.
+    let format = if slot.starts_with("NormalMap") { PixelFormat::Bc3 } else { PixelFormat::Bc1 };
+    Some(read_texture(vfs, pc, format))
 }
 
 fn dds_format(f: PixelFormat) -> Option<DdsFormat> {

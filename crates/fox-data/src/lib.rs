@@ -2,6 +2,7 @@
 
 pub mod fmdl;
 pub mod fox2;
+pub mod frig;
 pub mod mtar;
 mod names;
 

@@ -30,15 +30,49 @@ documentation in FMDL Studio (BobDoleOwndU, MIT).
 
 The player's body is `/Assets/tpp/chara/sna/Scenes/sna0_main0_def.fmdl` in
 `/Assets/tpp/pack/player/parts/plparts_normal.fpk` (153 bones, 28 meshes).
-Many bone-name hashes are not in our dictionaries yet.
+All 153 bone names resolve (see `.frig` below).
 
-## `.frig` rigs
+## `.frig` rigs — verified (all 9 rigs in the game)
 
-Humans ship only `/Assets/tpp/rig/frig/human_finger.frig`; animals have full
-rigs (`tpp_dog.frig`, `tpp_horse.frig`, ...). The human body skeleton comes
-from the `.fmdl` bones. FoxLib's reader (MIT) only decodes the header
-(`u32 hash, u32 type-string offsets, u32 group count, u32 track count, u32
-file size, u32 rig data end/start`); the rest is undocumented.
+Implemented in `crates/fox-data/src/frig.rs` (`mgsv frig`, `mgsv frig-check`).
+Format knowledge from mctrollin's GPL-3.0 "Fox Engine MTAR Tools" (FRIG
+template); independent implementation.
+
+* Header (32 bytes): name `StrCode64`, version `102`, rig unit count, segment
+  count, file size, bone list offset, mask definition offset.
+* Rig definition: one absolute offset per unit. Unit: `u32 type, i16 track
+  count, i16 bone count, i16 parent bone, i16 parent unit, u32 pad`, then
+  type-specific `i16` bone-list and segment indices. IK units (two-bone,
+  arm, three-bone) first carry 16 unknown bytes and a chain-plane normal
+  (float4).
+* Mask definition: `u32 unit count, u32 layer count`, layer offsets relative
+  to the mask definition; each layer is `StrCode32, char[12] name, f32 weight
+  per unit` (Lower, Upper, Head, LArm, RArm, Mirror, Carry...).
+* Bone list: `i32 count`, `(u32 rig index, StrCode32 name)` pairs.
+
+`/Assets/tpp/rig/frig/human_finger.frig` is **the** human rig: 18 units and
+56 segments, exactly the layout of every player/soldier `.mtar`. Track unit
+`n` is rig unit `n` (track names are `RIG_<bone>`). Per-unit meaning (segment
+types from the MTAR layout, semantics from the add-on's mapping):
+
+| unit | type | segments | drives |
+|---|---|---|---|
+| RIG_ROOT | Root | quat diff, vector diff | root motion (per-frame deltas) |
+| RIG_SKL_000_WAIST | Transform | quat, vector3 | waist rotation + position, root space |
+| SPINE, CHEST, NECK, HEAD | Orientation | quat | rotation in root (character) space |
+| LSHLD / RSHLD | Arm | quat, vector3, quat | shoulder rotation; hand IK target position; IK pole (quat, its X axis) for SHLD → UARM → FARM → HAND |
+| LHAND / RHAND | Orientation | quat | hand rotation, character space |
+| LTHIGH / RTHIGH | TwoBone | vector3, quat | foot IK target; IK pole for THIGH → LEG → FOOT |
+| LFOOT / RFOOT | Orientation | quat | foot rotation, character space |
+| LTOE / RTOE | LocalOrientation | quat | local rotation |
+| LF10 / RF10 | MultiLocalOrientation | 16 × quat | local rotations of 16 consecutive bone-list bones (fingers, palm) |
+
+Animals use their own rigs (`tpp_dog`, `tpp_horse`, ...); the Sahelanthropus
+rig has 72 units.
+
+Names: `dictionaries/mtar_tools/` (from the same add-on) plus `mgsv
+bone-names`, which also brute-forces `SKL_<NNN>_<part>` names; every bone of
+Snake's model (153/153) and every player track unit (18/18) resolves.
 
 ## `.mtar` motion archives and `.gani` clips — verified
 
@@ -76,9 +110,7 @@ archives whose frame deltas do not sum to the clip length.
 
 ### What the player tracks drive
 
-Player archives have 18 units, and none of them resolve as bone names
-against about 229,000 candidates (exe identifiers, model string tables,
-script strings). They are **rig units** (root, spine, and two-bone IK
-chains for arms and legs), which the rig maps onto skeleton bones. Playing
-them on Snake's skeleton therefore needs the `.frig` rig: its unit
-definitions and the IK solve.
+Player archives have 18 units: the **rig units** of `human_finger.frig` (see
+above), not bones. Clip names resolve through
+`dictionaries/mtar_tools/mtar_dictionary.txt` (e.g.
+`snapcqc_s_thw_f.gani`).

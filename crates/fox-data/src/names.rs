@@ -8,6 +8,7 @@ use std::path::Path;
 #[derive(Default, Clone)]
 pub struct NameTable {
     by_hash: HashMap<u64, String>,
+    by_code32: HashMap<u32, String>,
 }
 
 impl NameTable {
@@ -18,11 +19,19 @@ impl NameTable {
     pub fn insert(&mut self, name: &str) -> u64 {
         let h = fox_hash::str_code64(name.as_bytes());
         self.by_hash.entry(h).or_insert_with(|| name.to_string());
+        self.by_code32
+            .entry(fox_hash::str_code32(name.as_bytes()))
+            .or_insert_with(|| name.to_string());
         h
     }
 
     pub fn get(&self, hash: u64) -> Option<&str> {
         self.by_hash.get(&hash).map(String::as_str)
+    }
+
+    /// Reverse lookup for a `StrCode32` hash (rig bone names, track units).
+    pub fn resolve32(&self, hash: u32) -> Option<&str> {
+        self.by_code32.get(&hash).map(String::as_str)
     }
 
     pub fn len(&self) -> usize {
@@ -33,11 +42,15 @@ impl NameTable {
         self.by_hash.is_empty()
     }
 
-    /// One name per line.
+    /// One name per line; `#` starts a comment line.
     pub fn load_dictionary(&mut self, path: impl AsRef<Path>) -> std::io::Result<usize> {
         let text = std::fs::read_to_string(path)?;
         let before = self.len();
-        for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        for line in text
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        {
             self.insert(line);
         }
         Ok(self.len() - before)

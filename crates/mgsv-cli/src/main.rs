@@ -94,6 +94,11 @@ enum Cmd {
     /// strings) into re/out/bone_names.txt (local) and report how many player
     /// animation / model bones they resolve.
     BoneNames,
+    /// Dump a .frig rig: units, the bones and track segments they drive,
+    /// mask layers (PACKAGE.fpk:INNER).
+    Frig { path: String },
+    /// Parse every .frig inside every package; one line per distinct rig.
+    FrigCheck,
 }
 
 /// Read a file from the archives, or from inside a package with `PKG:INNER`.
@@ -124,6 +129,11 @@ fn fox_names(vfs: &Vfs) -> fox_data::NameTable {
     let mut names = fox_data::NameTable::new();
     let _ = names.load_dictionary(repo_dir().join("dictionaries/fox_dictionary.txt"));
     let _ = names.load_dictionary(repo_dir().join("re/out/bone_names.txt"));
+    for d in ["skl", "rig", "param", "events", "gani", "shader"] {
+        let _ = names.load_dictionary(
+            repo_dir().join(format!("dictionaries/mtar_tools/{d}_dictionary.txt")),
+        );
+    }
     if let Ok(exe) = std::fs::read(vfs.game_dir.join("mgsvtpp.exe")) {
         names.harvest_identifiers(&exe);
     }
@@ -147,7 +157,11 @@ fn open_vfs(game: Option<PathBuf>) -> Result<Vfs> {
     };
     let mut vfs = Vfs::open(&dir).with_context(|| format!("opening {}", dir.display()))?;
     let dicts = repo_dir().join("dictionaries");
-    for name in ["qar_dictionary.txt", "harvested_paths.txt"] {
+    for name in [
+        "qar_dictionary.txt",
+        "harvested_paths.txt",
+        "mtar_tools/mtar_dictionary.txt",
+    ] {
         let p = dicts.join(name);
         if p.is_file() {
             vfs.dictionary.load_file(&p)?;
@@ -280,14 +294,18 @@ fn run() -> Result<()> {
                 m.flags,
                 m.skeleton.len()
             )?;
-            let bone = |h: u32| -> String {
-                m.skeleton
-                    .iter()
-                    .find(|n| fox_hash::str_code32(n.as_bytes()) == h)
-                    .cloned()
-                    .unwrap_or_else(|| format!("{h:#010x}"))
-            };
-            let units: Vec<String> = m.layout.iter().map(|u| bone(u.name)).collect();
+            let names = fox_names(&vfs);
+            let units: Vec<String> = m
+                .layout
+                .iter()
+                .map(|u| {
+                    let name = names
+                        .resolve32(u.name)
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("{:#010x}", u.name));
+                    format!("{name}{:?}", u.segments)
+                })
+                .collect();
             writeln!(out, "units: {}", units.join(" "))?;
             for i in 0..m.entries.len() {
                 let (name, _) = vfs.dictionary.resolve(m.entries[i].hash);
@@ -320,6 +338,48 @@ fn run() -> Result<()> {
         }
         Cmd::MtarCheck => mtar_check(&vfs),
         Cmd::BoneNames => bone_names(&vfs),
+        Cmd::Frig { path } => {
+            let data = read_any(&vfs, &path)?;
+            let r = fox_data::frig::Frig::parse(&data)?;
+            let names = fox_names(&vfs);
+            let bone = |i: i16| -> String {
+                let Some(&(_, h)) = r.bones.get(i as usize) else {
+                    return format!("#{i}");
+                };
+                names
+                    .resolve32(h)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("{h:#010x}"))
+            };
+            writeln!(
+                out,
+                "frig: {} units, {} segments, {} bones, {} mask layers",
+                r.units.len(),
+                r.segment_count,
+                r.bones.len(),
+                r.masks.len()
+            )?;
+            for (i, u) in r.units.iter().enumerate() {
+                let bones: Vec<String> = u.bones.iter().map(|&b| bone(b)).collect();
+                writeln!(
+                    out,
+                    "  unit {i:>2} {:<22} parent {:>2} tracks {} segs {:?} bones [{}]{}",
+                    format!("{:?}", u.kind),
+                    u.parent_unit,
+                    u.track_count,
+                    u.segments,
+                    bones.join(", "),
+                    u.plane_normal
+                        .map(|n| format!(" normal ({:.2}, {:.2}, {:.2})", n[0], n[1], n[2]))
+                        .unwrap_or_default()
+                )?;
+            }
+            for m in &r.masks {
+                writeln!(out, "  mask {:<12} {:?}", m.name, m.weights)?;
+            }
+            Ok(())
+        }
+        Cmd::FrigCheck => frig_check(&vfs),
         Cmd::Find { pattern } => {
             let pkgs: Vec<_> = vfs
                 .iter()
@@ -357,10 +417,90 @@ fn run() -> Result<()> {
     }
 }
 
+/// Fox human bones are named `SKL_<NNN>_<L|R><PART>`. Try every number
+/// with part words taken from known names and identifiers plus common
+/// anatomy abbreviations; return the names that hit a target hash.
+fn guess_skl(
+    known: &std::collections::BTreeSet<String>,
+    targets32: &std::collections::HashSet<u32>,
+    targets64: &std::collections::HashSet<u64>,
+) -> Vec<String> {
+    const PARTS: &[&str] = &[
+        "WAIST", "HIP", "HIPS", "PELVIS", "SPINE", "SPINE1", "SPINE2", "BELLY", "STOMACH", "CHEST",
+        "BREAST", "NECK", "HEAD", "SHLD", "SHOULDER", "CLAV", "CLAVICLE", "COLLAR", "UARM", "FARM",
+        "ARM", "UPARM", "FOREARM", "ELBOW", "HAND", "WRIST", "PALM", "LEG", "ULEG", "THIGH",
+        "KNEE", "SHIN", "CALF", "FOOT", "ANKLE", "TOE", "TOES", "BALL", "HEEL", "FINGER", "THUMB",
+        "INDEX", "MIDDLE", "RING", "PINKY", "LITTLE", "FING", "FNG", "THM", "IDX", "MID", "PNK",
+        "PNKY", "RNG", "FA", "FB", "FC", "FD", "FE", "ROLL", "TWIST", "ARMROLL", "UARMROLL",
+        "FARMROLL", "SKIRT", "ROOT", "EYE", "JAW", "MOUTH", "DUMMY", "GUN", "IK", "POLE",
+    ];
+    const SUFFIXES: &[&str] = &[
+        "", "1", "2", "3", "4", "5", "A", "B", "C", "D", "E", "1A", "1B", "1C", "2A", "2B", "2C",
+        "3A", "3B", "3C", "4A", "4B", "4C", "5A", "5B", "5C", "_A", "_B", "_C", "_1", "_2", "_3",
+    ];
+    let mut words: std::collections::BTreeSet<String> =
+        PARTS.iter().map(|s| s.to_string()).collect();
+    for n in known {
+        for t in n.split('_') {
+            let t = t.to_ascii_uppercase();
+            if (2..=10).contains(&t.len()) && t.bytes().all(|b| b.is_ascii_alphanumeric()) {
+                let t = t.trim_start_matches(['L', 'R']).to_string();
+                if t.len() >= 2 {
+                    words.insert(t);
+                }
+            }
+        }
+    }
+    // Finger joints: F<finger 1-5><joint 0-3>.
+    let fingers: Vec<String> = (10..60).map(|n| format!("F{n}")).collect();
+    let mut curated: std::collections::HashSet<&str> = PARTS.iter().copied().collect();
+    curated.extend(fingers.iter().map(String::as_str));
+    words.extend(fingers.iter().cloned());
+    let words: Vec<String> = words.into_iter().collect();
+    (0..1000u32)
+        .into_par_iter()
+        .flat_map_iter(|num| {
+            let mut out = Vec::new();
+            for w in &words {
+                let suffixes: &[&str] = if curated.contains(w.as_str()) {
+                    SUFFIXES
+                } else {
+                    &[""]
+                };
+                for side in ["", "L", "R"] {
+                    for sfx in suffixes {
+                        let name = format!("SKL_{num:03}_{side}{w}{sfx}");
+                        let h = fox_hash::str_code64(name.as_bytes());
+                        // A 32-bit (rig) hit is only trusted for curated words:
+                        // the large identifier list makes random hits likely.
+                        if targets64.contains(&h)
+                            || (curated.contains(w.as_str()) && targets32.contains(&(h as u32)))
+                        {
+                            out.push(name);
+                        }
+                    }
+                }
+            }
+            out
+        })
+        .collect()
+}
+
 fn bone_names(vfs: &Vfs) -> Result<()> {
     // Candidate names: identifiers in the exe, string tables of models that
     // still carry one (older FMDL versions), and quoted strings in scripts.
     let mut names = std::collections::BTreeSet::new();
+    for d in ["skl", "rig"] {
+        let path = repo_dir().join(format!("dictionaries/mtar_tools/{d}_dictionary.txt"));
+        if let Ok(text) = std::fs::read_to_string(path) {
+            names.extend(
+                text.lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                    .map(str::to_string),
+            );
+        }
+    }
     let ident = |s: &str| {
         s.len() >= 3
             && s.len() <= 64
@@ -411,6 +551,30 @@ fn bone_names(vfs: &Vfs) -> Result<()> {
         })
         .collect();
     names.extend(found.into_iter().filter(|s| ident(s)));
+
+    // Bones of the human rig (StrCode32) and Snake's model (StrCode64).
+    let rig = fox_data::frig::Frig::parse(&read_any(
+        vfs,
+        "/Assets/tpp/pack/mission2/common/mis_com_chico_gz.fpk:/Assets/tpp/rig/frig/human_finger.frig",
+    )?)?;
+    let model = fox_data::Fmdl::parse(&read_any(
+        vfs,
+        "/Assets/tpp/pack/player/parts/plparts_normal.fpk:/Assets/tpp/chara/sna/Scenes/sna0_main0_def.fmdl",
+    )?)?;
+    let targets32: std::collections::HashSet<u32> = rig.bones.iter().map(|b| b.1).collect();
+    let targets64: std::collections::HashSet<u64> = model
+        .bones
+        .iter()
+        .filter_map(|b| {
+            model
+                .str_code64s
+                .get(b.name as usize)
+                .map(|h| h & 0xFFFF_FFFF_FFFF)
+        })
+        .collect();
+    let guessed = guess_skl(&names, &targets32, &targets64);
+    println!("{} SKL_ names guessed", guessed.len());
+    names.extend(guessed);
 
     let dest = repo_dir().join("re/out/bone_names.txt");
     std::fs::create_dir_all(dest.parent().unwrap())?;
@@ -475,6 +639,73 @@ fn bone_names(vfs: &Vfs) -> Result<()> {
         })
         .count();
     println!("sna0_main0_def.fmdl bones named: {hit}/{}", fm.bones.len());
+    Ok(())
+}
+
+fn frig_check(vfs: &Vfs) -> Result<()> {
+    let pkgs: Vec<_> = vfs
+        .iter()
+        .filter(|(h, _)| {
+            matches!(
+                fox_hash::extension_from_id((h >> 51) as u16),
+                Some("fpk" | "fpkd")
+            )
+        })
+        .collect();
+    let seen = std::sync::Mutex::new(std::collections::HashSet::new());
+    let rows = std::sync::Mutex::new(Vec::new());
+    let failures = std::sync::Mutex::new(Vec::new());
+    pkgs.par_iter().for_each(|(h, r)| {
+        let Ok(data) = vfs.read_ref(*r) else { return };
+        let Ok(pkg) = Fpk::parse(&data) else { return };
+        for e in pkg
+            .entries
+            .iter()
+            .filter(|e| e.clean_path().ends_with(".frig"))
+        {
+            if !seen.lock().unwrap().insert(e.md5) {
+                continue;
+            }
+            let pkg_name = vfs.dictionary.resolve(*h).0;
+            let res = pkg
+                .read(e)
+                .map_err(anyhow::Error::from)
+                .and_then(|d| Ok(fox_data::frig::Frig::parse(&d)?));
+            match res {
+                Ok(f) => {
+                    let kinds: Vec<String> =
+                        f.units.iter().map(|u| format!("{:?}", u.kind)).collect();
+                    rows.lock().unwrap().push(format!(
+                        "{:>3} units {:>4} segs {:>4} bones  {}:{}  [{}]",
+                        f.units.len(),
+                        f.segment_count,
+                        f.bones.len(),
+                        pkg_name,
+                        e.clean_path(),
+                        kinds.join(" ")
+                    ));
+                }
+                Err(err) => failures
+                    .lock()
+                    .unwrap()
+                    .push(format!("{}: {err:#}", e.clean_path())),
+            }
+        }
+    });
+    let mut rows = rows.into_inner().unwrap();
+    rows.sort();
+    let failures = failures.into_inner().unwrap();
+    println!(
+        "distinct frig files: {}, failures: {}",
+        rows.len() + failures.len(),
+        failures.len()
+    );
+    for r in &rows {
+        println!("{r}");
+    }
+    for f in &failures {
+        println!("  FAILED {f}");
+    }
     Ok(())
 }
 

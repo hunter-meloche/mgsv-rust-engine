@@ -50,6 +50,7 @@ cargo build --release
 | `mgsv fox2-check` | Parse every `.fox2` in every package and report failures |
 | `mgsv fmdl PATH` / `mgsv fmdl-check` | Summarise one `.fmdl` model / parse and validate every model |
 | `mgsv mtar PATH` / `mgsv mtar-check` | Decode the clips of one `.mtar` motion archive / every clip in the game |
+| `mgsv frig PATH` / `mgsv frig-check` | Dump a `.frig` animation rig (units, bones, masks) / check every rig |
 | `mgsv bone-names` | Harvest bone-name candidates and report coverage of the player skeleton |
 | `mgsv find PATTERN` | Find files inside packages, printed as `PACKAGE:INNER` |
 

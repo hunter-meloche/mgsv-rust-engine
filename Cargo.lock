@@ -246,6 +246,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fox-data"
+version = "0.1.0"
+dependencies = [
+ "fox-hash",
+ "thiserror",
+]
+
+[[package]]
 name = "fox-hash"
 version = "0.1.0"
 
@@ -254,6 +262,7 @@ name = "fox-lua"
 version = "0.1.0"
 dependencies = [
  "fox-archive",
+ "fox-data",
  "fox-hash",
  "mlua",
  "serde",
@@ -354,6 +363,7 @@ dependencies = [
  "anyhow",
  "clap",
  "fox-archive",
+ "fox-data",
  "fox-hash",
  "fox-lua",
  "rayon",

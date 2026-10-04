@@ -361,6 +361,21 @@ pub fn install(host: &FoxLua) -> mlua::Result<()> {
     crate::script_vars::install(lua, host.trace.clone())?;
     install_splash_screen(host)?;
 
+    // --- TppEquip ----------------------------------------------------------------
+    {
+        let equip = module(lua, "TppEquip")?;
+        let vfs = host.vfs.clone();
+        // Existence is a lookup in the archive index (start.lua uses it to
+        // pick between parameter files).
+        def(
+            host,
+            &equip,
+            "TppEquip",
+            "IsExistFile",
+            move |_, path: String| Ok(vfs.lookup(&crate::engine_path(&path)).is_some()),
+        )?;
+    }
+
     // --- fox (input constants; values still to be recovered from the binary) --
     module(lua, "fox")?;
 

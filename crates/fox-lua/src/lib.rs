@@ -6,6 +6,7 @@
 //! a traced "phantom" (see `prelude.lua`).
 
 pub mod constants;
+pub mod mission;
 mod natives;
 pub mod script_vars;
 
@@ -90,6 +91,13 @@ impl FoxLua {
         run_file(&self.lua, &self.vfs, &self.trace, path)
     }
 
+    /// Advance the simulated clock by one frame.
+    pub fn advance_frame(&self) {
+        let mut c = self.clock.lock().unwrap();
+        c.frame += 1;
+        c.seconds += FRAME_SECONDS;
+    }
+
     /// Run a script as a coroutine, resuming it once per simulated frame
     /// until it finishes. Boot scripts (`/Tpp/start.lua`) yield while they
     /// wait for asynchronous loads. Returns the number of frames taken.
@@ -112,11 +120,7 @@ impl FoxLua {
                 return Ok(frames);
             }
             frames += 1;
-            {
-                let mut c = self.clock.lock().unwrap();
-                c.frame += 1;
-                c.seconds += FRAME_SECONDS;
-            }
+            self.advance_frame();
             if frames >= max_frames {
                 return Err(mlua::Error::runtime(format!(
                     "{path} still running after {max_frames} frames"
@@ -126,27 +130,62 @@ impl FoxLua {
     }
 }
 
+/// Engine paths are rooted at `/`; scripts sometimes omit the slash
+/// (`Script.LoadLibraryAsync"Tpp/Scripts/Equip/EquipIdTable.lua"`).
+pub(crate) fn engine_path(path: &str) -> String {
+    if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
+    }
+}
+
 pub(crate) fn run_file(
     lua: &Lua,
     vfs: &Vfs,
     trace: &Mutex<Trace>,
     path: &str,
 ) -> mlua::Result<Value> {
-    let src = match vfs.read(path) {
+    let path = engine_path(path);
+    let src = match vfs.read(&path) {
         Ok(s) => s,
         Err(_) => {
-            trace.lock().unwrap().missing.push(path.to_string());
+            trace.lock().unwrap().missing.push(path);
             return Ok(Value::Nil);
         }
     };
-    trace.lock().unwrap().loaded.push(path.to_string());
+    trace.lock().unwrap().loaded.push(path.clone());
     let value: Value = lua.load(&src[..]).set_name(format!("@{path}")).eval()?;
-    if let Value::Table(_) = &value {
-        let stem = path.rsplit('/').next().unwrap_or(path);
+    if let Value::Table(module) = &value {
+        let stem = path.rsplit('/').next().unwrap_or(&path);
         let stem = stem.split('.').next().unwrap_or(stem);
-        lua.globals().raw_set(stem, value.clone())?;
+        lua.globals().raw_set(stem, module.clone())?;
+        load_requires(lua, vfs, trace, module)?;
     }
     Ok(value)
+}
+
+/// A library whose table has a `requires` array pulls those libraries in as
+/// dependencies, each loaded once (the engine's script resource loader does
+/// this at 0x140104d80). `Tpp.lua` uses it to load the 52 core libraries,
+/// including `TppMain` and `TppSequence`.
+fn load_requires(
+    lua: &Lua,
+    vfs: &Vfs,
+    trace: &Mutex<Trace>,
+    module: &mlua::Table,
+) -> mlua::Result<()> {
+    let Ok(mlua::Value::Table(reqs)) = module.raw_get::<Value>("requires") else {
+        return Ok(());
+    };
+    for req in reqs.sequence_values::<String>() {
+        let req = engine_path(&req?);
+        let already = trace.lock().unwrap().loaded.contains(&req);
+        if !already {
+            run_file(lua, vfs, trace, &req)?;
+        }
+    }
+    Ok(())
 }
 
 /// Coerce a script value to a number the way the engine would, except that

@@ -87,24 +87,65 @@ their first byte is `0x1B`/`0x1C`.
   Out-of-range writes are dropped, because retail scripts write one past
   the end without faulting.
 
-### Current boot progress
+### Libraries and `requires`
 
-`mgsv boot` runs `init.lua` and `start.lua` to completion (31 simulated
-frames). By then 40 libraries are loaded, the splash wait has passed, and the
-title-screen variables are initialised. About 320 distinct native APIs are
-still phantoms. Only three unrecovered constants are read as numbers:
-`TppEquip.EQP_None` and two `TppRevenge` `MAX` values.
+`Script.LoadLibrary` publishes a script's returned table under its file stem.
+If that table has a `requires` array, the engine loads every listed library
+once, as a dependency (`0x140104d80`). `Tpp.lua` uses this to pull in the 52
+core libraries, including `TppMain` and `TppSequence`. Paths without a leading
+`/` are rooted at `/`.
+
+### Missions
+
+A mission package (`.fpkd`) contains a `TppSimpleMissionData` entity. Its
+`script` property names the shim (`/Assets/tpp/script/mission/mission_main.lua`)
+and its `subScripts` map names `sequence`, `enemy`, `demo`, `radio` and
+`sound` to scripts in the same package. The shim's hooks forward to `TppMain`.
+The engine calls each hook with a table holding only the sub-scripts
+(`TppMain.OnAllocate` walks it with `pairs`). `OnAllocate`/`OnInitialize` run
+as coroutines, because they yield while waiting for saves and loads.
+`OnUpdate` runs once per frame.
+
+### Headless defaults
+
+Unimplemented natives are phantoms. Unimplemented predicates follow one rule:
+every asynchronous operation has already finished. Completion checks
+(`IsEnd*`, `IsFinish*`, `IsReady*`, `IsLoaded*`, `Is*Active`, ...) return true,
+and other predicates (`IsSaving*`, `IsPlaying*`, `Has*`, ...) return false.
+Both kinds of wait loop therefore terminate. Natives whose answer matters are
+implemented for real: `TppEquip.IsExistFile` checks the archive index, and
+`TppScriptVars.IsSavingOrLoading`/`GetLastResult` report no save in flight.
+
+### Current progress
+
+`mgsv boot --mission /Assets/tpp/pack/mission2/init/init.fpkd`:
+
+* `init.lua` and `start.lua` complete (31 frames); 94 scripts are loaded.
+* The `init` mission loads; `OnAllocate` and `OnInitialize` complete through
+  the real `TppMain` code. The sequence machine enters `Seq_Mission_Prepare`
+  and logs the game's own `init MissionPrepare` / `OnLoad` messages.
+* It stays in `Seq_Mission_Prepare`. Progress depends on mission-start state
+  and on engine messages delivered through `TppMain.OnMessage`, which is the
+  next subsystem to build.
 
 ## Recovered from the binary
 
 All of this is committed under `re/api/`; it holds identifiers and numbers only.
 
-* `lua_bindings.json`: the native modules registered by 230 functions.
+* `lua_bindings.json`: 585 native functions and 4,043 constants across 157
+  modules, registered by 230 functions plus about 200 callbacks they hand out.
   Members are registered with a helper taking `(L, name, value_or_function)`.
   Enums are often registered in a loop over a pointer table of names, with the
   loop counter as the value. `tools/lua_bindings.py` replays each registration
-  function with a register tracker, which yields 471 functions and 1,301
-  constants. Examples: `TppScriptVars.TYPE_*` = BOOL 0, INT32 1, UINT32 2,
+  function with a register tracker. Three registration shapes are handled:
+  direct calls (`name`, value or function), loops over a pointer table of
+  names (the value is the loop counter), and `{u32 value; char* name}` arrays
+  built on the stack (e.g. the 2,187 `TppEquip.EQP_*` ids). Class-style
+  modules (`GrTools`, `Script`) register inside a callback handed to a static
+  class descriptor. Short names may be undefined in Ghidra or pooled into the
+  tail of a longer string; the exporter reads those raw. Members that scripts
+  index further (`TppCommand.Weather.X`) are namespaces, never constants.
+  Examples: `TppScriptVars.TYPE_*` = BOOL 0, INT32 1, UINT32 2,
   FLOAT 3, INT8 4, UINT8 5, INT16 6, UINT16 7; the `CATEGORY_*` values are
   single-bit flags; `TppGameObject.PHASE_*` = SNEAK 0, CAUTION 1, EVASION 2,
   ALERT 3.
@@ -113,8 +154,11 @@ All of this is committed under `re/api/`; it holds identifiers and numbers only.
   `{storage*, name*, StrCode32(name), flags<<24 | type<<16 | array_size}`.
   Tests check every stored hash against our `StrCode32` and check that no two
   variables overlap in storage.
-* 78 modules (`Fox`, `Script`, `GrTools`, ...) register through a different
-  path (class reflection); they have not been mapped yet.
+* `.fox2`: every one of the 75,967 DataSets parses (2.42M entities). Class
+  and property names are resolved from FoxTool's dictionary plus identifiers
+  harvested from the user's own `mgsvtpp.exe` at runtime.
+* About 50 modules (`Fox`, `fox` key codes, several class objects) still have
+  no recovered registration.
 
 ## Reverse-engineering workflow (`re/`)
 

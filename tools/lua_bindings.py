@@ -114,7 +114,14 @@ def replay(instructions):
             cur = regs.get(dst)
             if isinstance(cur, int):
                 k = imm(src)
-                value = {"ADD": cur + k, "SUB": cur - k, "OR": cur | k, "SHL": cur << k}[mn]
+                if mn == "ADD":
+                    value = cur + k
+                elif mn == "SUB":
+                    value = cur - k
+                elif mn == "OR":
+                    value = cur | k
+                elif 0 <= k < 64:
+                    value = cur << k
 
         if dst:
             if value is None:
@@ -129,15 +136,49 @@ def replay(instructions):
 
 
 def load_api() -> dict:
-    return json.loads(API.read_text())["modules"]
+    return json.loads(API.read_text(encoding="utf-8"))["modules"]
+
+
+CONST_NAME = re.compile(r"^[A-Z][A-Z0-9]*_[A-Za-z0-9_]+$")
+STACK_SLOT = re.compile(r"(dword|qword) ptr \[(RSP|RBP) \+ (-?0x[0-9a-f]+)\]$", re.I)
 
 
 def cmd_modules() -> None:
     mods = load_api()
     OUT.mkdir(parents=True, exist_ok=True)
     names = sorted(k for k, v in mods.items() if v["in_exe"] and not v["defined_by_script"])
-    (OUT / "lua_modules.txt").write_text("\n".join(names) + "\n")
-    print(f"{len(names)} module names -> {OUT / 'lua_modules.txt'}")
+    (OUT / "lua_modules.txt").write_text("\n".join(names) + "\n", encoding="utf-8")
+    # Constant-style member names (EQP_WP_..., PHASE_ALERT) find functions
+    # that register enums without naming their module.
+    consts = sorted({m for k in names for m in mods[k]["members"] if CONST_NAME.match(m)})
+    (OUT / "lua_members.txt").write_text("\n".join(consts) + "\n", encoding="utf-8")
+    print(f"{len(names)} module names, {len(consts)} constant names -> {OUT}")
+
+
+def stack_enum_pairs(instructions):
+    """Yield (name, value) from arrays of {u32 value; char* name} built on the stack."""
+    strings: dict = {}
+    values: dict = {}
+    for mn, ops, sref, _fref, is_call, _table in instructions:
+        if is_call:
+            strings.clear()
+            continue
+        dst = reg(ops[0]) if ops else None
+        if mn == "LEA" and dst and sref is not None:
+            strings[dst] = sref
+            continue
+        m = STACK_SLOT.match(ops[0]) if mn == "MOV" and len(ops) == 2 else None
+        if not m:
+            if dst:
+                strings.pop(dst, None)
+            continue
+        slot = (m.group(2).upper(), int(m.group(3), 16))
+        if m.group(1).lower() == "dword" and imm(ops[1]) is not None:
+            values[slot] = imm(ops[1])
+        elif m.group(1).lower() == "qword" and reg(ops[1]) in strings:
+            prev = (slot[0], slot[1] - 8)
+            if prev in values:
+                yield strings[reg(ops[1])], values[prev]
 
 
 def cmd_pair() -> None:
@@ -147,9 +188,33 @@ def cmd_pair() -> None:
     constants: dict = collections.defaultdict(dict)
     registrars: dict = collections.defaultdict(set)
 
-    for line in (OUT / "lua_bindings.jsonl").read_text().splitlines():
-        rec = json.loads(line)
+    owners: dict = collections.defaultdict(set)
+    for k in native:
+        for m in mods[k]["members"]:
+            owners[m].add(k)
+
+    records = [json.loads(l) for l in (OUT / "lua_bindings.jsonl").read_text(encoding="utf-8").splitlines()]
+    members_file = OUT / "lua_members.jsonl"
+    if members_file.exists():
+        records += [json.loads(l) for l in members_file.read_text(encoding="utf-8").splitlines()]
+
+    # Enum arrays built on the stack; attribute names to their unique owner.
+    for rec in records:
+        for name, value in stack_enum_pairs(rec["ins"]):
+            mods_for = {m for m in owners.get(name, set()) if "index" not in mods[m]["members"][name]["kinds"]}
+            if len(mods_for) == 1:
+                (mod,) = mods_for
+                constants[mod].setdefault(name, value)
+                registrars[mod].add(rec["func"])
+
+    for rec in records:
+        if rec.get("parent") is None and not (set(rec["modules"]) & native):
+            continue  # found via member names only; handled above
+        # Callbacks of class-style modules never name the module; they inherit
+        # it from the registrar that handed them out.
         current = None
+        if rec.get("parent") and len(rec["modules"]) == 1 and rec["modules"][0] in native:
+            current = rec["modules"][0]
         ins = rec["ins"]
         for idx, args in replay(ins):
             strs = [a for a in args if isinstance(a, (Str, TableStr))]
@@ -166,6 +231,8 @@ def cmd_pair() -> None:
                 registrars[current].add(rec["func"])
                 if fns:
                     functions[current].setdefault(s, fns[0])
+                elif "index" in wanted[s]["kinds"]:
+                    continue  # a namespace table (TppCommand.Weather), not a constant
                 elif isinstance(s, TableStr) and type(args[2]) is int:
                     # Loop: value = counter, bounded by the CMP after the call.
                     base, count = args[2], len(s.table)
@@ -185,7 +252,7 @@ def cmd_pair() -> None:
         "registrars": {m: sorted(v) for m, v in sorted(registrars.items())},
     }
     dest = REPO / "re" / "api" / "lua_bindings.json"
-    dest.write_text(json.dumps(result, indent=1))
+    dest.write_text(json.dumps(result, indent=1), encoding="utf-8")
     nf = sum(len(v) for v in functions.values())
     nc = sum(len(v) for v in constants.values())
     print(f"paired {nf} functions and {nc} constants across {len(registrars)} modules -> {dest}")

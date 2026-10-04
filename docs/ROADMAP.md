@@ -13,14 +13,17 @@
 - [x] Native binding recovery: 471 functions and 1,301 enum constants (`re/api/lua_bindings.json`)
 - [x] Engine `vars` layout recovered (333 variables, hash- and overlap-validated); typed `vars` store
 - [x] Boot runs `init.lua` and `start.lua` to completion
+- [x] Binding recovery for callbacks, enum loops, stack arrays and short/pooled names: 585 functions, 4,043 constants
+- [x] `.fox2` DataSet parser (`fox-data`): all 75,967 files parse
+- [x] `requires` dependency loading (52 core libraries, `TppMain`, `TppSequence`)
+- [x] Mission loading from `TppSimpleMissionData`; `init` mission runs `OnAllocate`/`OnInitialize` into `Seq_Mission_Prepare`
 
 ## Next
 
-- [ ] Map the 78 modules registered through class reflection (`Fox`, `Script`, `GrTools`, `fox.KEY_*` ...)
+- [ ] Engine to Lua messages (`TppMain.OnMessage`, StrCode32 sender/message ids) and native mission-load stages, to advance `Seq_Mission_Prepare`
+- [ ] Remaining ~50 unmapped modules (`Fox`, `fox.KEY_*`, class objects)
 - [ ] The 25 script-used `vars` declared outside `0x140996b70` (`sortiePrep*`, `mbm*`)
-- [ ] `TppEquip` equipment ids (`EQP_*`) and the remaining unrecovered constants
-- [ ] Drive the title sequence after boot (`TppMain`, `TppSequence`, mission load)
-- [ ] `.fox2` DataSet parser (entities and properties); see FoxTool
+- [ ] Title mission (`title_fpkd`, `s00005`) after `init`
 - [ ] Per-location chunk mounting from `foxfs.dat`
 
 ## Later

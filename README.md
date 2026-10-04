@@ -7,10 +7,12 @@ runs on **your own copy of the game**: the engine reads the original archives
 and runs the game's own Lua scripts at runtime. No game code, data or assets
 are included in this repository.
 
-Status: early. The archive layer is complete and verified against the retail
-data. The game's own boot scripts (`init.lua`, `start.lua`) run to completion
-in the Rust Lua host, using engine constants and the `vars` layout recovered
-from the binary. There is no renderer yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
+Status: early. The archive and `.fox2` layers parse every file in the retail
+data. The game's own boot scripts run to completion in the Rust Lua host, and
+the first mission (`init`) loads from its package and runs its setup hooks
+through the real `TppMain`/`TppSequence` code. It currently waits in
+`Seq_Mission_Prepare` for engine events that are not implemented yet. There is
+no renderer yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Install
 
@@ -41,7 +43,9 @@ cargo build --release
 | `mgsv cat PATH` | Print one file, e.g. `/Assets/tpp/script/lib/TppMain.lua` |
 | `mgsv extract [FILTER] [--unpack-fpk]` | Extract to `extracted/` (gitignored) |
 | `mgsv fpk PATH` | List an `.fpk`/`.fpkd` package |
-| `mgsv boot [--all]` | Run the game's boot scripts in the Rust Lua host and report native API use |
+| `mgsv boot [--all] [--mission PKG] [--frames N]` | Run the boot scripts (and optionally a mission) in the Rust Lua host; report native API use and sequence changes |
+| `mgsv fox2 PATH` | Dump a `.fox2` DataSet (`PKG.fpkd:/inner/path.fox2` for files inside packages) |
+| `mgsv fox2-check` | Parse every `.fox2` in every package and report failures |
 
 On Git Bash, set `MSYS_NO_PATHCONV=1` so `/Assets/...` arguments are not
 rewritten into Windows paths.
@@ -52,9 +56,10 @@ rewritten into Windows paths.
 | --- | --- |
 | `crates/fox-hash` | CityHash64 v1.0.x, `StrCode32/64`, QAR path hashing |
 | `crates/fox-archive` | QAR (`.dat`) and FPK/FPKD readers, decryption, game-install VFS |
-| `crates/fox-lua` | Lua 5.1 host for the game's scripts; Rust implementations of native modules |
+| `crates/fox-data` | `.fox2` DataSets (entities, typed properties) and hash name tables |
+| `crates/fox-lua` | Lua 5.1 host for the game's scripts; Rust implementations of native modules; mission loading |
 | `crates/mgsv-cli` | The `mgsv` command-line tool |
-| `dictionaries/` | Path dictionaries for resolving archive hashes (from GzsTool, MIT) |
+| `dictionaries/` | Name dictionaries for resolving hashes (GzsTool and FoxTool, MIT) |
 | `re/` | Reverse-engineering workflow: Ghidra scripts and derived API metadata |
 | `tools/` | Analysis scripts (Python, standard library only) |
 | `docs/` | Format notes, architecture and roadmap |
@@ -89,8 +94,8 @@ code is licensed under the [GNU General Public License version 3 only](LICENSE)
 commercially. If you distribute a modified version or a binary, you must make
 the corresponding source available under GPLv3 and keep the required notices.
 
-Third-party material keeps its own license, including the path dictionaries
-in `dictionaries/` (MIT, GzsTool). This license grants no rights to Konami's
+Third-party material keeps its own license, including the dictionaries in
+`dictionaries/` (MIT; GzsTool and FoxTool). This license grants no rights to Konami's
 game code, data, assets or trademarks.
 
 ## Credits

@@ -20,9 +20,33 @@ phantom_mt.__index = function(self, key)
   rawset(self, key, child)
   return child
 end
+-- Unimplemented predicates follow the headless-engine rule "every
+-- asynchronous operation has already finished": completion checks
+-- (IsEnd*, IsFinish*, IsReady*, IsLoaded*, ...) answer true and every other
+-- predicate (IsSaving*, IsPlaying*, IsShow*, Has*, ...) answers false. Both
+-- `while busy() do yield end` and `while not done() do yield end` loops then
+-- terminate. Everything else returns a further phantom.
+local function predicate_result(path)
+  local last = path:match("([%w_]+)$") or ""
+  if not (last:match("^Is%u") or last:match("^Has%u") or last:match("^Can%u")
+      or last:match("^Check%u") or last:match("^Exist")) then
+    return nil
+  end
+  for _, done in ipairs({ "End", "Finish", "Complete", "Done", "Ready", "Loaded", "Initialized", "Ended", "Ok", "Active" }) do
+    if last:match("^Is" .. done) or last:match("^Is%u%w*" .. done .. "$") then
+      return true
+    end
+  end
+  return false
+end
+
 phantom_mt.__call = function(self, ...)
   local path = phantom_path[self]
   trace(path, select("#", ...))
+  local p = predicate_result(path)
+  if p ~= nil then
+    return p
+  end
   return phantom(path .. "()")
 end
 phantom_mt.__tostring = function(self)

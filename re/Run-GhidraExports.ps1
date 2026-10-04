@@ -28,7 +28,10 @@ try {
     foreach ($s in $Scripts) {
         switch ($s) {
             'ExportFunctions.java' { $post += '-postScript', $s, "$out\functions.csv" }
-            'ExportLuaBindings.java' { $post += '-postScript', $s, "$out\lua_modules.txt", "$out\lua_bindings.jsonl" }
+            'ExportLuaBindings.java' {
+                $post += '-postScript', $s, "$out\lua_modules.txt", "$out\lua_bindings.jsonl"
+                $post += '-postScript', $s, "$out\lua_members.txt", "$out\lua_members.jsonl"
+            }
             'DecompileFunctions.java' { $post += '-postScript', $s, "$out\decompile_targets.txt", "$out\decomp" }
             default { $post += '-postScript', $s }
         }

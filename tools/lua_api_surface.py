@@ -26,7 +26,9 @@ LUA_STDLIB = {
 LOWER_NATIVE_HINTS = {"vars", "svars", "gvars", "mvars", "fox"}
 
 IDENT = r"[A-Za-z_][A-Za-z0-9_]*"
-ACCESS_RE = re.compile(rf"(?<![\w.:])({IDENT})\s*([.:])\s*({IDENT})(\s*[\(\{{\"'])?")
+# Groups: global, separator, member, call tail, and a further `.x`/`:x` index
+# (marks the member as a namespace table rather than a value).
+ACCESS_RE = re.compile(rf"(?<![\w.:])({IDENT})\s*([.:])\s*({IDENT})(\s*[\(\{{\"'])?(\s*[.:](?=\s*[A-Za-z_]))?")
 STRING_RE = re.compile(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|\[(=*)\[.*?\]\1\]", re.S)
 COMMENT_RE = re.compile(r"--\[(=*)\[.*?\]\1\]|--[^\n]*", re.S)
 LOCAL_RE = re.compile(rf"\blocal\s+(?:function\s+)?({IDENT}(?:\s*,\s*{IDENT})*)")
@@ -86,7 +88,7 @@ def main() -> None:
                 continue
             if not (g[0].isupper() or g in LOWER_NATIVE_HINTS):
                 continue
-            kind = "method" if sep == ":" else ("call" if tail else "field")
+            kind = "method" if sep == ":" else ("call" if tail else ("index" if m.group(5) else "field"))
             refs[g][member][kind] += 1
             files_using[g].add(rel)
 
@@ -108,7 +110,7 @@ def main() -> None:
         }
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps({"scripts_scanned": len(files), "modules": modules}, indent=1))
+    args.out.write_text(json.dumps({"scripts_scanned": len(files), "modules": modules}, indent=1), encoding="utf-8")
 
     native = {k: v for k, v in modules.items() if v["in_exe"] and not v["defined_by_script"]}
     n_members = sum(len(v["members"]) for v in native.values())

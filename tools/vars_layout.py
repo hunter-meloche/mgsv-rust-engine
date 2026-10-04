@@ -54,7 +54,7 @@ def storage_offset(ins, start, name_idx):
 
 
 def main() -> None:
-    recs = [json.loads(l) for l in (REPO / "re/out/vars_decl.jsonl").read_text().splitlines()]
+    recs = [json.loads(l) for l in (REPO / "re/out/vars_decl.jsonl").read_text(encoding="utf-8").splitlines()]
     decl = max(recs, key=lambda r: len(r["modules"]))  # the function that names them all
     ins = decl["ins"]
 
@@ -87,8 +87,8 @@ def main() -> None:
         )
 
     dest = REPO / "re/api/vars_layout.json"
-    dest.write_text(json.dumps({"declared_by": decl["func"], "vars": out}, indent=1))
-    used = set(json.loads((REPO / "re/api/lua_native_api.json").read_text())["modules"]["vars"]["members"])
+    dest.write_text(json.dumps({"declared_by": decl["func"], "vars": out}, indent=1), encoding="utf-8")
+    used = set(json.loads((REPO / "re/api/lua_native_api.json").read_text(encoding="utf-8"))["modules"]["vars"]["members"])
     names = {v["name"] for v in out}
     print(f"{len(out)} vars -> {dest}")
     print(f"script-referenced vars covered: {len(used & names)}/{len(used)}; missing: {sorted(used - names)}")

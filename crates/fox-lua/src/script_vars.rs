@@ -164,29 +164,43 @@ struct VarArray {
     name: String,
 }
 
+/// Array index from a script value; phantoms (unrecovered constants) read as
+/// 0 and are recorded. Non-integral or negative indices map to None.
+fn array_index(lua: &Lua, store: &Shared, i: Value) -> mlua::Result<Option<usize>> {
+    let n = match incoming(lua, store, i)? {
+        Value::Integer(n) => n as f64,
+        Value::Number(n) => n,
+        _ => return Ok(None),
+    };
+    Ok((n >= 0.0 && n.fract() == 0.0).then_some(n as usize))
+}
+
 impl UserData for VarArray {
     fn add_methods<M: UserDataMethods<Self>>(m: &mut M) {
-        m.add_meta_method(MetaMethod::Index, |_, this, i: i64| {
+        m.add_meta_method(MetaMethod::Index, |lua, this, i: Value| {
+            let i = array_index(lua, &this.store, i)?;
             let s = this.store.borrow();
             let v = &s.vars[&this.name];
-            Ok(usize::try_from(i)
-                .ok()
-                .and_then(|i| v.values.get(i))
+            Ok(i.and_then(|i| v.values.get(i))
                 .map_or(Value::Nil, |x| x.to_lua()))
         });
-        m.add_meta_method(MetaMethod::NewIndex, |lua, this, (i, val): (i64, Value)| {
-            let val = incoming(lua, &this.store, val)?;
-            let mut s = this.store.borrow_mut();
-            let v = s.vars.get_mut(&this.name).unwrap();
-            // Retail scripts write one past the end (TppVarInit loops
-            // 0..=MISSION_COUNT_MAX over a MISSION_COUNT_MAX array) and the
-            // game does not fault, so out-of-range writes are dropped.
-            // TODO(re): confirm against the native store's bounds check.
-            if let Some(slot) = usize::try_from(i).ok().and_then(|i| v.values.get_mut(i)) {
-                *slot = Scalar::coerce(v.ty, &val)?;
-            }
-            Ok(())
-        });
+        m.add_meta_method(
+            MetaMethod::NewIndex,
+            |lua, this, (i, val): (Value, Value)| {
+                let i = array_index(lua, &this.store, i)?;
+                let val = incoming(lua, &this.store, val)?;
+                let mut s = this.store.borrow_mut();
+                let v = s.vars.get_mut(&this.name).unwrap();
+                // Retail scripts write one past the end (TppVarInit loops
+                // 0..=MISSION_COUNT_MAX over a MISSION_COUNT_MAX array) and the
+                // game does not fault, so out-of-range writes are dropped.
+                // TODO(re): confirm against the native store's bounds check.
+                if let Some(slot) = i.and_then(|i| v.values.get_mut(i)) {
+                    *slot = Scalar::coerce(v.ty, &val)?;
+                }
+                Ok(())
+            },
+        );
         m.add_meta_method(MetaMethod::Len, |_, this, ()| {
             Ok(this.store.borrow().vars[&this.name].values.len())
         });
@@ -403,6 +417,15 @@ pub fn install(lua: &Lua, trace: Arc<Mutex<Trace>>) -> mlua::Result<()> {
     m.raw_set(
         "DeclareSVars",
         lua.create_function(move |lua, list: Table| svars.declare(lua, &trace, list))?,
+    )?;
+
+    // Save/load state. No save I/O is implemented yet, so nothing is ever in
+    // flight and the last operation always succeeded.
+    m.raw_set("IsSavingOrLoading", lua.create_function(|_, ()| Ok(false))?)?;
+    let result_ok: Value = m.raw_get("RESULT_OK")?;
+    m.raw_set(
+        "GetLastResult",
+        lua.create_function(move |_, ()| Ok(result_ok.clone()))?,
     )?;
     Ok(())
 }

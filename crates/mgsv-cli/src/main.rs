@@ -48,7 +48,51 @@ enum Cmd {
         /// Print every unimplemented native that was called.
         #[arg(long)]
         all: bool,
+        /// After boot, load this mission package and run its lifecycle.
+        #[arg(long)]
+        mission: Option<String>,
+        /// Frames of OnUpdate to run for --mission.
+        #[arg(long, default_value_t = 300)]
+        frames: usize,
     },
+    /// Dump a .fox2 DataSet. PATH is an archive path, or `PACKAGE:INNER` for
+    /// a file inside an .fpk/.fpkd (e.g. `/Assets/.../init.fpkd:/Assets/.../init.fox2`).
+    Fox2 { path: String },
+    /// Parse every .fox2 inside every .fpkd and report failures.
+    Fox2Check,
+}
+
+/// Read a file from the archives, or from inside a package with `PKG:INNER`.
+fn read_any(vfs: &Vfs, path: &str) -> Result<Vec<u8>> {
+    if let Some((pkg, inner)) = path
+        .split_once(".fpkd:")
+        .map(|(a, b)| (format!("{a}.fpkd"), b))
+        .or_else(|| {
+            path.split_once(".fpk:")
+                .map(|(a, b)| (format!("{a}.fpk"), b))
+        })
+    {
+        let data = vfs.read(&pkg)?;
+        let p = Fpk::parse(&data)?;
+        let e = p
+            .entries
+            .iter()
+            .find(|e| e.clean_path() == inner)
+            .with_context(|| format!("{inner} not in {pkg}"))?;
+        return Ok(p.read(e)?);
+    }
+    Ok(vfs.read(path)?)
+}
+
+/// Names for .fox2 hashes: FoxTool's dictionary plus identifiers harvested
+/// from the user's own mgsvtpp.exe.
+fn fox_names(vfs: &Vfs) -> fox_data::NameTable {
+    let mut names = fox_data::NameTable::new();
+    let _ = names.load_dictionary(repo_dir().join("dictionaries/fox_dictionary.txt"));
+    if let Ok(exe) = std::fs::read(vfs.game_dir.join("mgsvtpp.exe")) {
+        names.harvest_identifiers(&exe);
+    }
+    names
 }
 
 fn repo_dir() -> PathBuf {
@@ -141,21 +185,125 @@ fn run() -> Result<()> {
             }
             Ok(())
         }
-        Cmd::Boot { all } => boot(vfs, all),
+        Cmd::Boot {
+            all,
+            mission,
+            frames,
+        } => boot(vfs, all, mission, frames),
+        Cmd::Fox2 { path } => {
+            let ds = fox_data::DataSet::parse(&read_any(&vfs, &path)?)?;
+            out.write_all(ds.to_text(&fox_names(&vfs)).as_bytes())?;
+            Ok(())
+        }
+        Cmd::Fox2Check => fox2_check(&vfs),
     }
 }
 
-fn boot(vfs: Vfs, all: bool) -> Result<()> {
+fn fox2_check(vfs: &Vfs) -> Result<()> {
+    let names = fox_names(vfs);
+    let pkgs: Vec<_> = vfs
+        .iter()
+        .filter(|(h, _)| fox_hash::extension_from_id((h >> 51) as u16) == Some("fpkd"))
+        .collect();
+    let files = AtomicUsize::new(0);
+    let entities = AtomicUsize::new(0);
+    let classes_named = AtomicUsize::new(0);
+    let failures = std::sync::Mutex::new(Vec::new());
+    pkgs.par_iter().for_each(|(_, r)| {
+        let Ok(data) = vfs.read_ref(*r) else { return };
+        let Ok(pkg) = Fpk::parse(&data) else { return };
+        for e in pkg
+            .entries
+            .iter()
+            .filter(|e| e.clean_path().ends_with(".fox2"))
+        {
+            files.fetch_add(1, Ordering::Relaxed);
+            match pkg
+                .read(e)
+                .map_err(anyhow::Error::from)
+                .and_then(|d| Ok(fox_data::DataSet::parse(&d)?))
+            {
+                Ok(ds) => {
+                    entities.fetch_add(ds.entities.len(), Ordering::Relaxed);
+                    let n = ds
+                        .entities
+                        .iter()
+                        .filter(|x| names.get(x.class).is_some())
+                        .count();
+                    classes_named.fetch_add(n, Ordering::Relaxed);
+                }
+                Err(err) => failures
+                    .lock()
+                    .unwrap()
+                    .push(format!("{}: {err:#}", e.clean_path())),
+            }
+        }
+    });
+    let failures = failures.into_inner().unwrap();
+    println!(
+        "fox2 files: {}, entities: {}, class names resolved: {}, failures: {}",
+        files.into_inner(),
+        entities.load(Ordering::Relaxed),
+        classes_named.into_inner(),
+        failures.len()
+    );
+    for f in failures.iter().take(20) {
+        println!("  {f}");
+    }
+    Ok(())
+}
+
+fn run_mission(host: &fox_lua::FoxLua, pkg: &str, frames: usize) -> fox_lua::mlua::Result<()> {
+    let m = host.load_mission(pkg)?;
+    println!("ok    mission {pkg}");
+    for (k, p) in &m.sub_scripts {
+        println!("        {k} = {p}");
+    }
+    for hook in ["OnAllocate", "OnInitialize"] {
+        let n = m.run_hook(host, hook, 100_000)?;
+        println!("ok    {hook} ({n} frames)");
+    }
+    // Report sequence transitions (TppSequence is the game's mission state machine).
+    let current = || -> String {
+        host.lua
+            .load("local ok, s = pcall(TppSequence.GetCurrentSequenceName) return ok and tostring(s) or '?'")
+            .eval::<String>()
+            .unwrap_or_else(|_| "?".into())
+    };
+    let mut last = current();
+    println!("        sequence @0: {last}");
+    for f in 0..frames {
+        m.call("OnUpdate")
+            .map_err(|e| fox_lua::mlua::Error::runtime(format!("OnUpdate, frame {f}: {e}")))?;
+        host.advance_frame();
+        let now = current();
+        if now != last {
+            println!("        sequence @{}: {now}", f + 1);
+            last = now;
+        }
+    }
+    println!("ok    OnUpdate x{frames}");
+    Ok(())
+}
+
+fn boot(vfs: Vfs, all: bool, mission: Option<String>, frames: usize) -> Result<()> {
     let host =
         fox_lua::FoxLua::new(std::sync::Arc::new(vfs)).map_err(|e| anyhow::anyhow!("{e}"))?;
     // start.lua runs start2nd.lua itself.
+    let mut booted = true;
     for script in ["/init.lua", "/Tpp/start.lua"] {
         match host.run_coroutine(script, 100_000) {
             Ok(frames) => println!("ok    {script} ({frames} frames)"),
             Err(e) => {
                 println!("FAIL  {script}\n{e}");
+                booted = false;
                 break;
             }
+        }
+    }
+    if let (true, Some(pkg)) = (booted, mission) {
+        if let Err(e) = run_mission(&host, &pkg, frames) {
+            println!("FAIL  mission {pkg}\n{e}");
         }
     }
     let t = host.trace.lock().unwrap();

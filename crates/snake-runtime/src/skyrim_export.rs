@@ -140,11 +140,145 @@ pub struct ExportReport {
 /// Write every weapon in [`WEAPONS`] under `data_dir` (Skyrim's `Data`).
 pub fn export_weapons(vfs: &Vfs, data_dir: &Path) -> Result<ExportReport> {
     let mut report = ExportReport::default();
+    // The muzzle flash is its own mesh, attached beside the gun: an
+    // additive shape inside the gun's own node makes Skyrim draw the whole
+    // gun in the transparent pass (it turned pale while flashing).
+    write_muzzle_flash_texture(vfs, data_dir, &mut report)?;
+    let flash = data_dir.join("meshes").join("snake").join("muzzle_flash.nif");
+    std::fs::create_dir_all(flash.parent().unwrap())?;
+    std::fs::write(
+        &flash,
+        nif_write::write_static_nif("muzzle_flash", &muzzle_flash_shapes([0.0; 3], to_sky([0.0, 0.0, 1.0]))),
+    )?;
+    report.files.push(flash);
     for def in &WEAPONS {
         export_weapon(vfs, def.id, def.model, data_dir, &mut report)
             .with_context(|| format!("exporting {}", def.id))?;
+        if let Some((bank, id)) = def.shot_sound {
+            let path = sound_path(data_dir, def.id);
+            export_sound(vfs, bank, id, &path).with_context(|| format!("{} shot sound", def.id))?;
+            report.files.push(path);
+        }
     }
     Ok(report)
+}
+
+/// Where the plugin looks for weapon `id`'s gunshot (`.wav`).
+pub fn sound_path(data_dir: &Path, id: &str) -> PathBuf {
+    data_dir
+        .join("SKSE")
+        .join("Plugins")
+        .join("snake_sounds")
+        .join(format!("{}_shot.wav", id.to_ascii_lowercase()))
+}
+
+/// Write sound `id` of the `.sbp` at `bank` (an archive path) as a `.wav`.
+pub fn export_sound(vfs: &Vfs, bank: &str, id: u32, out: &Path) -> Result<()> {
+    let data = read_any(vfs, bank)?;
+    let pcm = fox_data::sbp::SoundBank::parse(&data)?.pcm(id)?;
+    if let Some(dir) = out.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(out, pcm.to_wav())?;
+    Ok(())
+}
+
+/// MGSV's muzzle flame (2x2 flipbook, BC3), used for every weapon's flash.
+const MUZZLE_FLASH_TEXTURE: &str = "/Assets/tpp/effect/vfx_pic/fire/fx_mzffir01_hh_alp_clp.ftex";
+const MUZZLE_FLASH_DDS: &str = r"textures\snake\muzzle_flash.dds";
+
+/// Name prefix of the flash shapes (`<prefix><cell>`), toggled by the plugin.
+pub const MUZZLE_FLASH_PREFIX: &str = "muzzle_flash:";
+
+fn write_muzzle_flash_texture(vfs: &Vfs, data_dir: &Path, report: &mut ExportReport) -> Result<()> {
+    let path = data_dir.join("textures").join("snake").join("muzzle_flash.dds");
+    if report.files.contains(&path) {
+        return Ok(());
+    }
+    let header = vfs.read(MUZZLE_FLASH_TEXTURE)?;
+    let ftex = Ftex::parse(&header)?;
+    let stem = MUZZLE_FLASH_TEXTURE.trim_end_matches(".ftex");
+    let mips = ftex.read_mips(|n| vfs.read(&format!("{stem}.{n}.ftexs")).ok())?;
+    std::fs::write(&path, diffuse_dds(&Texture { ftex, mips })?)?;
+    report.files.push(path);
+    Ok(())
+}
+
+/// Skyrim mesh path of the muzzle flash (relative to `Data\meshes`); it is
+/// built at its origin along +Y, the gun frame's barrel axis in Skyrim axes.
+pub const MUZZLE_FLASH_MESH: &str = r"snake\muzzle_flash.nif";
+
+/// Muzzle of `muzzle` (Fox gun frame, metres) in the exported gun mesh's
+/// frame (Skyrim axes and units).
+pub fn muzzle_in_mesh(muzzle: [f32; 3]) -> [f32; 3] {
+    let m = to_sky(muzzle);
+    [m[0] * UNITS_PER_METER, m[1] * UNITS_PER_METER, m[2] * UNITS_PER_METER]
+}
+
+/// Flash shapes at the muzzle `m` (Skyrim units) along the barrel `axis`:
+/// two crossed flame quads plus a front burst, one shape per flipbook cell.
+fn muzzle_flash_shapes(m: [f32; 3], axis: [f32; 3]) -> Vec<Shape> {
+    let a = normalize(axis);
+    let helper = if a[2].abs() < 0.9 { [0.0, 0.0, 1.0] } else { [1.0, 0.0, 0.0] };
+    let u = normalize(cross(a, helper));
+    let v = cross(a, u);
+    let (length, width, burst) = (26.0f32, 13.0f32, 9.0f32);
+    let at = |base: [f32; 3], d1: [f32; 3], s1: f32, d2: [f32; 3], s2: f32| {
+        [
+            base[0] + d1[0] * s1 + d2[0] * s2,
+            base[1] + d1[1] * s1 + d2[1] * s2,
+            base[2] + d1[2] * s1 + d2[2] * s2,
+        ]
+    };
+    (0..4)
+        .map(|cell| {
+            let (u0, v0) = ((cell % 2) as f32 * 0.5, (cell / 2) as f32 * 0.5);
+            let mut sh = Shape {
+                name: format!("{MUZZLE_FLASH_PREFIX}{cell}"),
+                effect: Some(nif_write::Effect {
+                    texture: MUZZLE_FLASH_DDS.to_string(),
+                    emissive_multiple: 2.0,
+                }),
+                ..Default::default()
+            };
+            // Flame quads: base at the muzzle (bottom of the cell), tip
+            // along the barrel (top of the cell).
+            for side in [u, v] {
+                let base = sh.positions.len() as u16;
+                for (along, across, uv) in [
+                    (-2.0, -width / 2.0, [u0, v0 + 0.5]),
+                    (-2.0, width / 2.0, [u0 + 0.5, v0 + 0.5]),
+                    (length, width / 2.0, [u0 + 0.5, v0]),
+                    (length, -width / 2.0, [u0, v0]),
+                ] {
+                    sh.positions.push(at(m, a, along, side, across));
+                    sh.uvs.push(uv);
+                    sh.normals.push(cross(a, side));
+                    sh.tangents.push(a);
+                    sh.bitangents.push(side);
+                }
+                sh.triangles.push([base, base + 1, base + 2]);
+                sh.triangles.push([base, base + 2, base + 3]);
+            }
+            // Front burst facing down the barrel.
+            let base = sh.positions.len() as u16;
+            for (x, y, uv) in [
+                (-burst, -burst, [u0, v0 + 0.5]),
+                (burst, -burst, [u0 + 0.5, v0 + 0.5]),
+                (burst, burst, [u0 + 0.5, v0]),
+                (-burst, burst, [u0, v0]),
+            ] {
+                sh.positions.push(at(at(m, a, 1.0, u, x), v, y, a, 0.0));
+                sh.uvs.push(uv);
+                sh.normals.push(a);
+                sh.tangents.push(u);
+                sh.bitangents.push(v);
+            }
+            sh.triangles.push([base, base + 1, base + 2]);
+            sh.triangles.push([base, base + 2, base + 3]);
+            sh
+        })
+        .collect()
 }
 
 fn export_weapon(vfs: &Vfs, id: &str, model: &str, data_dir: &Path, report: &mut ExportReport) -> Result<()> {
@@ -222,7 +356,10 @@ fn export_weapon(vfs: &Vfs, id: &str, model: &str, data_dir: &Path, report: &mut
             triangles: mesh
                 .indices
                 .chunks_exact(3)
-                .map(|t| [t[0], t[1], t[2]])
+                // Fox and Skyrim front faces wind in opposite directions
+                // (checked against vanilla meshes: their triangles face
+                // along the vertex normals, Fox's face against them).
+                .map(|t| [t[0], t[2], t[1]])
                 .collect(),
             textures: material_textures
                 .get(mesh.material_instance as usize)
@@ -230,6 +367,7 @@ fn export_weapon(vfs: &Vfs, id: &str, model: &str, data_dir: &Path, report: &mut
                 .unwrap_or_default(),
             glossiness: 80.0,
             specular_strength: 1.0,
+            effect: None,
         });
     }
     let path = mesh_dir.join(format!("{stem}.nif"));

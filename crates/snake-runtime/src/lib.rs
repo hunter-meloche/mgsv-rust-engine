@@ -144,6 +144,9 @@ pub struct WeaponDef {
     /// Body connection point (and bone) it rides on when not in the hands.
     holster: Option<(&'static str, &'static str)>,
     color: [f32; 3],
+    /// The gunshot sound: a sound bank and the id of a 16-bit PCM sound in
+    /// it (event names are hashed, so sounds were matched by ear).
+    shot_sound: Option<(&'static str, u32)>,
 }
 
 pub const WEAPONS: [WeaponDef; 2] = [
@@ -164,6 +167,7 @@ pub const WEAPONS: [WeaponDef; 2] = [
         },
         holster: Some(("SKL_300_ASRROOT", "CNP_ASRROOT")),
         color: [0.22, 0.22, 0.22],
+        shot_sound: None,
     },
     // WU S.Pistol (tranquilizer).
     WeaponDef {
@@ -182,6 +186,7 @@ pub const WEAPONS: [WeaponDef; 2] = [
         },
         holster: None,
         color: [0.28, 0.27, 0.25],
+        shot_sound: None,
     },
 ];
 

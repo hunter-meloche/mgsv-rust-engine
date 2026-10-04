@@ -77,6 +77,9 @@ uint32_t snake_weapon_count(const SnakeRuntime *rt);
 /* Skyrim mesh of weapon i (relative to Data\meshes, written by
  * `mgsv skyrim-export`), or NULL. */
 const char *snake_weapon_mesh(const SnakeRuntime *rt, uint32_t i);
+/* Muzzle of weapon i in its exported mesh's frame (Skyrim axes and units;
+ * the barrel points along +Y). Returns 0 if there is no such weapon. */
+int32_t snake_weapon_muzzle(const SnakeRuntime *rt, uint32_t i, SnakeVec3 *out);
 
 SnakePlayer *snake_player_new(const SnakeRuntime *rt);
 void snake_player_free(SnakePlayer *p);

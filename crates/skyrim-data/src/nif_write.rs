@@ -1,4 +1,4 @@
-//! Writer for simple static Skyrim SE meshes: a `BSFadeNode` root with one
+//! Writer for simple static Skyrim SE meshes: an `NiNode` root with one
 //! `BSTriShape` per part, each with a `BSLightingShaderProperty` and a
 //! `BSShaderTextureSet`. Layouts follow vanilla SSE files (NIF 20.2.0.7,
 //! user version 12, BS version 100), e.g. `meshes\weapons\iron\longsword.nif`:
@@ -21,6 +21,17 @@ pub struct Shape {
     pub textures: Vec<String>,
     pub glossiness: f32,
     pub specular_strength: f32,
+    /// Draw as an unlit additive effect (`BSEffectShaderProperty` +
+    /// additive `NiAlphaProperty`) with this source texture instead of the
+    /// lit material, e.g. a muzzle flash.
+    pub effect: Option<Effect>,
+}
+
+/// An unlit, additive, double-sided effect material.
+#[derive(Clone, Debug)]
+pub struct Effect {
+    pub texture: String,
+    pub emissive_multiple: f32,
 }
 
 #[derive(Default)]
@@ -122,11 +133,21 @@ const SHADER_FLAGS_2: u32 = 0x0000_8001;
 /// attributes vertex | uv | normal | tangent.
 const VERTEX_DESC: u64 = 0x0001_B000_0065_0407;
 
-/// A NIF file with `shapes` under a `BSFadeNode` named `root_name`.
+/// A NIF file with `shapes` under an `NiNode` named `root_name`.
 pub fn write_static_nif(root_name: &str, shapes: &[Shape]) -> Vec<u8> {
     let mut strings = vec![root_name.to_string()];
     strings.extend(shapes.iter().map(|s| s.name.clone()));
-    let types = ["BSFadeNode", "BSTriShape", "BSLightingShaderProperty", "BSShaderTextureSet"];
+    // The root is a plain NiNode: these meshes are attached to an actor's
+    // skeleton by hand, outside Skyrim's own attach path that keeps a
+    // BSFadeNode's fade state current.
+    let types = [
+        "NiNode",
+        "BSTriShape",
+        "BSLightingShaderProperty",
+        "BSShaderTextureSet",
+        "BSEffectShaderProperty",
+        "NiAlphaProperty",
+    ];
 
     let mut blocks: Vec<(u16, Vec<u8>)> = Vec::new();
     // Root.
@@ -151,7 +172,7 @@ pub fn write_static_nif(root_name: &str, shapes: &[Shape]) -> Vec<u8> {
         b.f32(r);
         b.i32(-1); // skin
         b.i32(shape_block + 1); // shader property
-        b.i32(-1); // alpha property
+        b.i32(if s.effect.is_some() { shape_block + 2 } else { -1 }); // alpha property
         b.0.extend_from_slice(&VERTEX_DESC.to_le_bytes());
         b.u16(s.triangles.len() as u16);
         b.u16(s.positions.len() as u16);
@@ -184,6 +205,43 @@ pub fn write_static_nif(root_name: &str, shapes: &[Shape]) -> Vec<u8> {
         }
         b.u32(0); // particle data size
         blocks.push((1, b.0));
+
+        if let Some(fx) = &s.effect {
+            // BSEffectShaderProperty, laid out as in vanilla effect meshes.
+            let mut e = W::default();
+            e.i32(-1); // name
+            e.u32(0); // extra data
+            e.i32(-1); // controller
+            e.u32(0x8000_0000); // flags 1: z test
+            e.u32(0x0000_0010); // flags 2: double sided
+            for v in [0.0, 0.0, 1.0, 1.0] {
+                e.f32(v); // uv offset, uv scale
+            }
+            e.sized_string(&fx.texture);
+            e.u8(3); // texture clamp: wrap
+            e.u8(0); // lighting influence: unlit
+            e.u8(0); // env map min lod
+            e.u8(0);
+            for v in [1.0, 1.0, 1.0, 1.0] {
+                e.f32(v); // falloff start/stop angle, start/stop opacity
+            }
+            for v in [1.0, 1.0, 1.0, 1.0] {
+                e.f32(v); // emissive colour
+            }
+            e.f32(fx.emissive_multiple);
+            e.f32(100.0); // soft falloff depth
+            e.sized_string(""); // greyscale texture
+            blocks.push((4, e.0));
+            // NiAlphaProperty: blend src alpha + one (additive), no z sort.
+            let mut a = W::default();
+            a.i32(-1);
+            a.u32(0);
+            a.i32(-1);
+            a.u16(0x100D);
+            a.u8(0);
+            blocks.push((5, a.0));
+            continue;
+        }
 
         // BSLightingShaderProperty (default shader type).
         let mut m = W::default();

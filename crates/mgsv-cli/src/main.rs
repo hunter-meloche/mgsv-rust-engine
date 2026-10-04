@@ -96,6 +96,9 @@ enum Cmd {
         /// Hex-dump each .ftex header and the start of each .ftexs part.
         #[arg(long)]
         dump: bool,
+        /// Also write each texture's largest mip as a PNG into this folder.
+        #[arg(long)]
+        png: Option<PathBuf>,
     },
     /// Hex-dump the blocks of a NIF from a Skyrim install's BSAs (or a
     /// loose file path).
@@ -103,12 +106,40 @@ enum Cmd {
         #[arg(long)]
         skyrim: PathBuf,
         path: String,
+        /// Also write the file's bytes here.
+        #[arg(long)]
+        save: Option<PathBuf>,
     },
     /// Export Snake's weapons (meshes and textures, from this MGSV install)
     /// into a Skyrim SE install's Data folder for the SnakeSKSE plugin.
     SkyrimExport {
         #[arg(long)]
         skyrim: PathBuf,
+    },
+    /// Print StrCode32/StrCode64, PathCode64 and Wwise FNV-1 hashes of each TEXT.
+    Hash { text: Vec<String> },
+    /// Write a 16-bit PCM sound from an .sbp sound package as a .wav.
+    SoundExport {
+        /// Archive path of the .sbp (e.g. /Assets/tpp/sound/asset/common_bank_01.sbp).
+        #[arg(long)]
+        bank: String,
+        /// Sound (wem) id inside the bank.
+        #[arg(long)]
+        wem: u32,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Decode a texture (archive path of the .ftex) to a .png (largest mip).
+    TexPng {
+        path: String,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// List files in a Skyrim install's BSAs whose path contains FILTER.
+    SkyrimLs {
+        #[arg(long)]
+        skyrim: PathBuf,
+        filter: String,
     },
     /// Parse and validate every .fmdl inside every .fpk.
     FmdlCheck,
@@ -308,7 +339,16 @@ fn run() -> Result<()> {
             Ok(())
         }
         Cmd::Cat { path } => {
-            out.write_all(&read_any(&vfs, &path)?)?;
+            // Unnamed entries as `ls` prints them: `<hex path hash>.<ext>`.
+            let unnamed = path.split_once('.').and_then(|(stem, ext)| {
+                let hash = u64::from_str_radix(stem, 16).ok()?;
+                let id = ((fox_hash::extension_id(ext) as u64) << 51) | hash;
+                vfs.lookup_hash(id)
+            });
+            match unnamed {
+                Some(r) => out.write_all(&vfs.read_ref(r)?)?,
+                None => out.write_all(&read_any(&vfs, &path)?)?,
+            }
             Ok(())
         }
         Cmd::Extract {
@@ -381,7 +421,7 @@ fn run() -> Result<()> {
             }
             Ok(())
         }
-        Cmd::FmdlTex { path, dump } => {
+        Cmd::FmdlTex { path, dump, png } => {
             let m = fox_data::Fmdl::parse(&read_any(&vfs, &path)?)?;
             let names = fox_names(&vfs);
             for (i, mi) in m.material_instances.iter().enumerate() {
@@ -440,6 +480,18 @@ fn run() -> Result<()> {
                         let mut info = format!("{:?} {}x{} v{:.2}, {} of {} mips", f.format, f.width, f.height, f.version, mips.len(), f.mips.len());
                         if let Some(m0) = mips.first() {
                             let px = fox_data::ftex::decode_rgba(f.format, f.width, f.height, m0)?;
+                            if let Some(dir) = &png {
+                                std::fs::create_dir_all(dir)?;
+                                let (w, h) = (f.width as usize, f.height as usize);
+                                let mut r = raster::Raster::new(w * 2, h);
+                                for (k, p) in px.iter().enumerate() {
+                                    let (x, y) = (k % w, k / w);
+                                    r.color[y * w * 2 + x] = ((p[0] as u32) << 16) | ((p[1] as u32) << 8) | p[2] as u32;
+                                    let a = p[3] as u32;
+                                    r.color[y * w * 2 + w + x] = (a << 16) | (a << 8) | a;
+                                }
+                                raster::save_png(&r, &dir.join(format!("m{i}_{slot_name}.png")))?;
+                            }
                             let mut sum = [0f64; 4];
                             for p in &px {
                                 for k in 0..4 {
@@ -455,11 +507,14 @@ fn run() -> Result<()> {
             }
             Ok(())
         }
-        Cmd::SkyrimNif { skyrim, path } => {
+        Cmd::SkyrimNif { skyrim, path, save } => {
             let data = match std::fs::read(&path) {
                 Ok(d) => d,
                 Err(_) => skyrim_data::read_install_file(&skyrim, &path)?,
             };
+            if let Some(f) = &save {
+                std::fs::write(f, &data)?;
+            }
             let nif = skyrim_data::Nif::parse(&data)?;
             writeln!(out, "user version {}, bs version {}, strings {:?}", nif.user_version, nif.bs_version, nif.strings)?;
             for (i, (kind, range)) in nif.blocks.iter().enumerate() {
@@ -478,6 +533,63 @@ fn run() -> Result<()> {
             }
             for n in &report.notes {
                 writeln!(out, "note: {n}")?;
+            }
+            Ok(())
+        }
+        Cmd::Hash { text } => {
+            for t in &text {
+                let fnv = t.to_ascii_lowercase().bytes().fold(2166136261u32, |h, b| h.wrapping_mul(16777619) ^ b as u32);
+                writeln!(
+                    out,
+                    "{t}: str32 {:#010x} str64 {:#014x} path64 {:#018x} fnv {fnv:#010x}",
+                    fox_hash::str_code32(t.as_bytes()),
+                    fox_hash::str_code64(t.as_bytes()),
+                    fox_hash::path_code64(t)
+                )?;
+            }
+            Ok(())
+        }
+        Cmd::SoundExport { bank, wem, out: path } => {
+            snake_runtime::skyrim_export::export_sound(&vfs, &bank, wem, &path)?;
+            writeln!(out, "wrote {}", path.display())?;
+            Ok(())
+        }
+        Cmd::TexPng { path, out: png } => {
+            let read = |p: &str| vfs.read(p).ok();
+            let header = read(&path).with_context(|| format!("{path} not found"))?;
+            let f = fox_data::Ftex::parse(&header)?;
+            let stem = path.trim_end_matches(".ftex");
+            let mips = f.read_mips(|n| read(&format!("{stem}.{n}.ftexs")))?;
+            let m0 = mips.first().context("no mips")?;
+            let px = fox_data::ftex::decode_rgba(f.format, f.width, f.height, m0)?;
+            // Left: colour over black weighted by alpha; right: alpha.
+            let (w, h) = (f.width as usize, f.height as usize);
+            let mut r = raster::Raster::new(w * 2, h);
+            for y in 0..h {
+                for x in 0..w {
+                    let p = px[y * w + x];
+                    let a = p[3] as u32;
+                    let c = |v: u8| v as u32 * a / 255;
+                    r.color[y * w * 2 + x] = (c(p[0]) << 16) | (c(p[1]) << 8) | c(p[2]);
+                    r.color[y * w * 2 + w + x] = (a << 16) | (a << 8) | a;
+                }
+            }
+            raster::save_png(&r, &png)?;
+            writeln!(out, "{:?} {}x{}, {} mips -> {}", f.format, f.width, f.height, mips.len(), png.display())?;
+            Ok(())
+        }
+        Cmd::SkyrimLs { skyrim, filter } => {
+            let filter = filter.to_ascii_lowercase();
+            let mut bsas: Vec<_> = std::fs::read_dir(skyrim.join("Data"))?
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("bsa")))
+                .collect();
+            bsas.sort();
+            for b in bsas {
+                let Ok(bsa) = skyrim_data::Bsa::open(&b) else { continue };
+                for e in bsa.entries.iter().filter(|e| e.path.contains(&filter)) {
+                    writeln!(out, "{}  ({})", e.path, b.file_name().unwrap_or_default().to_string_lossy())?;
+                }
             }
             Ok(())
         }

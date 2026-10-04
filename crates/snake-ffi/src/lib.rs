@@ -295,6 +295,21 @@ pub unsafe extern "C" fn snake_weapon_mesh(rt: *const SnakeRuntime, i: u32) -> *
         .map_or(std::ptr::null(), |s| s.as_ptr())
 }
 
+/// Muzzle of weapon `i` in its exported Skyrim mesh's frame (Skyrim axes and
+/// units); the barrel points along +Y. Returns 0 if there is no such weapon.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_weapon_muzzle(rt: *const SnakeRuntime, i: u32, out: *mut SnakeVec3) -> i32 {
+    // SAFETY: valid runtime pointer or null; `out` valid or null.
+    let Some(w) = unsafe { rt.as_ref() }.and_then(|r| r.assets.weapons.get(i as usize)) else {
+        return 0;
+    };
+    let m = snake_runtime::skyrim_export::muzzle_in_mesh(w.rig.muzzle.to_array());
+    if let Some(out) = unsafe { out.as_mut() } {
+        *out = SnakeVec3 { x: m[0], y: m[1], z: m[2] };
+    }
+    1
+}
+
 /// A new player at the origin with every weapon equipped. NULL on failure.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snake_player_new(rt: *const SnakeRuntime) -> *mut SnakePlayer {

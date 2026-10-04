@@ -15,6 +15,7 @@
 
 #include <windows.h>
 #include <shlobj.h>
+#include <xaudio2.h>
 #include <share.h>
 #include <malloc.h>
 
@@ -98,6 +99,7 @@ struct SnakeApi {
     decltype(&snake_bone_name) bone_name = nullptr;
     decltype(&snake_weapon_count) weapon_count = nullptr;
     decltype(&snake_weapon_mesh) weapon_mesh = nullptr;
+    decltype(&snake_weapon_muzzle) weapon_muzzle = nullptr;
     decltype(&snake_player_new) player_new = nullptr;
     decltype(&snake_player_update) player_update = nullptr;
     decltype(&snake_player_status) player_status = nullptr;
@@ -134,6 +136,7 @@ bool LoadSnakeDll() {
     RESOLVE(bone_name, "snake_bone_name");
     RESOLVE(weapon_count, "snake_weapon_count");
     RESOLVE(weapon_mesh, "snake_weapon_mesh");
+    RESOLVE(weapon_muzzle, "snake_weapon_muzzle");
     RESOLVE(player_new, "snake_player_new");
     RESOLVE(player_update, "snake_player_update");
     RESOLVE(player_status, "snake_player_status");
@@ -419,7 +422,7 @@ constexpr size_t kAmmoProjectile = 0x110;  // TESAmmo AMMO_DATA.projectile
 constexpr size_t kAmmoDamage = 0x11C;      // TESAmmo AMMO_DATA.damage (float)
 constexpr size_t kWeapDamage = 0xC8;       // TESObjectWEAP TESAttackDamageForm.attackDamage (u16)
 constexpr size_t kProjData = 0x80;         // BGSProjectile BGSProjectileData
-constexpr size_t kSizeProjectile = 0x108, kSizeWeapon = 0x220, kSizeAmmo = 0x128;
+constexpr size_t kSizeProjectile = 0x138, kSizeWeapon = 0x220, kSizeAmmo = 0x128;
 constexpr size_t kCameraRoot = 0x20;       // TESCamera::cameraRoot (NiNode*)
 constexpr uint8_t kTypeWeapon = 0x29, kTypeAmmo = 0x2A, kTypeProjectile = 0x32, kTypeCell = 0x3C;
 
@@ -771,6 +774,117 @@ void RequestHands(bool draw) {
     if (g_tasks) g_tasks->AddTask(new DrawTask(draw));
 }
 
+// ---- gunshot sounds --------------------------------------------------------------
+//
+// Each weapon's shot is a .wav exported from the user's MGSV sound banks by
+// `mgsv skyrim-export` (Data/SKSE/Plugins/snake_sounds/<weapon id>_shot.wav).
+// Played through XAudio2 with a small pool of voices per sound so full-auto
+// shots overlap instead of cutting each other off. Volume: snake.ini
+// ShotVolume (percent, default 70).
+
+struct ShotSound {
+    std::vector<uint8_t> data;  // PCM samples
+    WAVEFORMATEX format{};
+    std::vector<IXAudio2SourceVoice*> voices;
+    size_t next = 0;
+};
+
+IXAudio2* g_audio = nullptr;
+IXAudio2MasteringVoice* g_master = nullptr;
+std::vector<ShotSound> g_shotSounds;  // by weapon index (empty data = none)
+
+bool ReadWav(const std::wstring& path, ShotSound& out) {
+    FILE* f = _wfsopen(path.c_str(), L"rb", _SH_DENYNO);
+    if (!f) return false;
+    std::vector<uint8_t> b;
+    uint8_t chunk[65536];
+    size_t n;
+    while ((n = fread(chunk, 1, sizeof chunk, f)) > 0) b.insert(b.end(), chunk, chunk + n);
+    fclose(f);
+    if (b.size() < 12 || memcmp(b.data(), "RIFF", 4) != 0 || memcmp(b.data() + 8, "WAVE", 4) != 0) return false;
+    bool haveFmt = false;
+    for (size_t p = 12; p + 8 <= b.size();) {
+        uint32_t len = *reinterpret_cast<uint32_t*>(&b[p + 4]);
+        if (p + 8 + len > b.size()) break;
+        if (memcmp(&b[p], "fmt ", 4) == 0 && len >= 16) {
+            memcpy(&out.format, &b[p + 8], 16);
+            out.format.cbSize = 0;
+            haveFmt = out.format.wFormatTag == WAVE_FORMAT_PCM;
+        } else if (memcmp(&b[p], "data", 4) == 0) {
+            out.data.assign(b.begin() + p + 8, b.begin() + p + 8 + len);
+        }
+        p += 8 + len + (len & 1);
+    }
+    return haveFmt && !out.data.empty();
+}
+
+void SetUpSounds() {
+    if (FAILED(XAudio2Create(&g_audio, 0, XAUDIO2_DEFAULT_PROCESSOR)) || !g_audio) {
+        Log("sound: XAudio2 unavailable");
+        return;
+    }
+    if (FAILED(g_audio->CreateMasteringVoice(&g_master))) {
+        Log("sound: no mastering voice");
+        return;
+    }
+    std::wstring ini = PluginDir() + L"\\snake.ini";
+    float volume = GetPrivateProfileIntW(L"Snake", L"ShotVolume", 70, ini.c_str()) / 100.0f;
+    g_master->SetVolume(volume);
+    uint32_t weapons = g_snake.weapon_count(g_runtime);
+    g_shotSounds.resize(weapons);
+    for (uint32_t i = 0; i < weapons; ++i) {
+        // "snake\wp_west_ar_010.nif" -> "wp_west_ar_010"
+        std::string mesh = g_snake.weapon_mesh(g_runtime, i) ? g_snake.weapon_mesh(g_runtime, i) : "";
+        size_t slash = mesh.find_last_of("\\/"), dot = mesh.rfind('.');
+        std::string id = mesh.substr(slash + 1, dot - slash - 1);
+        std::wstring path = PluginDir() + L"\\snake_sounds\\" + std::wstring(id.begin(), id.end()) + L"_shot.wav";
+        ShotSound& s = g_shotSounds[i];
+        if (!ReadWav(path, s)) {
+            Log("sound: no shot sound for %s (%s)", id.c_str(), Narrow(path).c_str());
+            s.data.clear();
+            continue;
+        }
+        for (int v = 0; v < 8; ++v) {
+            IXAudio2SourceVoice* voice = nullptr;
+            if (SUCCEEDED(g_audio->CreateSourceVoice(&voice, &s.format))) s.voices.push_back(voice);
+        }
+        Log("sound: %s shot %u Hz x%u, %.2f s, %zu voices, volume %.2f", id.c_str(), s.format.nSamplesPerSec,
+            s.format.nChannels, s.data.size() / double(s.format.nAvgBytesPerSec), s.voices.size(), volume);
+    }
+}
+
+// Muzzle flash: the exported gun mesh has four flash shapes
+// ("muzzle_flash:0".."3", one per flipbook cell); one random cell shows for
+// a few frames after each shot.
+std::atomic<int> g_flashCell{-1};
+std::atomic<int64_t> g_flashUntil{0};  // steady_clock milliseconds
+
+int64_t NowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+}
+
+void TriggerFlash() {
+    static uint32_t seed = 12345;
+    seed = seed * 1664525u + 1013904223u;
+    g_flashCell = static_cast<int>((seed >> 16) % 4);
+    g_flashUntil = NowMs() + 45;
+}
+
+void PlayShot(int weapon) {
+    if (weapon < 0 || weapon >= (int)g_shotSounds.size()) return;
+    ShotSound& s = g_shotSounds[weapon];
+    if (s.voices.empty()) return;
+    IXAudio2SourceVoice* v = s.voices[s.next++ % s.voices.size()];
+    v->Stop();
+    v->FlushSourceBuffers();
+    XAUDIO2_BUFFER buf{};
+    buf.Flags = XAUDIO2_END_OF_STREAM;
+    buf.AudioBytes = static_cast<UINT32>(s.data.size());
+    buf.pAudioData = s.data.data();
+    if (SUCCEEDED(v->SubmitSourceBuffer(&buf))) v->Start();
+}
+
 // ---- Snake thread ---------------------------------------------------------------
 //
 // Snake's controller and the retarget run on this plugin's own thread at a
@@ -832,6 +946,8 @@ struct Control {
     int fire = -1;
     std::string stance;  // requested stance, consumed by the Snake thread
     int draw = 1;        // draw hands (face the camera) while aiming
+    int flash = 1;       // muzzle flash (diagnostics)
+    int launch = 1;      // launch projectiles (diagnostics)
     bool dump = false;   // log the camera once (diagnostics)
 };
 Control g_control;
@@ -858,6 +974,8 @@ void PollControl(int curStance) {
         else if (k == "fire") g_control.fire = std::atoi(v.c_str());
         else if (k == "stance") g_control.stance = v;
         else if (k == "draw") g_control.draw = std::atoi(v.c_str());
+        else if (k == "flash") g_control.flash = std::atoi(v.c_str());
+        else if (k == "launch") g_control.launch = std::atoi(v.c_str());
         else if (k == "dump") g_control.dump = v == "1";
     }
     fclose(f);
@@ -950,7 +1068,13 @@ void SnakeThread() {
         {
             SnakeShot shots[16];
             uint32_t k = g_snake.player_take_shots(g_player, shots, 16);
-            QueueShots(shots, k);
+            if (g_control.launch) QueueShots(shots, k);
+            if (k) {
+                SnakeStatus st{};
+                g_snake.player_status(g_player, &st);
+                PlayShot(st.weapon);
+                if (g_control.flash) TriggerFlash();
+            }
             if (g_control.dump) {
                 g_control.dump = false;
                 DumpCamera(ThePlayer());
@@ -1029,6 +1153,12 @@ using DemandFn = uint32_t (*)(const char* path, void** out, const ModelArgs* arg
 
 std::atomic<void*> g_gunNode{nullptr};    // loaded model root
 std::atomic<void*> g_gunParent{nullptr};  // hand node it is attached to
+// The muzzle flash is a separate mesh beside the gun (inside the gun's node
+// its additive shapes made Skyrim draw the whole gun unlit).
+constexpr const char* kFlashMesh = "snake\\muzzle_flash.nif";
+std::atomic<void*> g_flashNode{nullptr};
+std::atomic<void*> g_flashParent{nullptr};
+std::vector<SnakeVec3> g_muzzles;  // per weapon, in its mesh frame
 std::atomic<bool> g_gunQueued{false};
 bool g_gunLoadFailed = false;
 
@@ -1051,6 +1181,8 @@ bool SafeAttach(void* parent, void* child) {
     }
 }
 
+void SetHidden(void* node, bool hidden);
+
 class AttachGunTask : public TaskDelegate {
 public:
     void Run() override {
@@ -1070,6 +1202,17 @@ public:
             }
             g_gunNode = node;
         }
+        if (!g_flashNode && g_fire.modelDemand) {
+            void* node = nullptr;
+            uint32_t err = SafeDemand(kFlashMesh, &node);
+            Log("muzzle flash model %s: error %u, node %p", kFlashMesh, err, node);
+            if (err == 0 && node) g_flashNode = node;
+            for (uint32_t i = 0; i < g_snake.weapon_count(g_runtime); ++i) {
+                SnakeVec3 m{};
+                g_snake.weapon_muzzle(g_runtime, i, &m);
+                g_muzzles.push_back(m);
+            }
+        }
         void* gun = g_gunNode;
         if (gun && g_gunParent != hand) {
             if (SafeAttach(hand, gun)) {
@@ -1080,24 +1223,14 @@ public:
                 Log("attaching the gun model faulted");
             }
         }
+        void* flash = g_flashNode;
+        if (flash && g_flashParent != hand && SafeAttach(hand, flash)) {
+            g_flashParent = hand;
+            SetHidden(flash, true);
+        }
     }
     void Dispose() override { delete this; }
 };
-
-// World transform of `node` from its parent's world and its own local.
-void UpdateWorld(void* node, void* parent) {
-    float prot[9], ppos[3];
-    memcpy(prot, &At<float>(parent, kWorldRot), sizeof prot);
-    memcpy(ppos, &At<float>(parent, kWorldPos), sizeof ppos);
-    float ps = At<float>(parent, kWorldScale);
-    float* lp = &At<float>(node, kLocalPos);
-    float scaled[3] = {lp[0] * ps, lp[1] * ps, lp[2] * ps}, rotated[3];
-    MatVec(prot, scaled, rotated);
-    MatMul(prot, &At<float>(node, kLocalRot), &At<float>(node, kWorldRot));
-    float* wp = &At<float>(node, kWorldPos);
-    for (int k = 0; k < 3; ++k) wp[k] = ppos[k] + rotated[k];
-    At<float>(node, kWorldScale) = ps * At<float>(node, kLocalScale);
-}
 
 void SetHidden(void* node, bool hidden) {
     uint32_t& flags = At<uint32_t>(node, 0xF4);
@@ -1112,32 +1245,39 @@ void PlaceGun(void* hand) {
         if (g_tasks && !g_gunQueued.exchange(true)) g_tasks->AddTask(new AttachGunTask());
         return;
     }
+    void* flash = g_flashParent == hand ? static_cast<void*>(g_flashNode) : nullptr;
     if (g_hookGun < 0) {
         SetHidden(gun, true);
+        if (flash) SetHidden(flash, true);
         return;
     }
+    // Local transforms only: Skyrim derives the world transforms (and the
+    // renderer's per-object state) in its next update. Writing the gun's
+    // world transform here, as for the bones, made the renderer draw it as
+    // a flat fog-coloured silhouette on some frames.
     SetHidden(gun, false);
-    QuatToMat(g_hookGunRot, &At<float>(gun, kLocalRot));
+    float* r = &At<float>(gun, kLocalRot);
     float* lp = &At<float>(gun, kLocalPos);
+    QuatToMat(g_hookGunRot, r);
     lp[0] = g_hookGunPos.x;
     lp[1] = g_hookGunPos.y;
     lp[2] = g_hookGunPos.z;
-    UpdateWorld(gun, hand);
-    ForEachChild(gun, [&](void* c) { UpdateWorld(c, gun); });
-    static int diag = 0;
-    if (diag++ == 0) {
-        const float* hp = &At<float>(hand, kWorldPos);
-        const float* gp = &At<float>(gun, kWorldPos);
-        const float* gb = &At<float>(gun, 0xE4);
-        Log("gun %d: local %.1f %.1f %.1f, world %.0f %.0f %.0f (hand %.0f %.0f %.0f), flags %08X, bound %.0f %.0f %.0f r %.0f",
-            g_hookGun, g_hookGunPos.x, g_hookGunPos.y, g_hookGunPos.z, gp[0], gp[1], gp[2], hp[0], hp[1], hp[2],
-            At<uint32_t>(gun, 0xF4), gb[0], gb[1], gb[2], gb[3]);
-        ForEachChild(gun, [&](void* c) {
-            const float* cb = &At<float>(c, 0xE4);
-            Log("  child %s flags %08X bound %.0f %.0f %.0f r %.0f", Name(c) ? Name(c) : "?", At<uint32_t>(c, 0xF4), cb[0],
-                cb[1], cb[2], cb[3]);
-        });
-    }
+    // Flash: same rotation as the gun, at its muzzle; one random cell.
+    if (!flash) return;
+    bool flashing = NowMs() < g_flashUntil && g_hookGun < (int)g_muzzles.size();
+    SetHidden(flash, !flashing);
+    if (!flashing) return;
+    const SnakeVec3& m = g_muzzles[g_hookGun];
+    memcpy(&At<float>(flash, kLocalRot), r, 9 * sizeof(float));
+    float* fp = &At<float>(flash, kLocalPos);
+    float mv[3] = {m.x, m.y, m.z}, rm[3];
+    MatVec(r, mv, rm);
+    for (int k = 0; k < 3; ++k) fp[k] = lp[k] + rm[k];
+    int cell = g_flashCell;
+    ForEachChild(flash, [&](void* c) {
+        const char* name = Name(c);
+        if (name && strncmp(name, "muzzle_flash:", 13) == 0) SetHidden(c, name[13] - '0' != cell);
+    });
 }
 
 // Skyrim's own weapon and shield attach under the WEAPON and SHIELD nodes
@@ -1317,6 +1457,7 @@ void HookedUpdateAnimation(void* self, float delta) {
             if (lock.owns_lock()) {
                 SafeSetWeaponsHidden(self, false);
                 if (void* gun = g_gunNode) SetHidden(gun, true);
+                if (void* flash = g_flashNode) SetHidden(flash, true);
             }
         }
         return;
@@ -1385,6 +1526,7 @@ void OnMessage(SKSEMessagingInterface::Message* msg) {
             if (lib && !InstallInputHook()) Log("could not hook the attack/block handler");
             g_fire.ready = lib && SetUpFiring();
             Log("firing %s", g_fire.ready ? "ready" : "unavailable");
+            SetUpSounds();
             g_running = true;
             g_snakeThread = std::thread(SnakeThread);
             g_snakeThread.detach();

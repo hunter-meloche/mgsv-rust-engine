@@ -17,4 +17,4 @@ target_include_directories(SnakeSKSE PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../crates/snake-ffi/include")
 target_compile_definitions(SnakeSKSE PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(SnakeSKSE PRIVATE /W3 /utf-8 /FI"${SKSE_EXTERN}/include/common/IPrefix.h")
-target_link_libraries(SnakeSKSE PRIVATE shell32 ole32)
+target_link_libraries(SnakeSKSE PRIVATE shell32 ole32 xaudio2)

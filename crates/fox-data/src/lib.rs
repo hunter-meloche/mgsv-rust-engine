@@ -7,6 +7,7 @@ pub mod ftex;
 pub mod frig;
 pub mod lua_table;
 pub mod mtar;
+pub mod sbp;
 mod names;
 
 pub use fmdl::Fmdl;

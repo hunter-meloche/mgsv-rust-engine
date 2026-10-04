@@ -40,6 +40,25 @@ only for now. The WU S.Pistol's textures are incomplete in the install
 (only the two largest mips exist, no `.ftex` headers), so it exports
 untextured.
 
+Muzzle flash: `meshes\snake\muzzle_flash.nif`, built from MGSV's own flame
+flipbook (`fx_mzffir01`) as additive crossed quads, attached beside the gun
+and moved to the weapon's `CNP_MUZZLE_FLASH` for ~45 ms per shot. It is a
+separate mesh on purpose: the plugin writes only local transforms for the
+gun and flash and lets Skyrim derive world transforms (writing them itself,
+as it does for bones, made the renderer draw the gun as a flat
+fog-coloured silhouette on some frames).
+
+Gunshot sound: played with XAudio2 from
+`Data\SKSE\Plugins\snake_sounds\<weapon>_shot.wav` (`ShotVolume` in
+`snake.ini`). MGSV's Wwise event names are hashed, so the MRS-4's shot is
+picked by ear from `common_bank_01.sbp` (most of its sounds are plain PCM;
+`mgsv sound-export` writes one as a `.wav`) and recorded in the weapon table
+(`shot_sound`); until then the plugin is silent.
+
+Exported meshes: Fox triangles wind the other way from Skyrim's, so the
+export reverses them (checked against vanilla meshes, whose triangles face
+along their vertex normals).
+
 How it runs: Snake's controller and the retarget run on the plugin's own
 60 Hz thread; the hook on `PlayerCharacter::UpdateAnimation` (called from
 Skyrim's job threads) only copies the latest pose into the bone nodes and
@@ -47,7 +66,7 @@ never calls into `snake.dll` (calling Rust from the job threads froze the
 game). If anything faults, Snake mode switches itself off.
 
 Testing hooks: `Data/SKSE/Plugins/snake_control.txt` (`enabled=1`, `mode=2`,
-`stance=prone`, `move=run`, `aim=1`, `fire=1`, `draw=0` to keep hands
+`stance=prone`, `move=run`, `aim=1`, `fire=1`, `flash=0`, `launch=0`, `draw=0` to keep hands
 sheathed, `dump=1` to log the camera) drives the plugin without key presses.
 Log: `Documents/My Games/Skyrim Special Edition/SKSE/SnakeSKSE.log`.
 

@@ -88,6 +88,8 @@ enum Cmd {
     Find { pattern: String },
     /// List the clips in an .mtar motion archive (PACKAGE.fpk:INNER).
     Mtar { path: String },
+    /// Decode every clip in every .mtar inside every package.
+    MtarCheck,
 }
 
 /// Read a file from the archives, or from inside a package with `PKG:INNER`.
@@ -265,29 +267,53 @@ fn run() -> Result<()> {
             let m = fox_data::mtar::Mtar::parse(&data)?;
             writeln!(
                 out,
-                "mtar: {} clips, flags {:#x}, table end {:#x}, header {:?}, size {:#x}",
+                "mtar v{}: {} clips, {} track units, {} segments, flags {:#x}, {} skeleton names",
+                m.version,
                 m.entries.len(),
+                m.unit_count,
+                m.segment_count,
                 m.flags,
-                m.table_end,
-                m.header_u16,
-                data.len()
+                m.skeleton.len()
             )?;
-            let named = m
-                .entries
-                .iter()
-                .filter(|e| vfs.dictionary.resolve(e.hash).1)
-                .count();
-            writeln!(out, "names resolved: {named}/{}", m.entries.len())?;
-            for e in &m.entries {
-                let (name, _) = vfs.dictionary.resolve(e.hash);
-                writeln!(
-                    out,
-                    "  {:#08x} frames {:>4}/{:<4} tracks {:>3} aux {:#08x}  {name}",
-                    e.offset, e.frames, e.frames2, e.tracks, e.secondary_offset
-                )?;
+            let bone = |h: u32| -> String {
+                m.skeleton
+                    .iter()
+                    .find(|n| fox_hash::str_code32(n.as_bytes()) == h)
+                    .cloned()
+                    .unwrap_or_else(|| format!("{h:#010x}"))
+            };
+            let units: Vec<String> = m.layout.iter().map(|u| bone(u.name)).collect();
+            writeln!(out, "units: {}", units.join(" "))?;
+            for i in 0..m.entries.len() {
+                let (name, _) = vfs.dictionary.resolve(m.entries[i].hash);
+                match m.clip(&data, i) {
+                    Ok(c) => {
+                        let keys: usize = c
+                            .tracks
+                            .iter()
+                            .flat_map(|t| &t.channels)
+                            .map(|ch| ch.keys.len())
+                            .sum();
+                        let animated = c
+                            .tracks
+                            .iter()
+                            .filter(|t| t.flags & fox_data::mtar::UNIT_STATIC == 0)
+                            .count();
+                        writeln!(
+                            out,
+                            "  {:>4} frames, {:>3}/{} units animated, {:>6} keys  {name}",
+                            c.frame_count,
+                            animated,
+                            c.tracks.len(),
+                            keys
+                        )?;
+                    }
+                    Err(e) => writeln!(out, "  FAILED {name}: {e}")?,
+                }
             }
             Ok(())
         }
+        Cmd::MtarCheck => mtar_check(&vfs),
         Cmd::Find { pattern } => {
             let pkgs: Vec<_> = vfs
                 .iter()
@@ -323,6 +349,72 @@ fn run() -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn mtar_check(vfs: &Vfs) -> Result<()> {
+    let pkgs: Vec<_> = vfs
+        .iter()
+        .filter(|(h, _)| fox_hash::extension_from_id((h >> 51) as u16) == Some("fpk"))
+        .collect();
+    let archives = AtomicUsize::new(0);
+    let clips = AtomicUsize::new(0);
+    let keys = AtomicUsize::new(0);
+    let seen = std::sync::Mutex::new(std::collections::HashSet::new());
+    let failures = std::sync::Mutex::new(Vec::new());
+    pkgs.par_iter().for_each(|(_, r)| {
+        let Ok(data) = vfs.read_ref(*r) else { return };
+        let Ok(pkg) = Fpk::parse(&data) else { return };
+        for e in pkg
+            .entries
+            .iter()
+            .filter(|e| e.clean_path().ends_with(".mtar"))
+        {
+            // The same archive ships in many packages; check each once.
+            if !seen.lock().unwrap().insert(e.md5) {
+                continue;
+            }
+            archives.fetch_add(1, Ordering::Relaxed);
+            let Ok(bytes) = pkg.read(e) else { continue };
+            match fox_data::mtar::Mtar::parse(&bytes) {
+                Ok(m) => {
+                    for i in 0..m.entries.len() {
+                        match m.clip(&bytes, i) {
+                            Ok(c) => {
+                                clips.fetch_add(1, Ordering::Relaxed);
+                                let n: usize = c
+                                    .tracks
+                                    .iter()
+                                    .flat_map(|t| &t.channels)
+                                    .map(|ch| ch.keys.len())
+                                    .sum();
+                                keys.fetch_add(n, Ordering::Relaxed);
+                            }
+                            Err(err) => failures
+                                .lock()
+                                .unwrap()
+                                .push(format!("{} clip {i}: {err}", e.clean_path())),
+                        }
+                    }
+                }
+                Err(err) => failures
+                    .lock()
+                    .unwrap()
+                    .push(format!("{}: {err}", e.clean_path())),
+            }
+        }
+    });
+    let failures = failures.into_inner().unwrap();
+    println!(
+        "mtar archives: {}, clips decoded: {}, keyframes: {}, failures: {}",
+        archives.into_inner(),
+        clips.into_inner(),
+        keys.into_inner(),
+        failures.len()
+    );
+    for f in &failures {
+        println!("  {f}");
+    }
+    Ok(())
 }
 
 fn fmdl_check(vfs: &Vfs) -> Result<()> {

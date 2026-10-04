@@ -17,6 +17,7 @@ fox-lua.workspace = true
 fox-data.workspace = true
 fox-anim.workspace = true
 snake-core.workspace = true
+snake-runtime.workspace = true
 minifb = "0.29"
 flate2.workspace = true
 anyhow.workspace = true

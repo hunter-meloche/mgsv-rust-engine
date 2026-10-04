@@ -1,0 +1,15 @@
+[package]
+name = "snake-runtime"
+description = "Loads Snake's skeleton, rig, clips, models and weapons from a local MGSV: TPP install"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+fox-hash.workspace = true
+fox-archive.workspace = true
+fox-data.workspace = true
+fox-anim.workspace = true
+snake-core.workspace = true
+anyhow.workspace = true

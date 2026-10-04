@@ -588,6 +588,7 @@ dependencies = [
  "minifb",
  "rayon",
  "snake-core",
+ "snake-runtime",
 ]
 
 [[package]]
@@ -942,6 +943,18 @@ version = "0.1.0"
 dependencies = [
  "fox-anim",
  "fox-data",
+]
+
+[[package]]
+name = "snake-runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "fox-anim",
+ "fox-archive",
+ "fox-data",
+ "fox-hash",
+ "snake-core",
 ]
 
 [[package]]

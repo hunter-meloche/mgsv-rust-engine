@@ -6,35 +6,14 @@
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use fox_anim::glam::{Mat4, Quat, Vec3};
-use fox_anim::{HumanRig, Pose, Skeleton, SkinnedModel};
+use fox_anim::glam::{Mat4, Vec3};
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
-use snake_core::{
-    Aabb, Ballistics, BoxWorld, ClipLibrary, Collision, Controller, Input, Stance, WeaponRig,
-    WeaponStats,
-};
+use snake_core::{Aabb, Ballistics, BoxWorld, Collision, Input, Stance};
 
 use crate::raster::Raster;
 
-pub struct Gun {
-    pub model: SkinnedModel,
-    pub rest: Pose,
-    pub stats: WeaponStats,
-    pub rig: WeaponRig,
-    /// Where it rides when not in the hands (bone and offset); hidden if none.
-    pub back: Option<(usize, (Quat, Vec3))>,
-    pub color: Vec3,
-}
-
-pub struct Assets {
-    pub skel: Skeleton,
-    pub rig: HumanRig,
-    pub clips: ClipLibrary,
-    /// (model, base colour)
-    pub parts: Vec<(SkinnedModel, Vec3)>,
-    /// Carried weapons, in slot order (keys 1, 2, ...).
-    pub guns: Vec<Gun>,
-}
+/// What `mgsv play` draws and drives (loaded by `snake_runtime`).
+pub use snake_runtime::SnakeAssets as Assets;
 
 /// Automation for smoke tests: stop after `frames`, save the last frame,
 /// and optionally feed scripted input instead of the keyboard.
@@ -77,12 +56,8 @@ fn test_range() -> (BoxWorld, Vec<bool>) {
 const HELP: &str = "WASD move, Shift dash, Ctrl walk, C crouch, Z prone, RMB aim, LMB fire, R reload, drag/QE camera, Esc quit";
 
 pub fn run(assets: Assets, opts: Options) -> Result<()> {
-    let mut ctl = Controller::new(&assets.clips, snake_core::ClipNames::default())
-        .map_err(anyhow::Error::msg)?;
-    for g in &assets.guns {
-        ctl.equip(&assets.clips, g.stats.clone(), g.rig.clone())
-            .map_err(anyhow::Error::msg)?;
-    }
+    let mut ctl = assets.controller()?;
+
     let mut window = Window::new(
         "Snake (mgsv play)",
         WIDTH,
@@ -326,7 +301,7 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
         }
         // Weapons: the one in use in the hands while aiming/reloading; others
         // (and the one in use when lowered) on their holster points, if any.
-        for (i, g) in assets.guns.iter().enumerate() {
+        for (i, g) in assets.weapons.iter().enumerate() {
             let in_hand = ctl.current == Some(i) && ctl.weapon_in_hand();
             let (gr, gp) = if in_hand {
                 g.rig.gun_transform(&pose)

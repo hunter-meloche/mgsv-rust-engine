@@ -579,7 +579,7 @@ bool SetUpFiring() {
     auto& bullet = At<ProjectileData>(g_fire.projectile, kProjData);
     bullet.flags = (bullet.flags & ~kProjCanPickUp) | kProjSupersonic | kProjNoAimCorrection;
     bullet.range = 100000.0f;  // ~1.4 km
-    int damage = IniInt(L"BulletDamage", 12);
+    int damage = IniInt(L"BulletDamage", 48);
     At<uint16_t>(g_fire.weapon, kWeapDamage) = static_cast<uint16_t>(std::clamp(damage, 0, 65535));
     At<float>(g_fire.ammo, kAmmoDamage) = 0.0f;
     At<void*>(g_fire.ammo, kAmmoProjectile) = g_fire.projectile;

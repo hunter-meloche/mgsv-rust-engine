@@ -28,8 +28,8 @@ $ini = @"
 MgsvDir=$mgsv
 ; This repo's dictionaries folder.
 DictionariesDir=$(Join-Path $repo "dictionaries")
-; Damage of each bullet (Skyrim scale; a Hunting Bow does 7).
-BulletDamage=12
+; Damage of each bullet (Skyrim scale: a Hunting Bow does 7, a Daedric Bow 19).
+BulletDamage=48
 "@
 Set-Content -Path (Join-Path $plugins "snake.ini") -Value $ini -Encoding ASCII
 

@@ -480,6 +480,249 @@ pub fn install(lua: &Lua, trace: Arc<Mutex<Trace>>) -> mlua::Result<()> {
         "GetLastResult",
         lua.create_function(move |_, ()| Ok(result_ok.clone()))?,
     )?;
+
+    let store_of_global = |name: &str| -> mlua::Result<Shared> {
+        Ok(lua
+            .globals()
+            .get::<mlua::AnyUserData>(name)?
+            .borrow::<VarStoreHandle>()?
+            .store
+            .clone())
+    };
+    lua.set_app_data(Stores {
+        vars: store_of_global("vars")?,
+        svars: store_of_global("svars")?,
+        gvars: store_of_global("gvars")?,
+    });
+    install_slots(lua, &m)?;
+    Ok(())
+}
+
+// --- Save slots ---------------------------------------------------------------
+//
+// `TppScriptVars` keeps numbered save slots (TppDefine.SAVE_SLOT.*) holding
+// copies of variables; files are written from and read into them. Scripts
+// use them to carry state across mission loads: the title menu writes the
+// prologue's start sequence into the CHECK_POINT slot
+// (`SetVarValueInSlot(slot, "svars", "seq_sequence", n)`), and mission start
+// restores svars from it with `LoadVarsFromSlot`.
+//
+// Group bits select stores: GROUP_BIT_VARS (1) = vars, GROUP_BIT_GVARS (4) =
+// gvars, and 8 (part of GROUP_BIT_ALL = 15) is taken to be svars.
+// Category masks filter by each variable's declared category.
+// TODO(re): confirm the svars group bit and the role of bit 2 (cvars).
+// Slots live in memory only; writing them to files is not implemented yet.
+
+struct Stores {
+    vars: Shared,
+    svars: Shared,
+    gvars: Shared,
+}
+
+type SlotKey = (&'static str, String);
+
+#[derive(Default)]
+struct Slots {
+    slots: HashMap<i64, HashMap<SlotKey, Vec<Scalar>>>,
+}
+
+const STORE_GROUPS: [(&str, i64); 3] = [("vars", 1), ("gvars", 4), ("svars", 8)];
+
+fn store_name(name: &str) -> Option<&'static str> {
+    STORE_GROUPS.iter().map(|(n, _)| *n).find(|n| *n == name)
+}
+
+fn store_of(lua: &Lua, name: &str) -> Option<Shared> {
+    let s = lua.app_data_ref::<Stores>()?;
+    Some(match name {
+        "vars" => s.vars.clone(),
+        "gvars" => s.gvars.clone(),
+        "svars" => s.svars.clone(),
+        _ => return None,
+    })
+}
+
+fn slots(lua: &Lua) -> mlua::AppDataRefMut<'_, Slots> {
+    if lua.app_data_ref::<Slots>().is_none() {
+        lua.set_app_data(Slots::default());
+    }
+    lua.app_data_mut::<Slots>().expect("installed above")
+}
+
+impl Scalar {
+    /// Best-effort scalar for a value written to a slot without a declared type.
+    fn infer(v: &Value) -> Option<Self> {
+        Some(match v {
+            Value::Boolean(b) => Scalar::Bool(*b),
+            Value::Integer(i) => Scalar::Int(*i),
+            Value::Number(n) if n.fract() == 0.0 => Scalar::Int(*n as i64),
+            Value::Number(n) => Scalar::Float(*n as f32),
+            _ => return None,
+        })
+    }
+}
+
+/// A slot id, or the first element of a `{slot, ...}` table (CopySlot form).
+fn slot_id(v: &Value) -> Option<i64> {
+    match v {
+        Value::Integer(i) => Some(*i),
+        Value::Number(n) => Some(*n as i64),
+        Value::Table(t) => t.raw_get::<Option<i64>>(1).ok().flatten(),
+        _ => None,
+    }
+}
+
+fn install_slots(lua: &Lua, m: &Table) -> mlua::Result<()> {
+    slots(lua);
+    m.raw_set(
+        "SetVarValueInSlot",
+        lua.create_function(
+            |lua, (slot, store, name, a, b): (Value, String, String, Value, Value)| {
+                let (Some(slot), Some(store)) = (slot_id(&slot), store_name(&store)) else {
+                    return Ok(());
+                };
+                // (slot, store, name, value) or (slot, store, name, index, value)
+                let (index, value) = match b {
+                    Value::Nil => (0usize, a),
+                    v => (
+                        match a {
+                            Value::Integer(i) => i.max(0) as usize,
+                            Value::Number(n) => n.max(0.0) as usize,
+                            _ => 0,
+                        },
+                        v,
+                    ),
+                };
+                let declared = store_of(lua, store)
+                    .and_then(|s| s.borrow().vars.get(&name).map(|v| (v.ty, v.values.len())));
+                let scalar = match declared {
+                    Some((ty, _)) => Scalar::coerce(ty, &value)?,
+                    None => match Scalar::infer(&value) {
+                        Some(s) => s,
+                        None => return Ok(()),
+                    },
+                };
+                let len = declared.map_or(index + 1, |(_, n)| n.max(index + 1));
+                let mut sl = slots(lua);
+                let entry = sl
+                    .slots
+                    .entry(slot)
+                    .or_default()
+                    .entry((store, name))
+                    .or_insert_with(Vec::new);
+                if entry.len() < len {
+                    entry.resize(len, scalar);
+                }
+                entry[index] = scalar;
+                Ok(())
+            },
+        )?,
+    )?;
+    m.raw_set(
+        "GetVarValueInSlot",
+        lua.create_function(
+            |lua, (slot, store, name, index): (Value, String, String, Option<i64>)| {
+                let (Some(slot), Some(store)) = (slot_id(&slot), store_name(&store)) else {
+                    return Ok(Value::Nil);
+                };
+                let sl = slots(lua);
+                Ok(sl
+                    .slots
+                    .get(&slot)
+                    .and_then(|s| s.get(&(store, name)))
+                    .and_then(|v| v.get(index.unwrap_or(0).max(0) as usize))
+                    .map_or(Value::Nil, |x| x.to_lua()))
+            },
+        )?,
+    )?;
+    m.raw_set(
+        "SaveVarsToSlot",
+        lua.create_function(
+            |lua,
+             (slot, groups, categories, _rest): (
+                Value,
+                Option<i64>,
+                Option<i64>,
+                mlua::MultiValue,
+            )| {
+                let Some(slot) = slot_id(&slot) else {
+                    return Ok(());
+                };
+                let (groups, categories) = (groups.unwrap_or(15), categories.unwrap_or(-1));
+                for (name, bit) in STORE_GROUPS {
+                    if groups & bit == 0 {
+                        continue;
+                    }
+                    let Some(store) = store_of(lua, name) else {
+                        continue;
+                    };
+                    let copied: Vec<(String, Vec<Scalar>)> = store
+                        .borrow()
+                        .vars
+                        .iter()
+                        .filter(|(_, v)| v.category & categories != 0)
+                        .map(|(k, v)| (k.clone(), v.values.clone()))
+                        .collect();
+                    let mut sl = slots(lua);
+                    let s = sl.slots.entry(slot).or_default();
+                    for (k, v) in copied {
+                        s.insert((name, k), v);
+                    }
+                }
+                Ok(())
+            },
+        )?,
+    )?;
+    m.raw_set(
+        "LoadVarsFromSlot",
+        lua.create_function(
+            |lua, (slot, groups, categories): (Value, Option<i64>, Option<i64>)| {
+                let Some(slot) = slot_id(&slot) else {
+                    return Ok(());
+                };
+                let (groups, categories) = (groups.unwrap_or(15), categories.unwrap_or(-1));
+                let entries: Vec<(SlotKey, Vec<Scalar>)> = slots(lua)
+                    .slots
+                    .get(&slot)
+                    .map(|s| s.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+                    .unwrap_or_default();
+                for ((name, var), values) in entries {
+                    let bit = STORE_GROUPS
+                        .iter()
+                        .find(|(n, _)| *n == name)
+                        .map_or(0, |(_, b)| *b);
+                    if groups & bit == 0 {
+                        continue;
+                    }
+                    let Some(store) = store_of(lua, name) else {
+                        continue;
+                    };
+                    let mut st = store.borrow_mut();
+                    if let Some(live) = st.vars.get_mut(&var) {
+                        if live.category & categories == 0 {
+                            continue;
+                        }
+                        for (dst, src) in live.values.iter_mut().zip(&values) {
+                            *dst = Scalar::coerce(live.ty, &src.to_lua())?;
+                        }
+                    }
+                }
+                Ok(())
+            },
+        )?,
+    )?;
+    m.raw_set(
+        "CopySlot",
+        lua.create_function(|lua, (dst, src): (Value, Value)| {
+            let (Some(dst), Some(src)) = (slot_id(&dst), slot_id(&src)) else {
+                return Ok(());
+            };
+            let mut sl = slots(lua);
+            let copy = sl.slots.get(&src).cloned().unwrap_or_default();
+            sl.slots.insert(dst, copy);
+            Ok(())
+        })?,
+    )?;
     Ok(())
 }
 

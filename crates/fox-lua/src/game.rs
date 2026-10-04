@@ -22,8 +22,40 @@ const HOOK_FRAME_LIMIT: usize = 100_000;
 /// Mission switches at the same frame beyond this are treated as a loop.
 const MAX_SWITCHES_PER_FRAME: usize = 4;
 
+/// An engine message to deliver at a given frame: stands in for player input
+/// on native UI (e.g. `UI`/`PressStart`, `UI`/`TitleMenu` from `GameStart`).
+#[derive(Clone, Debug)]
+pub struct ScheduledMessage {
+    pub frame: u64,
+    pub class: String,
+    pub message: String,
+    /// Sender name; posted as `StrCode32(sender)` in the first argument.
+    pub sender: Option<String>,
+}
+
+impl std::str::FromStr for ScheduledMessage {
+    type Err = String;
+    /// `FRAME:CLASS:MESSAGE[:SENDER]`, e.g. `200:UI:TitleMenu:GameStart`.
+    fn from_str(s: &str) -> Result<Self, String> {
+        let p: Vec<&str> = s.split(':').collect();
+        if !(3..=4).contains(&p.len()) {
+            return Err(format!("expected FRAME:CLASS:MESSAGE[:SENDER], got {s}"));
+        }
+        Ok(Self {
+            frame: p[0].parse().map_err(|_| format!("bad frame in {s}"))?,
+            class: p[1].to_string(),
+            message: p[2].to_string(),
+            sender: p.get(3).map(|x| x.to_string()),
+        })
+    }
+}
+
 pub struct Game<'a> {
     pub host: &'a FoxLua,
+    /// Messages to post at given frames (input stand-ins).
+    pub scheduled: Vec<ScheduledMessage>,
+    /// Record every posted engine message in `events`.
+    pub log_messages: bool,
     pub mission: Option<Mission>,
     pub mission_code: Option<i64>,
     /// Human-readable events (`frame: text`), for tools and tests.
@@ -34,6 +66,8 @@ impl<'a> Game<'a> {
     pub fn new(host: &'a FoxLua) -> Self {
         Self {
             host,
+            scheduled: Vec::new(),
+            log_messages: false,
             mission: None,
             mission_code: None,
             events: Vec::new(),
@@ -55,6 +89,13 @@ impl<'a> Game<'a> {
         let f = self.frame_no();
         for e in self.host.take_events() {
             self.events.push((f, e));
+        }
+        if self.log_messages {
+            for m in crate::messages::take_log(&self.host.lua) {
+                self.events.push((f, format!("message {m}")));
+            }
+        } else {
+            crate::messages::take_log(&self.host.lua);
         }
     }
 
@@ -119,6 +160,29 @@ impl<'a> Game<'a> {
 
     /// One frame: mission update, clock advance, then any mission switch.
     pub fn frame(&mut self) -> mlua::Result<()> {
+        let now = self.frame_no();
+        let (due, keep): (Vec<_>, Vec<_>) = std::mem::take(&mut self.scheduled)
+            .into_iter()
+            .partition(|m| m.frame <= now);
+        self.scheduled = keep;
+        for m in due {
+            let a0 = m.sender.as_ref().map_or(mlua::Value::Nil, |s| {
+                mlua::Value::Integer(fox_hash::str_code32(s.as_bytes()) as i64)
+            });
+            let nil = mlua::Value::Nil;
+            crate::messages::post(
+                &self.host.lua,
+                &m.class,
+                &m.message,
+                [a0, nil.clone(), nil.clone(), nil],
+            );
+            let from = m
+                .sender
+                .as_ref()
+                .map(|s| format!(" from {s}"))
+                .unwrap_or_default();
+            self.event(format!("posted {}/{}{from}", m.class, m.message));
+        }
         if let Some(m) = &self.mission {
             m.update(self.host)?;
         }
@@ -141,7 +205,12 @@ impl<'a> Game<'a> {
                 }
                 _ => String::new(),
             };
-            self.event(format!("LoadMission {code} ({opts})"));
+            let call = if req.reload {
+                "RequestToReload"
+            } else {
+                "LoadMission"
+            };
+            self.event(format!("{call} {code} ({opts})"));
             self.load_mission_code(code)?;
         }
         Err(mlua::Error::runtime("mission switch loop"))

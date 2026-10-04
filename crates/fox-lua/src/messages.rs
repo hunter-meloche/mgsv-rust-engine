@@ -40,6 +40,20 @@ pub struct MessageState {
     paused: bool,
     /// Delivered message count by `class.message`, for diagnostics.
     pub delivered: HashMap<String, u64>,
+    /// Posted messages by name (`class/message arg0`), for the event log.
+    log: Vec<String>,
+}
+
+fn describe(class: &str, id: &str, a0: &Value) -> String {
+    match a0 {
+        Value::Nil => format!("{class}/{id}"),
+        v => format!("{class}/{id} {}", v.to_string().unwrap_or_default()),
+    }
+}
+
+/// Take the log of posted messages.
+pub fn take_log(lua: &Lua) -> Vec<String> {
+    std::mem::take(&mut state(lua).log)
 }
 
 fn state(lua: &Lua) -> mlua::AppDataRefMut<'_, MessageState> {
@@ -51,7 +65,10 @@ fn state(lua: &Lua) -> mlua::AppDataRefMut<'_, MessageState> {
 
 /// Queue a message for delivery at the next delivery point.
 pub fn post(lua: &Lua, class: &str, id: &str, args: [Value; 4]) {
-    state(lua).queue.push_back(Message {
+    let entry = describe(class, id, &args[0]);
+    let mut st = state(lua);
+    st.log.push(entry);
+    st.queue.push_back(Message {
         class: fox_hash::str_code32(class.as_bytes()),
         id: fox_hash::str_code32(id.as_bytes()),
         args,
@@ -103,6 +120,7 @@ pub fn tick_timers(lua: &Lua, now: f64) {
     done.sort_unstable();
     for id in done {
         st.timers.remove(&id);
+        st.log.push(format!("Timer/Finish {id}"));
         st.queue.push_back(Message {
             class: fox_hash::str_code32(b"Timer"),
             id: fox_hash::str_code32(b"Finish"),

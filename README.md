@@ -45,7 +45,7 @@ cargo build --release
 | `mgsv extract [FILTER] [--unpack-fpk]` | Extract to `extracted/` (gitignored) |
 | `mgsv fpk PATH` | List an `.fpk`/`.fpkd` package |
 | `mgsv boot [--all]` | Run the boot scripts in the Rust Lua host and report native API use |
-| `mgsv run [--frames N] [--mission-code C] [--watch EXPR]...` | Boot, then run the game loop from the `init` mission, following mission switches; print events, sequence changes and watched Lua expressions |
+| `mgsv run [--frames N] [--watch EXPR]... [--post F:CLASS:MSG[:SENDER]]... [--messages]` | Boot and run the game loop from the `init` mission, following mission switches. Prints events, sequence changes and watched Lua expressions; `--post` injects UI messages as stand-ins for player input |
 | `mgsv fox2 PATH` | Dump a `.fox2` DataSet (`PKG.fpkd:/inner/path.fox2` for files inside packages) |
 | `mgsv fox2-check` | Parse every `.fox2` in every package and report failures |
 

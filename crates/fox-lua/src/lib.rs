@@ -118,7 +118,7 @@ impl FoxLua {
                 .unwrap()
                 .push(format!("script block {block} loaded {packages}"));
         }
-        if let Some(e) = ui::tick(&self.lua)? {
+        if let Some(e) = ui::tick(&self.lua, now)? {
             self.events.lock().unwrap().push(e);
         }
         Ok(())

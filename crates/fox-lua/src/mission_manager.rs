@@ -18,6 +18,9 @@ pub struct MissionManager {
     /// Argument of the last `LoadLocation` call, until taken.
     load_location: Option<RegistryKey>,
     start_requested: bool,
+    /// `Mission.RequestToReload()`: reload the current mission
+    /// (`TppMission.Load` uses it when the target equals the current mission).
+    reload_requested: bool,
 }
 
 /// A pending mission switch.
@@ -25,6 +28,8 @@ pub struct MissionRequest {
     pub mission: Value,
     pub location: Value,
     pub start: bool,
+    /// Requested with `RequestToReload` rather than `LoadMission`.
+    pub reload: bool,
 }
 
 fn mgr(lua: &Lua) -> mlua::AppDataRefMut<'_, MissionManager> {
@@ -92,16 +97,34 @@ pub fn install(
             Ok(())
         })?,
     )?;
+    m.raw_set(
+        "RequestToReload",
+        lua.create_function(|lua, _: mlua::MultiValue| {
+            mgr(lua).reload_requested = true;
+            Ok(())
+        })?,
+    )?;
     Ok(())
 }
 
-/// Take the pending switch request, if `LoadMission` was called.
+/// Take the pending switch request, if `LoadMission` or `RequestToReload`
+/// was called.
 pub fn take_request(lua: &Lua) -> mlua::Result<Option<MissionRequest>> {
     let (mission, location, start) = {
         let mut m = mgr(lua);
         let Some(mission) = m.load_mission.take() else {
+            if std::mem::take(&mut m.reload_requested) {
+                let start = std::mem::take(&mut m.start_requested);
+                return Ok(Some(MissionRequest {
+                    mission: Value::Nil,
+                    location: Value::Nil,
+                    start,
+                    reload: true,
+                }));
+            }
             return Ok(None);
         };
+        m.reload_requested = false;
         (
             mission,
             m.load_location.take(),
@@ -115,6 +138,7 @@ pub fn take_request(lua: &Lua) -> mlua::Result<Option<MissionRequest>> {
             None => Value::Nil,
         },
         start,
+        reload: false,
     };
     lua.remove_registry_value(mission)?;
     if let Some(k) = location {

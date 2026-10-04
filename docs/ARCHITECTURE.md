@@ -153,6 +153,26 @@ advances the frame, then follows mission switch requests.
   frame runs the packages' scripts and the block becomes INACTIVE, or ACTIVE
   if `Activate` came during the load (`TppScriptBlock.Load` activates right
   after requesting).
+* **Fades.** `FadeFunction.CallFadeIn/CallFadeOut(duration, a0, a1)`
+  (`0x1405c7c80`) runs one fade at a time on the simulated clock. When it
+  ends it posts `UI`/`EndFadeIn` or `EndFadeOut` with `a0, a1`; scripts pass
+  the fade's name hash as `a0` and match it as the sender.
+* **Splash screens.** `SplashScreen.Create/Show/SetStateCallback/Delete/
+  GetSplashScreenWithName`. When a shown splash finishes it is removed and
+  its callback gets `(handle, STATE_DELETE = 5)`. The publisher logos chain
+  through these callbacks.
+* **Save slots.** `TppScriptVars.Set/GetVarValueInSlot`, `SaveVarsToSlot`,
+  `LoadVarsFromSlot` and `CopySlot` work on in-memory numbered slots. Group
+  bits select stores (vars 1, gvars 4, svars 8 assumed) and category masks
+  select variables. Nothing is written to files yet.
+* **Mission reload.** `TppMission.Load` to the current mission calls
+  `Mission.RequestToReload()` rather than `LoadMission`; the host handles
+  both the same way.
+* **Build identity.** `TppGameSequence.IsMaster()` is true (retail data) and
+  `TppSystemUtility.GetCurrentGameMode()` is `"TPP"` (single-player scope).
+* **Input stand-ins.** With no renderer or controller, `mgsv run --post`
+  injects the UI messages a player's button presses would produce (for
+  example `UI`/`PressStart` and `UI`/`TitleMenu` from `GameStart`).
 * **Pre-title UI.** `TppUiCommand.StartPreTitleSequence` (state machine at
   `0x14085c8c0`) shows the `PreTitle` layout and then calls the script
   function `TppVarInit.StartTitle()`. That function chooses the title mission
@@ -170,8 +190,18 @@ advances the frame, then follows mission switch requests.
   five packages, and its four Cyprus script blocks stream their demo and
   small-mission packages.
 * Mission 10010 finishes `OnInitialize` and enters
-  `Seq_Demo_StartHasTitleMission`, the title-menu state. Advancing past it
-  needs title-menu UI messages (`TitleMenu`/`PressStart`, `GameStart`).
+  `Seq_Demo_StartHasTitleMission`, the title-menu state. Here the publisher
+  logo splashes play through their state callbacks.
+* With `--post 200:UI:PressStart --post 300:UI:TitleMenu:GameStart` the title
+  flow goes through `Seq_Game_PushStart` and `Seq_Game_TitleMenu` to
+  `Seq_Game_ChunkInstalled`. The `GameStart` fade-out ends with
+  `EndFadeOut` from `GameStart`, the new-game handler clears title mode, and
+  mission 10010 reloads (`RequestToReload`).
+* After that reload the mission starts in title mode again
+  (`Seq_Demo_StartHasTitleMission`) instead of the opening. The open
+  question is how retail picks the post-title start: what the new-game path
+  leaves in the checkpoint slot or gvars, and how the title sequence's
+  `OnEnter` reads it.
 
 ## Recovered from the binary
 

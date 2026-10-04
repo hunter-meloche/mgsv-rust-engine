@@ -66,6 +66,13 @@ enum Cmd {
         /// Print every unimplemented native that was called.
         #[arg(long)]
         all: bool,
+        /// Post an engine message at a frame, standing in for player input:
+        /// FRAME:CLASS:MESSAGE[:SENDER] (repeatable), e.g. 200:UI:PressStart
+        #[arg(long)]
+        post: Vec<fox_lua::game::ScheduledMessage>,
+        /// Log every engine message posted (fades, timers, UI).
+        #[arg(long)]
+        messages: bool,
     },
     /// Dump a .fox2 DataSet. PATH is an archive path, or `PACKAGE:INNER` for
     /// a file inside an .fpk/.fpkd (e.g. `/Assets/.../init.fpkd:/Assets/.../init.fox2`).
@@ -203,7 +210,9 @@ fn run() -> Result<()> {
             mission_code,
             watch,
             all,
-        } => run_game(vfs, frames, mission_code, &watch, all),
+            post,
+            messages,
+        } => run_game(vfs, frames, mission_code, &watch, all, post, messages),
         Cmd::Fox2 { path } => {
             let ds = fox_data::DataSet::parse(&read_any(&vfs, &path)?)?;
             out.write_all(ds.to_text(&fox_names(&vfs)).as_bytes())?;
@@ -285,9 +294,19 @@ fn boot(vfs: Vfs, all: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_game(vfs: Vfs, frames: usize, mission_code: i64, watch: &[String], all: bool) -> Result<()> {
+fn run_game(
+    vfs: Vfs,
+    frames: usize,
+    mission_code: i64,
+    watch: &[String],
+    all: bool,
+    post: Vec<fox_lua::game::ScheduledMessage>,
+    log_messages: bool,
+) -> Result<()> {
     let host = new_host(vfs)?;
     let mut game = fox_lua::game::Game::new(&host);
+    game.scheduled = post;
+    game.log_messages = log_messages;
 
     // Watched expressions; the current sequence is always included.
     let mut exprs = vec!["TppSequence.GetCurrentSequenceName()".to_string()];

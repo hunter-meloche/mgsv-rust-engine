@@ -164,94 +164,6 @@ fn install_bitop(host: &FoxLua) -> mlua::Result<()> {
     lua.globals().raw_set("bit", bit)
 }
 
-/// `SplashScreen`: timed full-screen logos shown during boot.
-///
-/// `Create(name, texture, ...)` returns a handle; `Show(handle, fade_in, hold,
-/// fade_out)` starts it; `GetSplashScreenWithName(name)` returns the handle
-/// until the splash has finished, then nil (start.lua polls this each frame).
-fn install_splash_screen(host: &FoxLua) -> mlua::Result<()> {
-    use std::collections::HashMap;
-
-    struct Splash {
-        handle: mlua::RegistryKey,
-        ends_at: Option<f64>,
-    }
-    let splashes: std::sync::Arc<std::sync::Mutex<HashMap<String, Splash>>> = Default::default();
-    let m = module(&host.lua, "SplashScreen")?;
-
-    {
-        let s = splashes.clone();
-        def(
-            host,
-            &m,
-            "SplashScreen",
-            "Create",
-            move |lua, (name, texture, _rest): (String, Option<String>, MultiValue)| {
-                let handle = lua.create_table()?;
-                handle.set("name", name.as_str())?;
-                handle.set("texture", texture)?;
-                s.lock().unwrap().insert(
-                    name,
-                    Splash {
-                        handle: lua.create_registry_value(handle.clone())?,
-                        ends_at: None,
-                    },
-                );
-                Ok(handle)
-            },
-        )?;
-    }
-    {
-        let (s, clock) = (splashes.clone(), host.clock.clone());
-        def(
-            host,
-            &m,
-            "SplashScreen",
-            "Show",
-            move |_,
-                  (handle, fade_in, hold, fade_out): (
-                Table,
-                Option<f64>,
-                Option<f64>,
-                Option<f64>,
-            )| {
-                let name: String = handle.get("name")?;
-                let now = clock.lock().unwrap().seconds;
-                let total = fade_in.unwrap_or(0.0) + hold.unwrap_or(0.0) + fade_out.unwrap_or(0.0);
-                if let Some(sp) = s.lock().unwrap().get_mut(&name) {
-                    sp.ends_at = Some(now + total);
-                }
-                Ok(())
-            },
-        )?;
-    }
-    {
-        let (s, clock) = (splashes.clone(), host.clock.clone());
-        def(
-            host,
-            &m,
-            "SplashScreen",
-            "GetSplashScreenWithName",
-            move |lua, name: String| {
-                let now = clock.lock().unwrap().seconds;
-                let mut map = s.lock().unwrap();
-                let finished = match map.get(&name) {
-                    None => return Ok(Value::Nil),
-                    Some(sp) => sp.ends_at.is_some_and(|t| now >= t),
-                };
-                if finished {
-                    if let Some(sp) = map.remove(&name) {
-                        lua.remove_registry_value(sp.handle)?;
-                    }
-                    return Ok(Value::Nil);
-                }
-                lua.registry_value(&map[&name].handle)
-            },
-        )?;
-    }
-    Ok(())
-}
-
 pub fn install(host: &FoxLua) -> mlua::Result<()> {
     let lua = &host.lua;
     let g = lua.globals();
@@ -359,13 +271,34 @@ pub fn install(host: &FoxLua) -> mlua::Result<()> {
     crate::constants::install(lua, |lua, name| module(lua, name))?;
     install_bitop(host)?;
     crate::script_vars::install(lua, host.trace.clone())?;
-    install_splash_screen(host)?;
     crate::messages::install(lua, host.clock.clone(), |l, n| module(l, n))?;
     crate::mission_manager::install(lua, |l, n| module(l, n))?;
-    crate::ui::install(lua, |l, n| module(l, n))?;
+    crate::ui::install(lua, host.clock.clone(), |l, n| module(l, n))?;
 
     // --- ScriptBlock ------------------------------------------------------------
     crate::script_block::install(lua, |l, n| module(l, n))?;
+
+    // --- Build identity -----------------------------------------------------------
+    {
+        // We run the retail ("master") data in single-player TPP mode; MGO and
+        // online features are out of scope.
+        let gs = module(lua, "TppGameSequence")?;
+        def(
+            host,
+            &gs,
+            "TppGameSequence",
+            "IsMaster",
+            |_, _: MultiValue| Ok(true),
+        )?;
+        let su = module(lua, "TppSystemUtility")?;
+        def(
+            host,
+            &su,
+            "TppSystemUtility",
+            "GetCurrentGameMode",
+            |_, _: MultiValue| Ok("TPP"),
+        )?;
+    }
 
     // --- StageBlock -------------------------------------------------------------
     {

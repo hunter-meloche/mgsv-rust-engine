@@ -25,7 +25,9 @@
 
 ## Next
 
-- [ ] Title menu: inject `TitleMenu` UI messages (press start, new game) to start the prologue
+- [x] Fades, splash screens with state callbacks, in-memory save slots, mission reload, input stand-ins (`--post`)
+- [x] Title menu flow: press start and new game reach the prologue reload
+- [ ] New game after reload: start the prologue's opening rather than title mode (save slot / gvars handover)
 - [ ] Location loading (`Mission.LoadLocation`, location package path function, stage block groups)
 - [ ] Remaining unmapped modules (`Fox`, `fox.KEY_*`, `Mission` constants, class objects)
 - [ ] The 25 script-used `vars` declared outside `0x140996b70` (`sortiePrep*`, `mbm*`)

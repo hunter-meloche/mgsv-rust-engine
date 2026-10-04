@@ -6,6 +6,9 @@ use clap::{Parser, Subcommand};
 use fox_archive::{Fpk, Vfs, find_game_dir, fpk};
 use rayon::prelude::*;
 
+mod play;
+mod raster;
+
 /// Tools for a local MGSV: TPP install. Nothing here leaves your machine.
 #[derive(Parser)]
 #[command(name = "mgsv")]
@@ -122,6 +125,24 @@ enum Cmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
+    /// Catalogue every player body clip: archive, frames, root travel,
+    /// speed and turn (tab-separated).
+    AnimClips,
+    /// Open a window and drive Snake around a test floor (keyboard + mouse).
+    Play {
+        /// Quit after this many frames (smoke tests).
+        #[arg(long)]
+        frames: Option<usize>,
+        /// Save the last frame as a PNG.
+        #[arg(long)]
+        shot: Option<PathBuf>,
+        /// Scripted input instead of the keyboard.
+        #[arg(long)]
+        auto: bool,
+    },
+    /// Run the player controller headless with a scripted input sequence and
+    /// print position, speed and clip over time.
+    SnakeSim,
     AnimProbe {
         /// .mtar (PACKAGE.fpk:INNER)
         path: String,
@@ -425,6 +446,33 @@ fn run() -> Result<()> {
             brief,
             timeline,
         } => anim_probe(&vfs, &path, &clip, frame, brief, timeline),
+        Cmd::AnimClips => anim_clips(&vfs),
+        Cmd::SnakeSim => snake_sim(&vfs),
+        Cmd::Play { frames, shot, auto } => {
+            let (skel, rig) = snake_rig(&vfs)?;
+            let clips = player_clip_library(&vfs)?;
+            let mut parts = Vec::new();
+            for (path, color) in [
+                (SNAKE_BODY, fox_anim::Vec3::new(0.47, 0.45, 0.34)),
+                (SNAKE_FACE, fox_anim::Vec3::new(0.80, 0.62, 0.52)),
+                (SNAKE_ARM, fox_anim::Vec3::new(0.38, 0.38, 0.40)),
+            ] {
+                let model = fox_data::Fmdl::parse(&read_any(&vfs, path)?)?;
+                parts.push((
+                    fox_anim::SkinnedModel::bind(&model, &skel).map_err(anyhow::Error::msg)?,
+                    color,
+                ));
+            }
+            play::run(
+                play::Assets {
+                    skel,
+                    rig,
+                    clips,
+                    parts,
+                },
+                play::Options { frames, shot, auto },
+            )
+        }
         Cmd::AnimCheck { verbose, poles } => {
             if poles {
                 anim_poles(&vfs)
@@ -912,6 +960,163 @@ fn anim_poles(vfs: &Vfs) -> Result<()> {
             means[..4].join(" "),
             means[4..].join(" ")
         );
+    }
+    Ok(())
+}
+
+const PLAYER_RESIDENT: &str = "/Assets/tpp/pack/player/motion/player2_resident_motion.fpk:/Assets/tpp/motion/mtar/player2/player2_resident.mtar";
+
+/// Every clip of the player's resident motion archive, by short name.
+fn player_clip_library(vfs: &Vfs) -> Result<snake_core::ClipLibrary> {
+    let data = read_any(vfs, PLAYER_RESIDENT)?;
+    let m = fox_data::mtar::Mtar::parse(&data)?;
+    let mut lib = snake_core::ClipLibrary::new();
+    for i in 0..m.entries.len() {
+        let Ok(c) = m.clip(&data, i) else { continue };
+        let name = vfs.dictionary.resolve(m.entries[i].hash).0;
+        let short = name
+            .rsplit('/')
+            .next()
+            .unwrap_or(&name)
+            .trim_end_matches(".gani");
+        lib.insert(short, c);
+    }
+    Ok(lib)
+}
+
+fn snake_sim(vfs: &Vfs) -> Result<()> {
+    use snake_core::{ClipNames, Controller, Input};
+    let (skel, rig) = snake_rig(vfs)?;
+    let clips = player_clip_library(vfs)?;
+    let mut ctl = Controller::new(&clips, ClipNames::default()).map_err(anyhow::Error::msg)?;
+    // (seconds, input, label)
+    let fwd = |amount: f32| Input {
+        move_y: amount,
+        ..Default::default()
+    };
+    let script: Vec<(f32, Input, &str)> = vec![
+        (1.0, Input::default(), "idle"),
+        (3.0, fwd(0.4), "walk forward"),
+        (3.0, fwd(1.0), "run forward"),
+        (
+            3.0,
+            Input {
+                sprint: true,
+                ..fwd(1.0)
+            },
+            "dash",
+        ),
+        (
+            2.0,
+            Input {
+                move_x: 1.0,
+                ..Default::default()
+            },
+            "run right (turn)",
+        ),
+        (1.0, Input::default(), "stop"),
+        (
+            0.05,
+            Input {
+                crouch: true,
+                ..Default::default()
+            },
+            "crouch",
+        ),
+        (2.0, Input::default(), "crouched idle"),
+        (3.0, fwd(1.0), "crouch run"),
+        (
+            0.05,
+            Input {
+                prone: true,
+                ..Default::default()
+            },
+            "prone",
+        ),
+        (3.0, Input::default(), "prone idle"),
+        (3.0, fwd(1.0), "crawl"),
+        (
+            0.05,
+            Input {
+                prone: true,
+                ..Default::default()
+            },
+            "stand up",
+        ),
+        (3.0, Input::default(), "standing"),
+    ];
+    let dt = 1.0 / 60.0;
+    let mut t = 0.0f32;
+    for (secs, input, label) in script {
+        let start = ctl.position;
+        let steps = (secs / dt).round().max(1.0) as usize;
+        for k in 0..steps {
+            // Edge-triggered buttons fire on the first tick only.
+            let mut i = input;
+            if k > 0 {
+                i.crouch = false;
+                i.prone = false;
+            }
+            ctl.update(&rig, &clips, dt, &i);
+            t += dt;
+        }
+        let pose = ctl.pose(&rig, &skel).map_err(anyhow::Error::msg)?;
+        let head = pose.positions[skel.find(fox_hash::str_code32(b"SKL_004_HEAD")).unwrap()];
+        let moved = ctl.position - start;
+        println!(
+            "t={t:>5.2}s {label:<18} {:?}/{:?}  pos ({:>6.2},{:>6.2})  yaw {:>5.0}  avg speed {:>4.2} m/s  head y {:.2}  clip {}",
+            ctl.stance,
+            ctl.gait,
+            ctl.position.x,
+            ctl.position.z,
+            ctl.yaw.to_degrees(),
+            (moved.x.hypot(moved.z)) / secs,
+            head.y,
+            ctl.current_clip()
+        );
+    }
+    Ok(())
+}
+
+fn anim_clips(vfs: &Vfs) -> Result<()> {
+    use fox_anim::Vec3;
+    let (_, rig) = snake_rig(vfs)?;
+    println!("archive	clip	frames	dx	dz	dist_m	speed_mps	turn_deg	loop");
+    for (path, data) in player_motion_archives(vfs)? {
+        let Ok(m) = fox_data::mtar::Mtar::parse(&data) else {
+            continue;
+        };
+        if m.segment_count != 56 {
+            continue;
+        }
+        let archive = path.rsplit('/').next().unwrap_or(&path).to_string();
+        for i in 0..m.entries.len() {
+            let Ok(c) = m.clip(&data, i) else { continue };
+            let name = vfs.dictionary.resolve(m.entries[i].hash).0;
+            let short = name
+                .rsplit('/')
+                .next()
+                .unwrap_or(&name)
+                .trim_end_matches(".gani")
+                .to_string();
+            let (r, t) = rig.root_motion(&c, 0.0, c.frame_count as f32);
+            let fwd = r * Vec3::Z;
+            let turn = fwd.x.atan2(fwd.z).to_degrees();
+            let dist = Vec3::new(t.x, 0.0, t.z).length();
+            let secs = c.frame_count as f32 / 30.0;
+            let looping = c
+                .tracks
+                .iter()
+                .any(|t| t.flags & fox_data::mtar::UNIT_LOOP != 0);
+            println!(
+                "{archive}	{short}	{}	{:.3}	{:.3}	{dist:.3}	{:.2}	{turn:.0}	{}",
+                c.frame_count,
+                t.x,
+                t.z,
+                if secs > 0.0 { dist / secs } else { 0.0 },
+                looping as u8
+            );
+        }
     }
     Ok(())
 }

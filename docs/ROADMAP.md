@@ -40,7 +40,9 @@ game (world, AI, missions) continues afterwards.
 - [x] Skinned mesh (`fox_anim::SkinnedModel`): body, face (`plfova_sna0_face0`) and bionic arm (`plfova_sna0_arm0`) parts bound to the body skeleton by name; shaded in `mgsv anim-view`
 - [ ] `.frdv` (likely helper-bone drivers) and `.fcnp` (connection points for weapons/items) next to each body model
 - [x] Bone names: 153/153 of Snake's bones, 18/18 track units, all player clip names
-- [ ] Player controller: stances (stand, crouch, prone, crawl), dive, sprint, cover; recover parameters from the binary and `.fox2` player data
+- [x] Player controller v1 (`crates/snake-core`): stand/crouch/prone, walk/run/dash/crawl from the real clips with root motion (walk 0.59, run 2.28, dash 4.13, crouch run 1.52, crawl 0.66 m/s), stance-change clips, crossfades blended in rig space (`mgsv snake-sim`)
+- [x] `mgsv play`: native test window (software rasterizer), WASD + mouse, third-person camera
+- [ ] Controller v2: start/stop/turn clips (`wk_st_*`, `wk_ed_*`, `tn_*`), dive, cover, ledges/vaults; tuning against the exe's player parameters
 - [ ] Camera: over-the-shoulder, shoulder swap, aim zoom
 - [ ] Weapons: equip parameters (`EquipParameters.lua`, `TppEquip` ids), recoil, ballistics, reload
 - [ ] Physics/collision interface the controller runs against (pluggable, so Skyrim collision can be fed in)

@@ -51,6 +51,8 @@ cargo build --release
 | `mgsv fmdl PATH` / `mgsv fmdl-check` | Summarise one `.fmdl` model / parse and validate every model |
 | `mgsv mtar PATH` / `mgsv mtar-check` | Decode the clips of one `.mtar` motion archive / every clip in the game |
 | `mgsv frig PATH` / `mgsv frig-check` | Dump a `.frig` animation rig (units, bones, masks) / check every rig |
+| `mgsv play` | Drive Snake around a test floor: WASD move, Shift dash, Ctrl walk, C crouch, Z prone, mouse-drag or Q/E camera, Esc quit |
+| `mgsv snake-sim` | Run the player controller headless with scripted input |
 | `mgsv anim-check` | Pose Snake with every player clip and report rig-solve statistics (`--poles` compares IK pole conventions) |
 | `mgsv anim-view PATH --clip NAME` | Write `extracted/anim_view.html`, a local stick-figure viewer of Snake posed by clips |
 | `mgsv anim-probe PATH --clip NAME --frame F` | Print sampled rig tracks and the solved pose (`--timeline` for root/IK targets per frame) |

@@ -12,7 +12,8 @@ pub mod sample;
 pub mod skeleton;
 pub mod skin;
 
+pub use glam;
 pub use glam::{Quat, Vec3};
-pub use rig::{HumanRig, Pose};
+pub use rig::{HumanRig, Pose, RigFrame};
 pub use skeleton::Skeleton;
 pub use skin::SkinnedModel;

@@ -75,6 +75,18 @@ pub struct HumanRig {
     root: Option<(usize, usize)>,
     /// Axis of the pole quaternion that points along the bend direction.
     pole_axis: Vec3,
+    /// Per segment: rotation (slerped when blending) or vector (lerped).
+    quat_segments: Vec<bool>,
+    /// IK target segments (stored in anchor space by clips).
+    target_segments: Vec<usize>,
+}
+
+/// One sampled frame of rig tracks, ready to blend and solve. IK targets are
+/// converted to root space and the root unit is zeroed, so frames from
+/// different clips (with different anchors) blend correctly.
+#[derive(Clone, Debug)]
+pub struct RigFrame {
+    pub values: Vec<[f32; 4]>,
 }
 
 impl HumanRig {
@@ -90,6 +102,20 @@ impl HumanRig {
                 .ok_or_else(|| format!("skeleton has no bone {name:#010x}"))
         };
         let seg = |s: i16| s as usize;
+        let mut quat_segments = vec![true; frig.segment_count as usize];
+        let mut vector = |s: i16| {
+            if let Some(q) = quat_segments.get_mut(s as usize) {
+                *q = false;
+            }
+        };
+        for u in &frig.units {
+            match u.kind {
+                UnitType::Root | UnitType::Transform => vector(u.segments[1]),
+                UnitType::Arm => vector(u.segments[1]),
+                UnitType::TwoBone => vector(u.segments[0]),
+                _ => {}
+            }
+        }
         let mut drives = vec![None; skel.bones.len()];
         let mut chains = Vec::new();
         let mut root = None;
@@ -162,17 +188,25 @@ impl HumanRig {
         {
             return Err("skeleton bones are not ordered parent-first".into());
         }
+        let target_segments = chains.iter().map(|c| c.target).collect();
         Ok(Self {
             segment_count: frig.segment_count as usize,
             drives,
             chains,
             root,
             pole_axis: Vec3::X,
+            quat_segments,
+            target_segments,
         })
     }
 
     /// Pose `skel` with `clip` at `frame` (fractional frames, 30 per second).
     pub fn pose(&self, skel: &Skeleton, clip: &Clip, frame: f32) -> Result<Pose, String> {
+        Ok(self.solve(skel, &self.sample_frame(clip, frame)?))
+    }
+
+    /// Sample every rig track of `clip` at `frame`, IK targets in root space.
+    pub fn sample_frame(&self, clip: &Clip, frame: f32) -> Result<RigFrame, String> {
         let channels: Vec<&Channel> = clip.tracks.iter().flat_map(|t| &t.channels).collect();
         if channels.len() != self.segment_count {
             return Err(format!(
@@ -181,17 +215,53 @@ impl HumanRig {
                 self.segment_count
             ));
         }
-        let v = |s: usize| sample(channels[s], frame);
+        let mut values: Vec<[f32; 4]> = channels.iter().map(|c| sample(c, frame)).collect();
+        let (root_rot, root_pos) = self.root_at(&channels, frame);
+        let inv_root = root_rot.inverse();
+        for &s in &self.target_segments {
+            let v = values[s];
+            let t = inv_root * (Vec3::new(v[0], v[1], v[2]) - root_pos);
+            values[s] = [t.x, t.y, t.z, 0.0];
+        }
+        if let Some((qs, vs)) = self.root {
+            values[qs] = [0.0, 0.0, 0.0, 1.0];
+            values[vs] = [0.0; 4];
+        }
+        Ok(RigFrame { values })
+    }
+
+    /// Blend two frames: `t` = 0 gives `a`, 1 gives `b`.
+    pub fn blend(&self, a: &RigFrame, b: &RigFrame, t: f32) -> RigFrame {
+        let values = a
+            .values
+            .iter()
+            .zip(&b.values)
+            .zip(&self.quat_segments)
+            .map(|((x, y), &is_quat)| {
+                if is_quat {
+                    let (qa, mut qb) = (Quat::from_array(*x), Quat::from_array(*y));
+                    if qa.dot(qb) < 0.0 {
+                        qb = -qb;
+                    }
+                    qa.slerp(qb, t).to_array()
+                } else {
+                    glam::Vec4::from_array(*x)
+                        .lerp(glam::Vec4::from_array(*y), t)
+                        .to_array()
+                }
+            })
+            .collect();
+        RigFrame { values }
+    }
+
+    /// Solve a sampled (or blended) frame into a skeleton pose in root space.
+    pub fn solve(&self, skel: &Skeleton, frame: &RigFrame) -> Pose {
+        let v = |s: usize| frame.values[s];
         let quat = |s: usize| Quat::from_array(v(s)).normalize();
         let vec3 = |s: usize| {
             let a = v(s);
             Vec3::new(a[0], a[1], a[2])
         };
-
-        // IK targets: anchor space -> root space.
-        let (root_rot, root_pos) = self.root_at(&channels, frame);
-        let inv_root = root_rot.inverse();
-        let target = |s: usize| inv_root * (vec3(s) - root_pos);
 
         let n = skel.bones.len();
         let mut rot = vec![Quat::IDENTITY; n];
@@ -225,7 +295,7 @@ impl HumanRig {
                     skel,
                     c,
                     pos[i],
-                    target(c.target),
+                    vec3(c.target),
                     quat(c.pole) * self.pole_axis,
                 );
                 rot[i] = upper;
@@ -233,11 +303,11 @@ impl HumanRig {
                 ik_reach.push(reach);
             }
         }
-        Ok(Pose {
+        Pose {
             rotations: rot,
             positions: pos,
             ik_reach,
-        })
+        }
     }
 
     /// Override which pole-quaternion axis is the bend direction (default

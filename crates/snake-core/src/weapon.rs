@@ -96,16 +96,44 @@ impl WeaponStats {
     }
 }
 
-/// Clips and attachment for one weapon class on Snake's rig.
+/// One aim pose grid clip (e.g. `snapasr_s_fre_pose_25`): one pose per
+/// frame, row-major from the top-left, rows by pitch (highest first) and
+/// columns by yaw (leftmost first). The angles are measured from the poses
+/// when the weapon is calibrated, so any grid layout works (rifle stand /
+/// crouch 5 x 5 at 45 / 37.5 degrees; prone 9 x 4 covering +-180 degrees).
+#[derive(Clone, Debug)]
+pub struct AimGrid {
+    pub clip: String,
+    pub cols: usize,
+    pub rows: usize,
+    /// Yaw of each column (radians, decreasing: left to right).
+    pub col_yaw: Vec<f32>,
+    /// Pitch of each row (radians, decreasing: top to bottom).
+    pub row_pitch: Vec<f32>,
+}
+
+/// Fractional index of `v` in a decreasing sequence (clamped).
+fn index_in(seq: &[f32], v: f32) -> f32 {
+    if seq.len() < 2 || v >= seq[0] {
+        return 0.0;
+    }
+    for i in 1..seq.len() {
+        if v >= seq[i] {
+            let span = seq[i - 1] - seq[i];
+            return (i - 1) as f32 + if span.abs() > 1e-6 { (seq[i - 1] - v) / span } else { 0.0 };
+        }
+    }
+    (seq.len() - 1) as f32
+}
+
+/// Clips and attachment for one weapon on Snake's rig.
 #[derive(Clone, Debug)]
 pub struct WeaponRig {
-    /// Aim pose grid, e.g. `snapasr_s_fre_pose_25` (5 x 5: yaw +90..-90,
-    /// pitch +75..-75, row-major from top-left).
-    pub grid: [&'static str; 2],
-    pub grid_size: (usize, usize),
-    pub grid_yaw_step: f32,
-    pub grid_pitch_step: f32,
-    pub reload: &'static str,
+    /// Aim grids for stand, crouch and prone (prone may be missing).
+    pub grids: [Option<AimGrid>; 3],
+    pub reload: String,
+    /// Played on the upper body for each shot (recoil / cycling), if any.
+    pub fire: Option<String>,
     /// Skeleton bone the gun hangs from and the body's connection point on it.
     pub hand_bone: usize,
     pub hand_offset: (Quat, Vec3),
@@ -115,64 +143,108 @@ pub struct WeaponRig {
     pub muzzle: Vec3,
 }
 
+/// Names of a weapon's clips.
+#[derive(Clone, Debug)]
+pub struct WeaponClips<'a> {
+    /// Stand, crouch and prone aim grids.
+    pub grids: [Option<&'a str>; 3],
+    pub reload: &'a str,
+    pub fire: Option<&'a str>,
+}
+
 impl WeaponRig {
-    /// The assault-rifle class (MRS-4 clips). `hand` is the body's
-    /// `CNP_RIGHT_HAND` (bone, offset); the gun-to-hand rotation is
-    /// calibrated on the grid's centre pose, where the rifle aims straight
-    /// ahead and level (verified: every other grid pose then lands on exact
-    /// 45 / 37.5 degree steps with the off hand on the gun's grip).
-    pub fn assault_rifle(
+    /// Calibrate a weapon on Snake's rig. `hand_offset` is the body's
+    /// `CNP_RIGHT_HAND` on `hand_bone`. The gun-to-hand rotation comes from
+    /// the standing grid's centre pose, where the weapon aims straight ahead
+    /// and level (verified on the rifle: every other pose then lands on exact
+    /// 45 / 37.5 degree steps with the off hand on the gun's fore grip); the
+    /// grids' angles are then measured with it.
+    pub fn calibrate(
         rig: &HumanRig,
         skel: &Skeleton,
-        grid_stand: &Clip,
+        clips: &crate::ClipLibrary,
+        names: WeaponClips,
         hand_bone: usize,
         hand_offset: (Quat, Vec3),
         muzzle: Vec3,
     ) -> Result<Self, String> {
-        let centre = rig.pose(skel, grid_stand, 12.0)?;
+        let stand_name = names.grids[0].ok_or("a standing aim grid is required")?;
+        let stand = clips.get(stand_name).ok_or_else(|| format!("missing clip {stand_name}"))?;
+        let centre = rig.pose(skel, &stand, (stand.frame_count / 2) as f32)?;
         let hand_to_gun = (centre.rotations[hand_bone] * hand_offset.0).inverse();
-        Ok(Self {
-            grid: ["snapasr_s_fre_pose_25", "snapasr_q_fre_pose_25"],
-            grid_size: (5, 5),
-            grid_yaw_step: 45f32.to_radians(),
-            grid_pitch_step: 37.5f32.to_radians(),
-            reload: "snapar00_0_s_mag_chg",
+        let mut this = Self {
+            grids: [None, None, None],
+            reload: names.reload.to_string(),
+            fire: names.fire.map(str::to_string),
             hand_bone,
             hand_offset,
             hand_to_gun,
             muzzle,
-        })
+        };
+        for (slot, name) in names.grids.iter().enumerate() {
+            let Some(name) = name else { continue };
+            let clip = clips.get(name).ok_or_else(|| format!("missing clip {name}"))?;
+            this.grids[slot] = Some(this.measure(rig, skel, name, &clip)?);
+        }
+        Ok(this)
+    }
+
+    /// Measure a grid's layout and angles from its poses.
+    fn measure(&self, rig: &HumanRig, skel: &Skeleton, name: &str, clip: &Clip) -> Result<AimGrid, String> {
+        let n = clip.frame_count as usize + 1;
+        let mut dirs = Vec::with_capacity(n);
+        for f in 0..n {
+            let (r, _) = self.gun_transform(&rig.pose(skel, clip, f as f32)?);
+            let d = r * Vec3::Z;
+            dirs.push((d.x.atan2(d.z), d.y.clamp(-1.0, 1.0).asin()));
+        }
+        // A row ends where the pitch jumps.
+        let cols = (1..n)
+            .find(|&i| (dirs[i].1 - dirs[0].1).abs() > 12f32.to_radians())
+            .unwrap_or(n);
+        let rows = n / cols;
+        if rows * cols != n || cols < 2 || rows < 2 {
+            return Err(format!("{name}: cannot infer a grid from {n} poses"));
+        }
+        let tau = std::f32::consts::TAU;
+        let mut col_yaw: Vec<f32> = (0..cols)
+            .map(|c| (0..rows).map(|r| dirs[r * cols + c].0).sum::<f32>() / rows as f32)
+            .collect();
+        // Unwrap outward from the column nearest straight ahead so yaws
+        // decrease left to right (prone grids span +180..-180).
+        let mid = (0..cols).min_by(|&a, &b| col_yaw[a].abs().total_cmp(&col_yaw[b].abs())).unwrap();
+        for c in (0..mid).rev() {
+            while col_yaw[c] <= col_yaw[c + 1] {
+                col_yaw[c] += tau;
+            }
+        }
+        for c in mid + 1..cols {
+            while col_yaw[c] >= col_yaw[c - 1] {
+                col_yaw[c] -= tau;
+            }
+        }
+        let row_pitch = (0..rows)
+            .map(|r| (0..cols).map(|c| dirs[r * cols + c].1).sum::<f32>() / cols as f32)
+            .collect();
+        Ok(AimGrid { clip: name.to_string(), cols, rows, col_yaw, row_pitch })
     }
 
     /// Gun transform in the pose's space (root space for controller poses).
     pub fn gun_transform(&self, pose: &Pose) -> (Quat, Vec3) {
-        let (hr, hp) = (
-            pose.rotations[self.hand_bone],
-            pose.positions[self.hand_bone],
-        );
+        let (hr, hp) = (pose.rotations[self.hand_bone], pose.positions[self.hand_bone]);
         let rot = hr * self.hand_offset.0 * self.hand_to_gun;
         (rot, hp + hr * self.hand_offset.1)
     }
 
     /// Bilinearly blended aim pose for `yaw` (left positive) and `pitch`
     /// (up positive), radians relative to the body.
-    pub fn aim_frame(
-        &self,
-        rig: &HumanRig,
-        grid: &Clip,
-        yaw: f32,
-        pitch: f32,
-    ) -> Result<RigFrame, String> {
-        let (cols, rows) = self.grid_size;
-        let half_c = (cols - 1) as f32 / 2.0;
-        let half_r = (rows - 1) as f32 / 2.0;
-        // Column 0 is the leftmost (most positive yaw); row 0 the highest.
-        let c = (half_c - yaw / self.grid_yaw_step).clamp(0.0, (cols - 1) as f32);
-        let r = (half_r - pitch / self.grid_pitch_step).clamp(0.0, (rows - 1) as f32);
+    pub fn aim_frame(&self, rig: &HumanRig, grid: &AimGrid, clip: &Clip, yaw: f32, pitch: f32) -> Result<RigFrame, String> {
+        let c = index_in(&grid.col_yaw, yaw);
+        let r = index_in(&grid.row_pitch, pitch);
         let (c0, r0) = (c.floor() as usize, r.floor() as usize);
-        let (c1, r1) = ((c0 + 1).min(cols - 1), (r0 + 1).min(rows - 1));
+        let (c1, r1) = ((c0 + 1).min(grid.cols - 1), (r0 + 1).min(grid.rows - 1));
         let (tc, tr) = (c - c0 as f32, r - r0 as f32);
-        let at = |row: usize, col: usize| rig.sample_frame(grid, (row * cols + col) as f32);
+        let at = |row: usize, col: usize| rig.sample_frame(clip, (row * grid.cols + col) as f32);
         let top = rig.blend(&at(r0, c0)?, &at(r0, c1)?, tc);
         let bottom = rig.blend(&at(r1, c0)?, &at(r1, c1)?, tc);
         Ok(rig.blend(&top, &bottom, tr))
@@ -235,6 +307,15 @@ impl Ballistics {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grid_index_interpolates_decreasing_angles() {
+        let seq = [1.0, 0.5, 0.0, -0.5, -1.0];
+        assert_eq!(index_in(&seq, 2.0), 0.0);
+        assert_eq!(index_in(&seq, 0.25), 1.5);
+        assert_eq!(index_in(&seq, -0.75), 3.5);
+        assert_eq!(index_in(&seq, -5.0), 4.0);
+    }
 
     #[test]
     fn stats_follow_the_table_links() {

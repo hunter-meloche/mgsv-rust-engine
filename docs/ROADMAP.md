@@ -23,7 +23,22 @@
 - [x] Pre-title UI flow calling `TppVarInit.StartTitle`; boot reaches mission 10010's title mode
 - [x] luaL_Reg stack arrays in binding recovery: 1,115 native functions mapped
 
-## Next
+## Priority: player systems ("Snake core")
+
+Decided 2026-10-04. Build the systems that make Snake feel like MGSV first,
+as a self-contained part of the engine that can later run as a library
+bridged into Skyrim through an SKSE plugin (the SkyCraft model). The full
+game (world, AI, missions) continues afterwards.
+
+- [ ] `.frig` skeleton and `.fmdl` mesh parsers (Snake's body and weapons)
+- [ ] `.gani`/`.mtar` animation parsers and a playback core
+- [ ] Player controller: stances (stand, crouch, prone, crawl), dive, sprint, cover; recover parameters from the binary and `.fox2` player data
+- [ ] Camera: over-the-shoulder, shoulder swap, aim zoom
+- [ ] Weapons: equip parameters (`EquipParameters.lua`, `TppEquip` ids), recoil, ballistics, reload
+- [ ] Physics/collision interface the controller runs against (pluggable, so Skyrim collision can be fed in)
+- [ ] Library API and a headless test harness; later the SKSE bridge
+
+## Next (after the player systems)
 
 - [x] Fades, splash screens with state callbacks, in-memory save slots, mission reload, input stand-ins (`--post`)
 - [x] Title menu flow: press start and new game reach the prologue reload

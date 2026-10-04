@@ -49,7 +49,8 @@ cargo build --release
 | `mgsv fox2 PATH` | Dump a `.fox2` DataSet (`PKG.fpkd:/inner/path.fox2` for files inside packages) |
 | `mgsv fox2-check` | Parse every `.fox2` in every package and report failures |
 | `mgsv fmdl PATH` / `mgsv fmdl-check` | Summarise one `.fmdl` model / parse and validate every model |
-| `mgsv mtar PATH` | List the animation clips in an `.mtar` motion archive |
+| `mgsv mtar PATH` / `mgsv mtar-check` | Decode the clips of one `.mtar` motion archive / every clip in the game |
+| `mgsv bone-names` | Harvest bone-name candidates and report coverage of the player skeleton |
 | `mgsv find PATTERN` | Find files inside packages, printed as `PACKAGE:INNER` |
 
 On Git Bash, set `MSYS_NO_PATHCONV=1` so `/Assets/...` arguments are not

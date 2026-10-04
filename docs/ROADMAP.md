@@ -33,8 +33,10 @@ game (world, AI, missions) continues afterwards.
 - [x] Engine function names imported from IHHook (165, verified against the exe)
 - [x] `.fmdl` parser: all 14,555 models parse and validate (skeleton, meshes, materials, buffers)
 - [x] `.mtar` motion archive container (clip table); `mgsv find` across packages
-- [ ] `.gani` clip decoding (track table seen; find the engine's decoder) and a playback core
-- [ ] Bone-name dictionary for `StrCode64` skeleton hashes; `.frig` beyond the header
+- [x] `.gani` clip decoding: 7,572 clips / 10.1M keyframes, exact frame accounting (`mgsv mtar-check`)
+- [ ] `.frig` rig: unit definitions mapping the 18 player rig units to bones, two-bone IK (reference: mctrollin's GPL `fox_frig_types.py`)
+- [ ] Playback core: sample clips, apply rig units to Snake's skeleton
+- [ ] Bone names: 10/153 of Snake's bones resolve so far (`mgsv bone-names`); more sources needed
 - [ ] Player controller: stances (stand, crouch, prone, crawl), dive, sprint, cover; recover parameters from the binary and `.fox2` player data
 - [ ] Camera: over-the-shoulder, shoulder swap, aim zoom
 - [ ] Weapons: equip parameters (`EquipParameters.lua`, `TppEquip` ids), recoil, ballistics, reload

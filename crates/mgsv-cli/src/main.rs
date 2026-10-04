@@ -90,6 +90,10 @@ enum Cmd {
     Mtar { path: String },
     /// Decode every clip in every .mtar inside every package.
     MtarCheck,
+    /// Harvest bone names (exe identifiers, model string tables, script
+    /// strings) into re/out/bone_names.txt (local) and report how many player
+    /// animation / model bones they resolve.
+    BoneNames,
 }
 
 /// Read a file from the archives, or from inside a package with `PKG:INNER`.
@@ -119,6 +123,7 @@ fn read_any(vfs: &Vfs, path: &str) -> Result<Vec<u8>> {
 fn fox_names(vfs: &Vfs) -> fox_data::NameTable {
     let mut names = fox_data::NameTable::new();
     let _ = names.load_dictionary(repo_dir().join("dictionaries/fox_dictionary.txt"));
+    let _ = names.load_dictionary(repo_dir().join("re/out/bone_names.txt"));
     if let Ok(exe) = std::fs::read(vfs.game_dir.join("mgsvtpp.exe")) {
         names.harvest_identifiers(&exe);
     }
@@ -314,6 +319,7 @@ fn run() -> Result<()> {
             Ok(())
         }
         Cmd::MtarCheck => mtar_check(&vfs),
+        Cmd::BoneNames => bone_names(&vfs),
         Cmd::Find { pattern } => {
             let pkgs: Vec<_> = vfs
                 .iter()
@@ -349,6 +355,127 @@ fn run() -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn bone_names(vfs: &Vfs) -> Result<()> {
+    // Candidate names: identifiers in the exe, string tables of models that
+    // still carry one (older FMDL versions), and quoted strings in scripts.
+    let mut names = std::collections::BTreeSet::new();
+    let ident = |s: &str| {
+        s.len() >= 3
+            && s.len() <= 64
+            && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            && !s.as_bytes()[0].is_ascii_digit()
+    };
+    if let Ok(exe) = std::fs::read(vfs.game_dir.join("mgsvtpp.exe")) {
+        for w in exe.split(|b| !(b.is_ascii_alphanumeric() || *b == b'_')) {
+            if let Ok(s) = std::str::from_utf8(w) {
+                if ident(s) {
+                    names.insert(s.to_string());
+                }
+            }
+        }
+    }
+    let pkgs: Vec<_> = vfs
+        .iter()
+        .filter(|(h, _)| {
+            matches!(
+                fox_hash::extension_from_id((h >> 51) as u16),
+                Some("fpk" | "fpkd")
+            )
+        })
+        .collect();
+    let found: Vec<String> = pkgs
+        .par_iter()
+        .flat_map(|(_, r)| {
+            let mut out = Vec::new();
+            let Ok(data) = vfs.read_ref(*r) else {
+                return out;
+            };
+            let Ok(pkg) = Fpk::parse(&data) else {
+                return out;
+            };
+            for e in &pkg.entries {
+                let p = e.clean_path();
+                let Ok(bytes) = pkg.read(e) else { continue };
+                if p.ends_with(".fmdl") {
+                    if let Ok(m) = fox_data::Fmdl::parse(&bytes) {
+                        out.extend(m.strings);
+                    }
+                } else if p.ends_with(".lua") {
+                    let text = String::from_utf8_lossy(&bytes);
+                    out.extend(text.split('"').skip(1).step_by(2).map(str::to_string));
+                }
+            }
+            out
+        })
+        .collect();
+    names.extend(found.into_iter().filter(|s| ident(s)));
+
+    let dest = repo_dir().join("re/out/bone_names.txt");
+    std::fs::create_dir_all(dest.parent().unwrap())?;
+    let skl: Vec<&String> = names.iter().filter(|n| n.starts_with("SKL_")).collect();
+    std::fs::write(
+        &dest,
+        skl.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(
+            "
+",
+        ) + "
+",
+    )?;
+    println!(
+        "{} candidate names ({} SKL_ bone names -> {})",
+        names.len(),
+        skl.len(),
+        dest.display()
+    );
+
+    let by32: std::collections::HashMap<u32, &String> = names
+        .iter()
+        .map(|n| (fox_hash::str_code32(n.as_bytes()), n))
+        .collect();
+    let by64: std::collections::HashMap<u64, &String> = names
+        .iter()
+        .map(|n| (fox_hash::str_code64(n.as_bytes()), n))
+        .collect();
+    let data = read_any(
+        vfs,
+        "/Assets/tpp/pack/player/motion/player2_location_motion.fpk:/Assets/tpp/motion/mtar/player2/player2_cqc.mtar",
+    )?;
+    let m = fox_data::mtar::Mtar::parse(&data)?;
+    let named: Vec<String> = m
+        .layout
+        .iter()
+        .map(|u| {
+            by32.get(&u.name)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("{:#010x}", u.name))
+        })
+        .collect();
+    println!(
+        "player2_cqc.mtar units named: {}/{}: {}",
+        m.layout
+            .iter()
+            .filter(|u| by32.contains_key(&u.name))
+            .count(),
+        m.layout.len(),
+        named.join(" ")
+    );
+    let fm = fox_data::Fmdl::parse(&read_any(
+        vfs,
+        "/Assets/tpp/pack/player/parts/plparts_normal.fpk:/Assets/tpp/chara/sna/Scenes/sna0_main0_def.fmdl",
+    )?)?;
+    let hit = fm
+        .bones
+        .iter()
+        .filter(|b| {
+            fm.str_code64s
+                .get(b.name as usize)
+                .is_some_and(|h| by64.contains_key(&(h & 0xFFFF_FFFF_FFFF)))
+        })
+        .count();
+    println!("sna0_main0_def.fmdl bones named: {hit}/{}", fm.bones.len());
+    Ok(())
 }
 
 fn mtar_check(vfs: &Vfs) -> Result<()> {

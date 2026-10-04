@@ -40,34 +40,45 @@ from the `.fmdl` bones. FoxLib's reader (MIT) only decodes the header
 (`u32 hash, u32 type-string offsets, u32 group count, u32 track count, u32
 file size, u32 rig data end/start`); the rest is undocumented.
 
-## `.mtar` motion archives — container decoded
+## `.mtar` motion archives and `.gani` clips — verified
 
-Implemented in `crates/fox-data/src/mtar.rs` (`mgsv mtar PKG.fpk:INNER`).
-Player locomotion and actions live in
-`/Assets/tpp/pack/player/motion/player2_location_motion.fpk`
-(`player2_cqc.mtar`, `player2_behind.mtar`, `player2_carry.mtar`, ...).
+Implemented in `crates/fox-data/src/mtar.rs` (`mgsv mtar`, `mgsv mtar-check`).
+Format knowledge from mctrollin's GPL-3.0 "Fox Engine MTAR Tools" Blender
+add-on (MTAR/GANI binary templates); independent implementation.
 
-* Header (0x20 bytes): magic `0x0C012B72`, u32 clip count, u16 18, u16 56,
-  u32 flags (`0x10000005`), u32 end of entry table (`0x20 + 32 * count`).
-* Entries (32 bytes): u64 path hash (QAR layout; extension id = `gani`),
-  u32 clip offset, u16 frame count (twice), u32 track count, u32 0,
-  u32 auxiliary-block offset, u32 0.
+Result on a retail install: 390 archives, 7,572 clips, 10.1M keyframes
+decoded with exact frame accounting. Every player body-motion archive
+decodes. Not handled: 139 old-format (non-"mini") archives (weapon parts,
+props, facial sets including the player's) and a few animal/facial "layers"
+archives whose frame deltas do not sum to the clip length.
 
-## `.gani` clips — in progress
+* Header (32 bytes): version `201403250`, clip count, unit count, segment
+  count, shader node/unit counts, motion-point unit count, flags (`0x1000`
+  mini format, `0x4000` has skeleton list), common-info offset.
+* Clip table (32 bytes): path hash (QAR layout, extension `gani`), track data
+  offset, sizes/offsets stored divided by 16, motion-event offset.
+* Common info: linked nodes `(StrCode32 name, size, next offset relative to
+  the node, pad)`. `LayoutTrack` (`0x4fbdaaef`) holds a TrackHeader (unit and
+  segment counts, frame count/rate, unit offsets) and TrackUnits (name hash,
+  segment count, segment descriptors whose low nibble is the segment type).
+  Player archives also carry a `MotionPoints` node (`0x3b9a7784`).
+* Clip: frame count, named float parameters, one flag byte per unit (loop 1,
+  Hermite 2, static 4), 4-byte segment headers (component bit size, 24-bit
+  data offset relative to the header), 16 bytes padding, keyframe data.
+* Segment types: 0 quaternion, 1 float, 2–4 vector2–4, 5 quaternion diff,
+  6 vector diff.
+* Keyframes: initial value, then (unless static) `(u8 frame delta, value)`
+  until the deltas reach the frame count. Quaternions are bit-packed,
+  little-endian bit order: angle, two axis components (12/13/15 bits; the
+  third axis component is `1 - x - y`, renormalised), three sign bits.
+  Vectors and floats are byte-aligned 32-bit floats or 16-bit "anim halfs"
+  (custom exponent bias: `((v & 0x7c00) + 0x1dc00) << 13` for the exponent).
 
-Observed at a clip offset (example: a 278-frame, 35-track CQC clip):
+### What the player tracks drive
 
-* A short header (u32 count, zero padding, u32 `0x04000000`, u32 `0x400`).
-* A table of u32 track descriptors: low byte is a format code (`0x0c`,
-  `0x20` seen), upper 24 bits a data offset relative to the clip; offsets
-  increase monotonically. Short trailing tracks 2 bytes apart look like
-  constant channels.
-* The auxiliary block (pointed to by the entry) holds `StrCode32` hashes with
-  flags and offset lists — most likely bone bindings and per-track channel
-  descriptions.
-
-Next: find the engine's clip decoder. `MtarFile`/`GaniBaseFile` are
-registered as classes at `0x141a757a0`/`0x141a77840` (descriptor names
-only); the decoder is reached from the code that consumes those
-descriptors, or from the motion players that reference `mtarFile` (about
-25 functions around `0x140a4c8c0`–`0x140a83970`).
+Player archives have 18 units, and none of them resolve as bone names
+against about 229,000 candidates (exe identifiers, model string tables,
+script strings). They are **rig units** (root, spine, and two-bone IK
+chains for arms and legs), which the rig maps onto skeleton bones. Playing
+them on Snake's skeleton therefore needs the `.frig` rig: its unit
+definitions and the IK solve.

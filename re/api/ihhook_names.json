@@ -1,0 +1,831 @@
+{
+ "source": "IHHook (MIT, TinManTex and contributors), mgsvtpp_adresses_1_0_15_4_en.h",
+ "game_version": "1_0_15_4_en",
+ "functions": [
+  {
+   "name": "stdstringstring",
+   "address": "140016490",
+   "signature": "string * __thiscall std::string::string(string *this,char *cStr)"
+  },
+  {
+   "name": "FoxStrHash32",
+   "address": "1400234c0",
+   "signature": "fox::FoxStrHash32"
+  },
+  {
+   "name": "foxprintf",
+   "address": "14002ab70",
+   "signature": "fox::printf"
+  },
+  {
+   "name": "UpdateLocalPathString",
+   "address": "140040c60",
+   "signature": "fox::fs::Path::UpdateLocalPathString"
+  },
+  {
+   "name": "GetBlockAtIndex",
+   "address": "14006d790",
+   "signature": "fox::BlockGroup::GetBlockAtIndex"
+  },
+  {
+   "name": "FoxBlockLoad",
+   "address": "14006e040",
+   "signature": "int * fox::Block::Load(void *thisPtr,int *errorCode,ulonglong *pathID,uint param_4)"
+  },
+  {
+   "name": "FoxBlockProcess",
+   "address": "14006e4e0",
+   "signature": "double fox::Block::Process(BlockMemory *blockMemory,undefined8 param_2,longlong *param_3)"
+  },
+  {
+   "name": "FoxBlockReload",
+   "address": "14006f320",
+   "signature": ""
+  },
+  {
+   "name": "FoxBlockUnload",
+   "address": "14006f990",
+   "signature": ""
+  },
+  {
+   "name": "foxPathPathB",
+   "address": "1400855e0",
+   "signature": "Path * __thiscall fox::Path::Path(Path *this,Path *rhs)"
+  },
+  {
+   "name": "foxPathPath",
+   "address": "140085700",
+   "signature": "Path * fox::Path::Path(Path *path,PathCode64 hash)"
+  },
+  {
+   "name": "foxPathEmpty",
+   "address": "140085990",
+   "signature": "Path * fox::Path::Empty(void)"
+  },
+  {
+   "name": "BlockHeapAlloc",
+   "address": "1400dcb50",
+   "signature": ""
+  },
+  {
+   "name": "BlockHeapFree",
+   "address": "1400dcbc0",
+   "signature": ""
+  },
+  {
+   "name": "FoxGenerateUniqueName",
+   "address": "1400e0210",
+   "signature": ""
+  },
+  {
+   "name": "FNVHash32",
+   "address": "14033b9d0",
+   "signature": "TODO find in prerelease map"
+  },
+  {
+   "name": "gkGetColoringSystem",
+   "address": "1405cef50",
+   "signature": "tpp::gk::GetColoringSystem"
+  },
+  {
+   "name": "voidreturn",
+   "address": "140645940",
+   "signature": "re::voidreturn"
+  },
+  {
+   "name": "GetFreeMissionNameKey",
+   "address": "1409121c0",
+   "signature": "tpp::ui::utility::GetFreeMissionNameKey"
+  },
+  {
+   "name": "GetChangeLocationMenuParameterByLocationId",
+   "address": "140926730",
+   "signature": "tpp::ui::menu::MotherBaseMissionCommonData::GetChangeLocationMenuParameterByLocationId"
+  },
+  {
+   "name": "GetMbFreeChangeLocationMenuParameter",
+   "address": "140926860",
+   "signature": "tpp::ui::menu::MotherBaseMissionCommonData::GetMbFreeChangeLocationMenuParameter"
+  },
+  {
+   "name": "GetPhotoAdditionalTextLangId",
+   "address": "140926940",
+   "signature": "tpp::ui::menu::MotherBaseMissionCommonData::GetPhotoAdditionalTextLangId"
+  },
+  {
+   "name": "GetBuddyGearArmFile",
+   "address": "140a46170",
+   "signature": "tpp::gm::buddy::impl::Buddy2BlockControllerImpl::GetBuddyGearArmFile"
+  },
+  {
+   "name": "GetBuddyGearHeadFile",
+   "address": "140a462e0",
+   "signature": "tpp::gm::buddy::impl::Buddy2BlockControllerImpl::GetBuddyGearHeadFile"
+  },
+  {
+   "name": "GetBuddyGearMainWeaponFile",
+   "address": "140a46390",
+   "signature": "tpp::gm::buddy::impl::Buddy2BlockControllerImpl::GetBuddyGearMainWeaponFile"
+  },
+  {
+   "name": "GetBuddyQuietWeaponFileFromBuddyBlock",
+   "address": "140a465c0",
+   "signature": "tpp::gm::buddy::impl::Buddy2BlockControllerImpl::GetBuddyQuietWeaponFileFromBuddyBlock"
+  },
+  {
+   "name": "GetPathAtBuddyType",
+   "address": "140a46870",
+   "signature": "tpp::gm::buddy::impl::Buddy2BlockControllerImpl::GetPathAtBuddyType"
+  },
+  {
+   "name": "GetAvatarHoneFilePath",
+   "address": "140ae73d0",
+   "signature": "tpp::gm::player::AvatarTppResourceTable::GetAvatarHoneFilePath"
+  },
+  {
+   "name": "GetAvatarHoneFpkPath",
+   "address": "140ae7440",
+   "signature": "tpp::gm::player::AvatarTppResourceTable::GetAvatarHoneFpkPath"
+  },
+  {
+   "name": "DoesNeedFaceFova",
+   "address": "140ae8c90",
+   "signature": "tpp::gm::player::ResourceTable::DoesNeedFaceFova"
+  },
+  {
+   "name": "DoesNeedFaceFovaForAvatar",
+   "address": "140ae8ce0",
+   "signature": "tpp::gm::player::ResourceTable::DoesNeedFaceFovaForAvatar"
+  },
+  {
+   "name": "GetBodyFovaPath",
+   "address": "140ae8d40",
+   "signature": "tpp::gm::player::ResourceTable::GetBodyFovaPath"
+  },
+  {
+   "name": "GetCamoFilePath",
+   "address": "140ae8fb0",
+   "signature": "tpp::gm::player::ResourceTable::GetCamoFilePath"
+  },
+  {
+   "name": "GetCamoFpkPath",
+   "address": "140ae9080",
+   "signature": "tpp::gm::player::ResourceTable::GetCamoFpkPath"
+  },
+  {
+   "name": "GetFaceFilePath",
+   "address": "140ae94c0",
+   "signature": "tpp::gm::player::ResourceTable::GetFaceFilePath"
+  },
+  {
+   "name": "GetFaceFpkPath",
+   "address": "140ae95d0",
+   "signature": "tpp::gm::player::ResourceTable::GetFaceFpkPath"
+  },
+  {
+   "name": "GetFacialMtarFilePath",
+   "address": "140ae96e0",
+   "signature": "tpp::gm::player::ResourceTable::GetFacialMtarFilePath"
+  },
+  {
+   "name": "GetFacialMtarFpkPath",
+   "address": "140ae9780",
+   "signature": "tpp::gm::player::ResourceTable::GetFacialMtarFpkPath"
+  },
+  {
+   "name": "GetHandFilePath",
+   "address": "140ae9820",
+   "signature": "tpp::gm::player::ResourceTable::GetHandFilePath"
+  },
+  {
+   "name": "GetHandFpkPath",
+   "address": "140ae98d0",
+   "signature": "tpp::gm::player::ResourceTable::GetHandFpkPath"
+  },
+  {
+   "name": "GetPartsFilePath",
+   "address": "140ae9980",
+   "signature": "tpp::gm::player::ResourceTable::GetPartsFilePath"
+  },
+  {
+   "name": "GetPartsFpkPath",
+   "address": "140ae9a20",
+   "signature": "tpp::gm::player::ResourceTable::GetPartsFpkPath"
+  },
+  {
+   "name": "_DoesNeedBodyFovaForDD",
+   "address": "140ae9be0",
+   "signature": "tpp::gm::player::`anonymous_namespace'::_DoesNeedBodyFovaForDD"
+  },
+  {
+   "name": "ReliefVehicleLoad",
+   "address": "140b3ab50",
+   "signature": "tpp::gm::vehicle::ReliefBlockController::Load"
+  },
+  {
+   "name": "ReliefVehicleLoadToExhibit",
+   "address": "140b3abf0",
+   "signature": "tpp::gm::vehicle::ReliefBlockController::LoadToExhibit"
+  },
+  {
+   "name": "BuddyCommandGetDescriptionLangId",
+   "address": "14110d0d0",
+   "signature": "tpp::gm::player::impl::`anonymous_namespace'::GetBuddyCommandHelpName"
+  },
+  {
+   "name": "GetBuddyCommandName",
+   "address": "14110d320",
+   "signature": "tpp::gm::player::impl::`anonymous_namespace'::GetBuddyCommandName"
+  },
+  {
+   "name": "UpdateCamera",
+   "address": "141115ed0",
+   "signature": "tpp::gamecore::camera::Player2CameraController::UpdateCamera"
+  },
+  {
+   "name": "path_hash_code",
+   "address": "141a098e0",
+   "signature": ""
+  },
+  {
+   "name": "ff_stringid_hash_n",
+   "address": "141a09ac0",
+   "signature": ""
+  },
+  {
+   "name": "lua_atpanic",
+   "address": "141a10ca0",
+   "signature": ""
+  },
+  {
+   "name": "lua_call",
+   "address": "141a10cc0",
+   "signature": ""
+  },
+  {
+   "name": "lua_checkstack",
+   "address": "141a10d10",
+   "signature": ""
+  },
+  {
+   "name": "lua_concat",
+   "address": "141a10db0",
+   "signature": ""
+  },
+  {
+   "name": "lua_createtable",
+   "address": "141a10e80",
+   "signature": ""
+  },
+  {
+   "name": "lua_dump",
+   "address": "141a10ef0",
+   "signature": ""
+  },
+  {
+   "name": "lua_error",
+   "address": "141a10fa0",
+   "signature": ""
+  },
+  {
+   "name": "lua_gc",
+   "address": "141a10fb0",
+   "signature": ""
+  },
+  {
+   "name": "lua_getfenv",
+   "address": "141a11160",
+   "signature": ""
+  },
+  {
+   "name": "lua_getfield",
+   "address": "141a111e0",
+   "signature": ""
+  },
+  {
+   "name": "lua_getmetatable",
+   "address": "141a11250",
+   "signature": ""
+  },
+  {
+   "name": "lua_gettable",
+   "address": "141a112b0",
+   "signature": ""
+  },
+  {
+   "name": "lua_getupvalue",
+   "address": "141a112f0",
+   "signature": ""
+  },
+  {
+   "name": "lua_insert",
+   "address": "141a11390",
+   "signature": ""
+  },
+  {
+   "name": "lua_iscfunction",
+   "address": "141a113e0",
+   "signature": ""
+  },
+  {
+   "name": "lua_isnumber",
+   "address": "141a11410",
+   "signature": ""
+  },
+  {
+   "name": "lua_isstring",
+   "address": "141a11440",
+   "signature": ""
+  },
+  {
+   "name": "lua_lessthan",
+   "address": "141a114b0",
+   "signature": ""
+  },
+  {
+   "name": "lua_load",
+   "address": "141a11500",
+   "signature": ""
+  },
+  {
+   "name": "lua_newthread",
+   "address": "141a11550",
+   "signature": ""
+  },
+  {
+   "name": "lua_newuserdata",
+   "address": "141a11590",
+   "signature": ""
+  },
+  {
+   "name": "lua_next",
+   "address": "141a11600",
+   "signature": ""
+  },
+  {
+   "name": "lua_objlen",
+   "address": "141a11640",
+   "signature": ""
+  },
+  {
+   "name": "lua_pcall",
+   "address": "141a116c0",
+   "signature": ""
+  },
+  {
+   "name": "lua_pushboolean",
+   "address": "141a11750",
+   "signature": ""
+  },
+  {
+   "name": "lua_pushcclosure",
+   "address": "141a11770",
+   "signature": ""
+  },
+  {
+   "name": "lua_pushfstring",
+   "address": "141a11830",
+   "signature": ""
+  },
+  {
+   "name": "lua_pushinteger",
+   "address": "141a11880",
+   "signature": ""
+  },
+  {
+   "name": "lua_pushlightuserdata",
+   "address": "141a118a0",
+   "signature": ""
+  },
+  {
+   "name": "lua_pushlstring",
+   "address": "141a118c0",
+   "signature": ""
+  },
+  {
+   "name": "lua_pushnil",
+   "address": "141a11930",
+   "signature": ""
+  },
+  {
+   "name": "lua_pushnumber",
+   "address": "141a11950",
+   "signature": ""
+  },
+  {
+   "name": "lua_pushstring",
+   "address": "141a11970",
+   "signature": ""
+  },
+  {
+   "name": "lua_pushthread",
+   "address": "141a119a0",
+   "signature": ""
+  },
+  {
+   "name": "lua_pushvalue",
+   "address": "141a119d0",
+   "signature": ""
+  },
+  {
+   "name": "lua_pushvfstring",
+   "address": "141a11a00",
+   "signature": ""
+  },
+  {
+   "name": "lua_rawequal",
+   "address": "141a11a50",
+   "signature": ""
+  },
+  {
+   "name": "lua_rawget",
+   "address": "141a11aa0",
+   "signature": ""
+  },
+  {
+   "name": "lua_rawgeti",
+   "address": "141a11ae0",
+   "signature": "via MACRO lua_getref"
+  },
+  {
+   "name": "lua_rawset",
+   "address": "141a11b20",
+   "signature": ""
+  },
+  {
+   "name": "lua_rawseti",
+   "address": "141a11ba0",
+   "signature": ""
+  },
+  {
+   "name": "lua_remove",
+   "address": "141a11c20",
+   "signature": ""
+  },
+  {
+   "name": "lua_replace",
+   "address": "141a11c70",
+   "signature": ""
+  },
+  {
+   "name": "lua_setfenv",
+   "address": "141a11d60",
+   "signature": ""
+  },
+  {
+   "name": "lua_setfield",
+   "address": "141a11e00",
+   "signature": ""
+  },
+  {
+   "name": "lua_setmetatable",
+   "address": "141a11e80",
+   "signature": ""
+  },
+  {
+   "name": "lua_settable",
+   "address": "141a11f40",
+   "signature": ""
+  },
+  {
+   "name": "lua_settop",
+   "address": "141a11f70",
+   "signature": ""
+  },
+  {
+   "name": "lua_setupvalue",
+   "address": "141a11fd0",
+   "signature": ""
+  },
+  {
+   "name": "lua_toboolean",
+   "address": "141a120c0",
+   "signature": ""
+  },
+  {
+   "name": "lua_tocfunction",
+   "address": "141a120f0",
+   "signature": ""
+  },
+  {
+   "name": "lua_tointeger",
+   "address": "141a12120",
+   "signature": ""
+  },
+  {
+   "name": "lua_tolstring",
+   "address": "141a12150",
+   "signature": ""
+  },
+  {
+   "name": "lua_tonumber",
+   "address": "141a121f0",
+   "signature": ""
+  },
+  {
+   "name": "lua_topointer",
+   "address": "141a12230",
+   "signature": ""
+  },
+  {
+   "name": "lua_tothread",
+   "address": "141a122a0",
+   "signature": ""
+  },
+  {
+   "name": "lua_touserdata",
+   "address": "141a122c0",
+   "signature": ""
+  },
+  {
+   "name": "lua_type",
+   "address": "141a12300",
+   "signature": ""
+  },
+  {
+   "name": "lua_xmove",
+   "address": "141a12350",
+   "signature": ""
+  },
+  {
+   "name": "lua_resume",
+   "address": "141a13320",
+   "signature": ""
+  },
+  {
+   "name": "lua_close",
+   "address": "141a16480",
+   "signature": ""
+  },
+  {
+   "name": "lua_newstate",
+   "address": "141a16510",
+   "signature": "tex could use default implementation, but may want to hook if we want to see what the engine is up to"
+  },
+  {
+   "name": "luaL_openlibs",
+   "address": "141a16980",
+   "signature": ""
+  },
+  {
+   "name": "luaL_addlstring",
+   "address": "141a16bf0",
+   "signature": ""
+  },
+  {
+   "name": "luaL_addvalue",
+   "address": "141a16cb0",
+   "signature": ""
+  },
+  {
+   "name": "luaL_argerror",
+   "address": "141a16d70",
+   "signature": ""
+  },
+  {
+   "name": "luaL_callmeta",
+   "address": "141a16e80",
+   "signature": ""
+  },
+  {
+   "name": "luaL_checkany",
+   "address": "141a16f00",
+   "signature": ""
+  },
+  {
+   "name": "luaL_checkinteger",
+   "address": "141a16f40",
+   "signature": ""
+  },
+  {
+   "name": "luaL_checklstring",
+   "address": "141a16f90",
+   "signature": ""
+  },
+  {
+   "name": "luaL_checknumber",
+   "address": "141a17020",
+   "signature": ""
+  },
+  {
+   "name": "luaL_checkoption",
+   "address": "141a17080",
+   "signature": ""
+  },
+  {
+   "name": "luaL_checkstack",
+   "address": "141a17140",
+   "signature": ""
+  },
+  {
+   "name": "luaL_checktype",
+   "address": "141a17180",
+   "signature": ""
+  },
+  {
+   "name": "luaL_checkudata",
+   "address": "141a171c0",
+   "signature": ""
+  },
+  {
+   "name": "luaL_error",
+   "address": "141a17280",
+   "signature": ""
+  },
+  {
+   "name": "luaL_findtable",
+   "address": "141a172e0",
+   "signature": ""
+  },
+  {
+   "name": "luaL_getmetafield",
+   "address": "141a17410",
+   "signature": ""
+  },
+  {
+   "name": "luaL_gsub",
+   "address": "141a17490",
+   "signature": ""
+  },
+  {
+   "name": "luaL_loadbuffer",
+   "address": "141a178e0",
+   "signature": ""
+  },
+  {
+   "name": "luaL_loadfile",
+   "address": "141a17910",
+   "signature": ""
+  },
+  {
+   "name": "luaL_newmetatable",
+   "address": "141a17b70",
+   "signature": ""
+  },
+  {
+   "name": "luaL_newstate",
+   "address": "141a17bf0",
+   "signature": ""
+  },
+  {
+   "name": "luaI_openlib",
+   "address": "141a17c30",
+   "signature": ""
+  },
+  {
+   "name": "luaL_optinteger",
+   "address": "141a17db0",
+   "signature": ""
+  },
+  {
+   "name": "luaL_optlstring",
+   "address": "141a17e20",
+   "signature": ""
+  },
+  {
+   "name": "luaL_prepbuffer",
+   "address": "141a17f10",
+   "signature": ""
+  },
+  {
+   "name": "luaL_pushresult",
+   "address": "141a17f70",
+   "signature": ""
+  },
+  {
+   "name": "luaL_where",
+   "address": "141a18170",
+   "signature": ""
+  },
+  {
+   "name": "luaL_typerror",
+   "address": "141a18240",
+   "signature": ""
+  },
+  {
+   "name": "lua_getinfo",
+   "address": "141a20be0",
+   "signature": ""
+  },
+  {
+   "name": "lua_getlocal",
+   "address": "141a20cd0",
+   "signature": ""
+  },
+  {
+   "name": "lua_getstack",
+   "address": "141a20d40",
+   "signature": ""
+  },
+  {
+   "name": "lua_sethook",
+   "address": "141a20dc0",
+   "signature": ""
+  },
+  {
+   "name": "lua_setlocal",
+   "address": "141a20df0",
+   "signature": ""
+  },
+  {
+   "name": "luaopen_base",
+   "address": "141a2f1f0",
+   "signature": ""
+  },
+  {
+   "name": "luaopen_table",
+   "address": "141a2fe20",
+   "signature": ""
+  },
+  {
+   "name": "io_close",
+   "address": "141a2ff20",
+   "signature": ""
+  },
+  {
+   "name": "f_read",
+   "address": "141a30540",
+   "signature": ""
+  },
+  {
+   "name": "f_write",
+   "address": "141a30610",
+   "signature": ""
+  },
+  {
+   "name": "luaopen_io",
+   "address": "141a310d0",
+   "signature": "48 89 5c 24 08 48 89 74 24 10"
+  },
+  {
+   "name": "os_execute",
+   "address": "141a31640",
+   "signature": "lua::os_execute 40 53 48 83 ec 20 45 33 c9"
+  },
+  {
+   "name": "os_remove",
+   "address": "141a31680",
+   "signature": "lua::os_remove"
+  },
+  {
+   "name": "os_rename",
+   "address": "141a316d0",
+   "signature": "lua::os_rename"
+  },
+  {
+   "name": "os_tmpname",
+   "address": "141a31730",
+   "signature": "lua::os_tmpname"
+  },
+  {
+   "name": "os_getenv",
+   "address": "141a317a0",
+   "signature": "lua::os_getenv 40 53 48 83 ec 20 45 33 c0"
+  },
+  {
+   "name": "os_setlocale",
+   "address": "141a31e20",
+   "signature": "lua::os_setlocale"
+  },
+  {
+   "name": "os_exit",
+   "address": "141a31e90",
+   "signature": "lua::os_exit"
+  },
+  {
+   "name": "luaopen_os",
+   "address": "141a31eb0",
+   "signature": ""
+  },
+  {
+   "name": "luaopen_string",
+   "address": "141a33330",
+   "signature": ""
+  },
+  {
+   "name": "luaopen_math",
+   "address": "141a34ae0",
+   "signature": ""
+  },
+  {
+   "name": "luaopen_debug",
+   "address": "141a35a10",
+   "signature": "48 83 ec 28 4c 8d 05 b5 23 a8 00"
+  },
+  {
+   "name": "gll_loadlib",
+   "address": "141a35a40",
+   "signature": "lua::ll_loadlib 48 89 5c 24 08 57 48 83 ec 20"
+  },
+  {
+   "name": "luaopen_package",
+   "address": "141a364f0",
+   "signature": ""
+  },
+  {
+   "name": "l_StubbedOut",
+   "address": "141c658e0",
+   "signature": "char * __cdecl tpp::ef::OutOfMissionRangeEffectLua::SetupInterp(uint param_1,uint param_2)"
+  }
+ ]
+}

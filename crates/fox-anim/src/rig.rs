@@ -254,6 +254,18 @@ impl HumanRig {
         RigFrame { values }
     }
 
+    /// Summed distance between the IK targets (hands, feet) of two frames:
+    /// how far apart two poses are where it shows most.
+    pub fn target_distance(&self, a: &RigFrame, b: &RigFrame) -> f32 {
+        self.target_segments
+            .iter()
+            .map(|&s| {
+                let (x, y) = (a.values[s], b.values[s]);
+                Vec3::new(x[0] - y[0], x[1] - y[1], x[2] - y[2]).length()
+            })
+            .sum()
+    }
+
     /// Solve a sampled (or blended) frame into a skeleton pose in root space.
     pub fn solve(&self, skel: &Skeleton, frame: &RigFrame) -> Pose {
         let v = |s: usize| frame.values[s];

@@ -1014,7 +1014,25 @@ fn snake_sim(vfs: &Vfs) -> Result<()> {
             },
             "run right (turn)",
         ),
-        (1.0, Input::default(), "stop"),
+        (1.5, Input::default(), "stop"),
+        (
+            2.0,
+            Input {
+                move_y: -1.0,
+                ..Default::default()
+            },
+            "start back (180)",
+        ),
+        (1.5, Input::default(), "stop"),
+        (
+            2.0,
+            Input {
+                move_x: -1.0,
+                ..Default::default()
+            },
+            "start left (90)",
+        ),
+        (1.5, Input::default(), "stop"),
         (
             0.05,
             Input {
@@ -1064,9 +1082,9 @@ fn snake_sim(vfs: &Vfs) -> Result<()> {
         let head = pose.positions[skel.find(fox_hash::str_code32(b"SKL_004_HEAD")).unwrap()];
         let moved = ctl.position - start;
         println!(
-            "t={t:>5.2}s {label:<18} {:?}/{:?}  pos ({:>6.2},{:>6.2})  yaw {:>5.0}  avg speed {:>4.2} m/s  head y {:.2}  clip {}",
-            ctl.stance,
-            ctl.gait,
+            "t={t:>5.2}s {label:<18} {:>6}/{:<5}  pos ({:>6.2},{:>6.2})  yaw {:>5.0}  avg speed {:>4.2} m/s  head y {:.2}  clip {}",
+            format!("{:?}", ctl.stance),
+            format!("{:?}", ctl.gait),
             ctl.position.x,
             ctl.position.z,
             ctl.yaw.to_degrees(),

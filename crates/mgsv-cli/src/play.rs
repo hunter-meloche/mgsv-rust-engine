@@ -102,11 +102,16 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
             prone: window.is_key_pressed(Key::Z, KeyRepeat::No),
         };
         if opts.auto {
-            // Scripted: run forward, curving left, crouch after 3 s.
-            let t = started.elapsed().as_secs_f32();
-            input.move_y = 1.0;
-            input.move_x = if t > 1.5 { -0.6 } else { 0.0 };
-            input.crouch = total_frames == 180;
+            // Scripted by frame: run forward, stop, turn around and run back,
+            // stop, crouch.
+            let f = total_frames;
+            input.move_x = 0.0;
+            input.move_y = match f {
+                0..120 => 1.0,
+                180..300 => -1.0,
+                _ => 0.0,
+            };
+            input.crouch = f == 360;
         }
         // Stick-style: diagonal input is not faster.
         let len = input.move_x.hypot(input.move_y);

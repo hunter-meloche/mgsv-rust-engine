@@ -120,7 +120,12 @@ fn index_in(seq: &[f32], v: f32) -> f32 {
     for i in 1..seq.len() {
         if v >= seq[i] {
             let span = seq[i - 1] - seq[i];
-            return (i - 1) as f32 + if span.abs() > 1e-6 { (seq[i - 1] - v) / span } else { 0.0 };
+            return (i - 1) as f32
+                + if span.abs() > 1e-6 {
+                    (seq[i - 1] - v) / span
+                } else {
+                    0.0
+                };
         }
     }
     (seq.len() - 1) as f32
@@ -169,7 +174,9 @@ impl WeaponRig {
         muzzle: Vec3,
     ) -> Result<Self, String> {
         let stand_name = names.grids[0].ok_or("a standing aim grid is required")?;
-        let stand = clips.get(stand_name).ok_or_else(|| format!("missing clip {stand_name}"))?;
+        let stand = clips
+            .get(stand_name)
+            .ok_or_else(|| format!("missing clip {stand_name}"))?;
         let centre = rig.pose(skel, &stand, (stand.frame_count / 2) as f32)?;
         let hand_to_gun = (centre.rotations[hand_bone] * hand_offset.0).inverse();
         let mut this = Self {
@@ -183,14 +190,22 @@ impl WeaponRig {
         };
         for (slot, name) in names.grids.iter().enumerate() {
             let Some(name) = name else { continue };
-            let clip = clips.get(name).ok_or_else(|| format!("missing clip {name}"))?;
+            let clip = clips
+                .get(name)
+                .ok_or_else(|| format!("missing clip {name}"))?;
             this.grids[slot] = Some(this.measure(rig, skel, name, &clip)?);
         }
         Ok(this)
     }
 
     /// Measure a grid's layout and angles from its poses.
-    fn measure(&self, rig: &HumanRig, skel: &Skeleton, name: &str, clip: &Clip) -> Result<AimGrid, String> {
+    fn measure(
+        &self,
+        rig: &HumanRig,
+        skel: &Skeleton,
+        name: &str,
+        clip: &Clip,
+    ) -> Result<AimGrid, String> {
         let n = clip.frame_count as usize + 1;
         let mut dirs = Vec::with_capacity(n);
         for f in 0..n {
@@ -212,7 +227,9 @@ impl WeaponRig {
             .collect();
         // Unwrap outward from the column nearest straight ahead so yaws
         // decrease left to right (prone grids span +180..-180).
-        let mid = (0..cols).min_by(|&a, &b| col_yaw[a].abs().total_cmp(&col_yaw[b].abs())).unwrap();
+        let mid = (0..cols)
+            .min_by(|&a, &b| col_yaw[a].abs().total_cmp(&col_yaw[b].abs()))
+            .unwrap();
         for c in (0..mid).rev() {
             while col_yaw[c] <= col_yaw[c + 1] {
                 col_yaw[c] += tau;
@@ -226,19 +243,35 @@ impl WeaponRig {
         let row_pitch = (0..rows)
             .map(|r| (0..cols).map(|c| dirs[r * cols + c].1).sum::<f32>() / cols as f32)
             .collect();
-        Ok(AimGrid { clip: name.to_string(), cols, rows, col_yaw, row_pitch })
+        Ok(AimGrid {
+            clip: name.to_string(),
+            cols,
+            rows,
+            col_yaw,
+            row_pitch,
+        })
     }
 
     /// Gun transform in the pose's space (root space for controller poses).
     pub fn gun_transform(&self, pose: &Pose) -> (Quat, Vec3) {
-        let (hr, hp) = (pose.rotations[self.hand_bone], pose.positions[self.hand_bone]);
+        let (hr, hp) = (
+            pose.rotations[self.hand_bone],
+            pose.positions[self.hand_bone],
+        );
         let rot = hr * self.hand_offset.0 * self.hand_to_gun;
         (rot, hp + hr * self.hand_offset.1)
     }
 
     /// Bilinearly blended aim pose for `yaw` (left positive) and `pitch`
     /// (up positive), radians relative to the body.
-    pub fn aim_frame(&self, rig: &HumanRig, grid: &AimGrid, clip: &Clip, yaw: f32, pitch: f32) -> Result<RigFrame, String> {
+    pub fn aim_frame(
+        &self,
+        rig: &HumanRig,
+        grid: &AimGrid,
+        clip: &Clip,
+        yaw: f32,
+        pitch: f32,
+    ) -> Result<RigFrame, String> {
         let c = index_in(&grid.col_yaw, yaw);
         let r = index_in(&grid.row_pitch, pitch);
         let (c0, r0) = (c.floor() as usize, r.floor() as usize);

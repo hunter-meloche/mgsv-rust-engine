@@ -46,7 +46,8 @@ game (world, AI, missions) continues afterwards.
 - [ ] Controller v3: in-place turns (`tn_*`), dive, cover, ledges/vaults; tuning against the exe's player parameters
 - [x] Camera: over-the-shoulder follow, aim zoom (`mgsv play`); [ ] shoulder swap
 - [x] Weapons v1: AM MRS-4 with stats read from `EquipParameters.lua` (720 rpm full auto, 30+210, 5.56 mm at 450 m/s, gravity 18), aim pose grid layered on the upper body, strafing, firing, bullets with drop, reload clip; `.fcnp` attachment (hand / back)
-- [ ] Weapons v2: decode recoil/sway (wobbling) sets, other weapon classes (handgun `snaphg01`, sniper, shotgun), prone aiming (`snapasr_c_*`, `pose_35`), damage
+- [x] Weapons v2: weapon list with switching (1/2), WU S.Pistol (60 rpm semi, 7+21 tranq darts at 200 m/s, all from the tables), aim grids measured from the poses (stand/crouch 5x5, prone 9x4 over +-180 degrees), prone aiming, per-shot fire clips applied as deltas on the aim pose
+- [ ] Weapons v3: decode recoil/sway (wobbling) sets, more classes (sniper, shotgun, SMG), damage and hit reactions, sound
 - [x] Physics/collision interface: `snake_core::Collision` (raycasts for bullets, capsule sliding for movement), reference `BoxWorld`; `mgsv play` test range with cover, walls and target boards
 - [ ] Recoil/sway: decode `receiverParamSetsWobbling` (7 fields, undocumented; community notes cover `receiverParamSetsBase` = fire rate, aim-assist distance, draw speed, ?, ?, iron sight x2, reload speed)
 - [ ] Library API and a headless test harness; later the SKSE bridge

@@ -319,6 +319,41 @@ impl HumanRig {
         out
     }
 
+    /// Add the change `reference -> current` (two frames of one clip) onto
+    /// `base`, per segment weight scaled by `amount`. Rotations are deltas in
+    /// root space (pre-multiplied), vectors are offsets.
+    pub fn add_delta(
+        &self,
+        base: &RigFrame,
+        reference: &RigFrame,
+        current: &RigFrame,
+        weights: &[f32],
+        amount: f32,
+    ) -> RigFrame {
+        let mut out = base.clone();
+        for (s, w) in weights.iter().enumerate() {
+            let t = (w * amount).clamp(0.0, 1.0);
+            if t <= 0.0 {
+                continue;
+            }
+            out.values[s] = if self.quat_segments[s] {
+                let (r, c) = (
+                    Quat::from_array(reference.values[s]),
+                    Quat::from_array(current.values[s]),
+                );
+                let delta = Quat::IDENTITY.slerp((c * r.inverse()).normalize(), t);
+                (delta * Quat::from_array(base.values[s]))
+                    .normalize()
+                    .to_array()
+            } else {
+                let d = glam::Vec4::from_array(current.values[s])
+                    - glam::Vec4::from_array(reference.values[s]);
+                (glam::Vec4::from_array(base.values[s]) + d * t).to_array()
+            };
+        }
+        out
+    }
+
     /// Summed distance between the IK targets (hands, feet) of two frames:
     /// how far apart two poses are where it shows most.
     pub fn target_distance(&self, a: &RigFrame, b: &RigFrame) -> f32 {

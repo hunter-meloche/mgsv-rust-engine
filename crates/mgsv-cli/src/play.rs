@@ -21,8 +21,9 @@ pub struct Gun {
     pub rest: Pose,
     pub stats: WeaponStats,
     pub rig: WeaponRig,
-    /// Where the rifle rides when not in the hands: bone and offset.
-    pub back: (usize, (Quat, Vec3)),
+    /// Where it rides when not in the hands (bone and offset); hidden if none.
+    pub back: Option<(usize, (Quat, Vec3))>,
+    pub color: Vec3,
 }
 
 pub struct Assets {
@@ -31,7 +32,8 @@ pub struct Assets {
     pub clips: ClipLibrary,
     /// (model, base colour)
     pub parts: Vec<(SkinnedModel, Vec3)>,
-    pub gun: Option<Gun>,
+    /// Carried weapons, in slot order (keys 1, 2, ...).
+    pub guns: Vec<Gun>,
 }
 
 /// Automation for smoke tests: stop after `frames`, save the last frame,
@@ -77,7 +79,7 @@ const HELP: &str = "WASD move, Shift dash, Ctrl walk, C crouch, Z prone, RMB aim
 pub fn run(assets: Assets, opts: Options) -> Result<()> {
     let mut ctl = Controller::new(&assets.clips, snake_core::ClipNames::default())
         .map_err(anyhow::Error::msg)?;
-    if let Some(g) = &assets.gun {
+    for g in &assets.guns {
         ctl.equip(&assets.clips, g.stats.clone(), g.rig.clone())
             .map_err(anyhow::Error::msg)?;
     }
@@ -163,16 +165,25 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
             fire: aim_button && lmb,
             reload: window.is_key_pressed(Key::R, KeyRepeat::No),
             aim_pitch: -(cam_pitch - ctl.recoil),
+            switch_to: [Key::Key1, Key::Key2, Key::Key3, Key::Key4]
+                .iter()
+                .position(|k| window.is_key_pressed(*k, KeyRepeat::No)),
         };
         if opts.auto {
-            // Scripted by frame: run into the low cover wall, then aim over it
-            // and fire a burst at the 25 m board.
+            // Scripted by frame: pistol, aim, three single shots; rifle, go
+            // prone, aim and fire a burst.
             let f = total_frames;
             input.move_x = 0.0;
-            input.move_y = if f < 160 { 1.0 } else { 0.0 };
-            input.aim = f >= 170;
-            input.fire = (230..290).contains(&f);
-            cam_pitch = 0.0;
+            input.move_y = 0.0;
+            input.switch_to = match f {
+                5 => Some(1),
+                160 => Some(0),
+                _ => None,
+            };
+            input.aim = (30..150).contains(&f) || f >= 240;
+            input.fire = matches!(f, 90..=92 | 110..=112 | 130..=132) || (300..330).contains(&f);
+            input.prone = f == 170;
+            cam_pitch = 0.05;
             input.aim_pitch = -(cam_pitch - ctl.recoil);
         }
         // Stick-style: diagonal input is not faster.
@@ -313,16 +324,19 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
                 );
             }
         }
-        // The rifle: in the hands while aiming/reloading, else on the back.
-        if let (Some(g), Some(w)) = (&assets.gun, &ctl.weapon) {
-            let (gr, gp) = if ctl.weapon_in_hand() {
-                w.rig.gun_transform(&pose)
-            } else {
-                let (bone, (r, t)) = g.back;
+        // Weapons: the one in use in the hands while aiming/reloading; others
+        // (and the one in use when lowered) on their holster points, if any.
+        for (i, g) in assets.guns.iter().enumerate() {
+            let in_hand = ctl.current == Some(i) && ctl.weapon_in_hand();
+            let (gr, gp) = if in_hand {
+                g.rig.gun_transform(&pose)
+            } else if let Some((bone, (r, t))) = g.back {
                 (
                     pose.rotations[bone] * r,
                     pose.positions[bone] + pose.rotations[bone] * t,
                 )
+            } else {
+                continue;
             };
             let skinned = g.model.skin(&g.rest);
             for (mesh, verts) in g.model.meshes.iter().zip(&skinned) {
@@ -337,11 +351,14 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
                                 world_v[t[1] as usize],
                                 world_v[t[2] as usize],
                             ],
-                            Vec3::splat(0.22),
+                            g.color,
                         )
                     }),
                 );
             }
+        }
+        if let Some(w) = ctl.weapon() {
+            let (gr, gp) = w.rig.gun_transform(&pose);
             if flash > 0 && ctl.weapon_in_hand() {
                 flash -= 1;
                 let m = to_world(gp + gr * w.rig.muzzle);
@@ -393,7 +410,7 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
             fps_timer = Instant::now();
         }
         let ammo = ctl
-            .weapon
+            .weapon()
             .as_ref()
             .map(|w| {
                 format!(
@@ -414,7 +431,7 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
     }
     let secs = started.elapsed().as_secs_f32();
     let ammo = ctl
-        .weapon
+        .weapon()
         .as_ref()
         .map(|w| format!(", ammo {}/{}", w.ammo, w.reserve))
         .unwrap_or_default();

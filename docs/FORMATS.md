@@ -165,8 +165,10 @@ grid pose land on exact authored angles (yaw +90/+45/0/-45/-90, pitch
 
 `snap<weapon>_<s|q|c>_fre_pose_<n>` clips hold one aim pose per frame,
 row-major from the top-left: rows are pitch (up first), columns yaw (left
-first). Rifle: 5 x 5 at 45 / 37.5 degree steps (`pose_25`); ready/handgun:
-3 x 3 (`pose_9`). The game layers them onto the upper body (the rig's `Upper`
+first). Rifle and handgun (`snapasr_*`, `snaphg01_*`): stand/crouch 5 x 5 at 45 /
+37.5 degree steps (`pose_25`), prone 9 x 4 covering yaw +180..-180 and pitch
++75..-30 (`pose_35`); `snaprdy_*_pose_9` is 3 x 3. `snapcore::WeaponRig::calibrate`
+measures each grid from its poses, so layouts need no hard-coding. The game layers them onto the upper body (the rig's `Upper`
 mask) over the `snaprdy_*_fre0_*` strafe loops, whose angle suffix is the
 movement direction relative to the facing (positive = left).
 

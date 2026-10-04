@@ -5,6 +5,8 @@ use fox_anim::{HumanRig, Pose, Quat, RigFrame, Skeleton, Vec3};
 use fox_data::lua_table::{LuaTable, LuaValue, parse_call_argument};
 use fox_data::mtar::Clip;
 
+use crate::world::{Collision, Hit};
+
 /// Gameplay numbers for one weapon, read from
 /// `/Assets/tpp/level_asset/weapon/ParameterTables/parts/EquipParameters.lua`.
 #[derive(Clone, Debug)]
@@ -177,40 +179,6 @@ impl WeaponRig {
     }
 }
 
-/// What a bullet hit.
-#[derive(Clone, Copy, Debug)]
-pub struct Hit {
-    pub point: Vec3,
-    pub normal: Vec3,
-}
-
-/// The world the player moves and shoots in. Hosts (a test floor, Skyrim)
-/// implement this; the core never assumes a particular physics engine.
-pub trait Collision {
-    /// First hit along the segment `from -> to`.
-    fn raycast(&self, from: Vec3, to: Vec3) -> Option<Hit>;
-}
-
-/// An endless flat floor at `y = height`.
-pub struct FlatGround {
-    pub height: f32,
-}
-
-impl Collision for FlatGround {
-    fn raycast(&self, from: Vec3, to: Vec3) -> Option<Hit> {
-        let (a, b) = (from.y - self.height, to.y - self.height);
-        if a >= 0.0 && b < 0.0 {
-            let t = a / (a - b);
-            Some(Hit {
-                point: from.lerp(to, t),
-                normal: Vec3::Y,
-            })
-        } else {
-            None
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct Bullet {
     pub position: Vec3,
@@ -240,7 +208,8 @@ impl Ballistics {
         });
     }
 
-    pub fn step(&mut self, dt: f32, world: &dyn Collision) {
+    /// Advance bullets; returns this step's new hits.
+    pub fn step(&mut self, dt: f32, world: &dyn Collision) -> Vec<Hit> {
         let mut hits = Vec::new();
         self.bullets.retain_mut(|b| {
             b.previous = b.position;
@@ -257,8 +226,9 @@ impl Ballistics {
         for (_, age) in &mut self.impacts {
             *age += dt;
         }
-        self.impacts.retain(|(_, age)| *age < 4.0);
-        self.impacts.extend(hits.into_iter().map(|h| (h, 0.0)));
+        self.impacts.retain(|(_, age)| *age < 6.0);
+        self.impacts.extend(hits.iter().map(|h| (*h, 0.0)));
+        hits
     }
 }
 
@@ -287,7 +257,7 @@ mod tests {
     fn bullets_drop_and_hit_the_ground() {
         let mut b = Ballistics::default();
         b.fire(Vec3::new(0.0, 1.5, 0.0), Vec3::Z, 450.0, 18.0);
-        let ground = FlatGround { height: 0.0 };
+        let ground = crate::world::FlatGround { height: 0.0 };
         for _ in 0..120 {
             b.step(1.0 / 60.0, &ground);
         }

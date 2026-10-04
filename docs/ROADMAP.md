@@ -47,7 +47,8 @@ game (world, AI, missions) continues afterwards.
 - [x] Camera: over-the-shoulder follow, aim zoom (`mgsv play`); [ ] shoulder swap
 - [x] Weapons v1: AM MRS-4 with stats read from `EquipParameters.lua` (720 rpm full auto, 30+210, 5.56 mm at 450 m/s, gravity 18), aim pose grid layered on the upper body, strafing, firing, bullets with drop, reload clip; `.fcnp` attachment (hand / back)
 - [ ] Weapons v2: decode recoil/sway (wobbling) sets, other weapon classes (handgun `snaphg01`, sniper, shotgun), prone aiming (`snapasr_c_*`, `pose_35`), damage
-- [~] Physics/collision interface: `snake_core::Collision` (raycast) used by ballistics; controller collision next
+- [x] Physics/collision interface: `snake_core::Collision` (raycasts for bullets, capsule sliding for movement), reference `BoxWorld`; `mgsv play` test range with cover, walls and target boards
+- [ ] Recoil/sway: decode `receiverParamSetsWobbling` (7 fields, undocumented; community notes cover `receiverParamSetsBase` = fire rate, aim-assist distance, draw speed, ?, ?, iron sight x2, reload speed)
 - [ ] Library API and a headless test harness; later the SKSE bridge
 
 ## Next (after the player systems)

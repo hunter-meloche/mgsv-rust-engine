@@ -10,7 +10,7 @@ use fox_anim::glam::{Mat4, Quat, Vec3};
 use fox_anim::{HumanRig, Pose, Skeleton, SkinnedModel};
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use snake_core::{
-    Ballistics, ClipLibrary, Collision, Controller, FlatGround, Input, Stance, WeaponRig,
+    Aabb, Ballistics, BoxWorld, ClipLibrary, Collision, Controller, Input, Stance, WeaponRig,
     WeaponStats,
 };
 
@@ -46,6 +46,32 @@ pub struct Options {
 const WIDTH: usize = 960;
 const HEIGHT: usize = 540;
 const TICK: f32 = 1.0 / 60.0;
+/// The test range: cover and walls near the start, target boards downrange
+/// (+Z). Returns the world and which boxes are targets.
+fn test_range() -> (BoxWorld, Vec<bool>) {
+    let b = |c: [f32; 3], s: [f32; 3]| Aabb::new(Vec3::from_array(c), Vec3::from_array(s));
+    let mut boxes = vec![
+        b([0.0, 0.5, 6.0], [4.0, 1.0, 0.4]),   // low cover wall
+        b([-6.0, 1.5, 4.0], [0.5, 3.0, 12.0]), // tall wall on the left
+        b([4.0, 0.6, 3.0], [1.2, 1.2, 1.2]),   // crate
+        b([4.6, 0.4, 4.4], [0.8, 0.8, 0.8]),   // small crate
+        b([3.0, 1.75, 10.0], [0.6, 3.5, 0.6]), // pillar
+        b([-2.5, 1.0, 12.0], [3.0, 2.0, 0.3]), // mid wall
+    ];
+    let walls = boxes.len();
+    for (x, z) in [
+        (-1.5, 15.0),
+        (1.5, 15.0),
+        (0.0, 25.0),
+        (-4.0, 25.0),
+        (2.5, 40.0),
+    ] {
+        boxes.push(b([x, 0.9, z], [0.6, 1.8, 0.05]));
+    }
+    let targets = (0..boxes.len()).map(|i| i >= walls).collect();
+    (BoxWorld { floor: 0.0, boxes }, targets)
+}
+
 const HELP: &str = "WASD move, Shift dash, Ctrl walk, C crouch, Z prone, RMB aim, LMB fire, R reload, drag/QE camera, Esc quit";
 
 pub fn run(assets: Assets, opts: Options) -> Result<()> {
@@ -66,7 +92,10 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
     )?;
     window.set_target_fps(60);
     let mut raster = Raster::new(WIDTH, HEIGHT);
-    let world = FlatGround { height: 0.0 };
+    let (world, is_target) = test_range();
+    // Seconds since each box was last hit (for a hit flash) and total hits.
+    let mut box_flash = vec![f32::MAX; world.boxes.len()];
+    let mut target_hits = 0usize;
     let mut ballistics = Ballistics::default();
     let mut flash = 0u32;
 
@@ -136,15 +165,14 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
             aim_pitch: -(cam_pitch - ctl.recoil),
         };
         if opts.auto {
-            // Scripted by frame: aim and strafe left while firing a burst,
-            // then reload.
+            // Scripted by frame: run into the low cover wall, then aim over it
+            // and fire a burst at the 25 m board.
             let f = total_frames;
-            input.move_x = if (60..200).contains(&f) { -1.0 } else { 0.0 };
-            input.move_y = 0.0;
-            input.aim = f >= 20;
-            input.fire = (90..150).contains(&f);
-            input.reload = f == 230;
-            cam_pitch = 0.05;
+            input.move_x = 0.0;
+            input.move_y = if f < 160 { 1.0 } else { 0.0 };
+            input.aim = f >= 170;
+            input.fire = (230..290).contains(&f);
+            cam_pitch = 0.0;
             input.aim_pitch = -(cam_pitch - ctl.recoil);
         }
         // Stick-style: diagonal input is not faster.
@@ -155,8 +183,14 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
         }
 
         while acc >= TICK {
-            ctl.update(&assets.rig, &assets.clips, TICK, &input);
-            ballistics.step(TICK, &world);
+            ctl.update(&assets.rig, &assets.clips, &world, TICK, &input);
+            for hit in ballistics.step(TICK, &world) {
+                if let Some(i) = hit.id {
+                    box_flash[i] = 0.0;
+                    target_hits += is_target[i] as usize;
+                }
+            }
+            box_flash.iter_mut().for_each(|t| *t += TICK);
             input.crouch = false;
             input.prone = false;
             input.reload = false;
@@ -196,7 +230,7 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
 
         // Shots leave the muzzle toward what the crosshair covers.
         let aim_point = world
-            .raycast(eye, eye + forward * 300.0)
+            .raycast(eye + forward * 1.0, eye + forward * 300.0)
             .map_or(eye + forward * 300.0, |h| h.point);
         for shot in ctl.take_shots(&pose) {
             let dir = (aim_point - shot.origin).normalize_or(shot.direction);
@@ -228,14 +262,30 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
                 [([p[0], p[1], p[2]], c), ([p[0], p[2], p[3]], c)]
             }),
         );
-        // Bullet holes.
+        // Range geometry: walls and crates, targets flash red when hit.
+        raster.draw(
+            &vp,
+            light,
+            world.boxes.iter().enumerate().flat_map(|(i, b)| {
+                let c = if box_flash[i] < 0.15 {
+                    Vec3::new(0.9, 0.2, 0.15)
+                } else if is_target[i] {
+                    Vec3::new(0.85, 0.82, 0.72)
+                } else {
+                    Vec3::new(0.46, 0.44, 0.40)
+                };
+                box_triangles(b, c)
+            }),
+        );
+        // Bullet holes, flat on whatever they hit.
         raster.draw(
             &vp,
             light,
             ballistics.impacts.iter().flat_map(|(hit, _)| {
-                let p = hit.point + Vec3::Y * 0.003;
-                let (a, b) = (Vec3::X * 0.05, Vec3::Z * 0.05);
-                let c = Vec3::splat(0.12);
+                let p = hit.point + hit.normal * 0.004;
+                let a = hit.normal.any_orthonormal_vector() * 0.04;
+                let b = hit.normal.cross(a);
+                let c = Vec3::splat(0.1);
                 [
                     ([p - a - b, p + a - b, p + a + b], c),
                     ([p - a - b, p + a + b, p - a + b], c),
@@ -356,7 +406,7 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
             })
             .unwrap_or_default();
         window.set_title(&format!(
-            "Snake  |  {:?} {:?}  |  {ammo}  |  {}  |  {fps} fps  |  {HELP}",
+                        "Snake  |  {:?} {:?}  |  {ammo}  |  target hits {target_hits}  |  {}  |  {fps} fps  |  {HELP}",
             ctl.stance,
             ctl.gait,
             ctl.current_clip()
@@ -369,7 +419,7 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
         .map(|w| format!(", ammo {}/{}", w.ammo, w.reserve))
         .unwrap_or_default();
     println!(
-        "{total_frames} frames in {secs:.1}s ({:.0} fps); final {:?} {:?} at ({:.2}, {:.2}), clip {}{ammo}, {} impacts",
+        "{total_frames} frames in {secs:.1}s ({:.0} fps); final {:?} {:?} at ({:.2}, {:.2}), clip {}{ammo}, {} impacts, {target_hits} target hits",
         total_frames as f32 / secs.max(1e-3),
         ctl.stance,
         ctl.gait,
@@ -379,4 +429,57 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
         ballistics.impacts.len()
     );
     Ok(())
+}
+
+/// The 12 triangles of a box.
+fn box_triangles(b: &Aabb, c: Vec3) -> impl Iterator<Item = ([Vec3; 3], Vec3)> {
+    let (lo, hi) = (b.min, b.max);
+    let v = |x: bool, y: bool, z: bool| {
+        Vec3::new(
+            if x { hi.x } else { lo.x },
+            if y { hi.y } else { lo.y },
+            if z { hi.z } else { lo.z },
+        )
+    };
+    let faces = [
+        [
+            v(false, false, false),
+            v(true, false, false),
+            v(true, true, false),
+            v(false, true, false),
+        ],
+        [
+            v(false, false, true),
+            v(true, false, true),
+            v(true, true, true),
+            v(false, true, true),
+        ],
+        [
+            v(false, false, false),
+            v(false, false, true),
+            v(false, true, true),
+            v(false, true, false),
+        ],
+        [
+            v(true, false, false),
+            v(true, false, true),
+            v(true, true, true),
+            v(true, true, false),
+        ],
+        [
+            v(false, true, false),
+            v(true, true, false),
+            v(true, true, true),
+            v(false, true, true),
+        ],
+        [
+            v(false, false, false),
+            v(true, false, false),
+            v(true, false, true),
+            v(false, false, true),
+        ],
+    ];
+    faces
+        .into_iter()
+        .flat_map(move |q| [([q[0], q[1], q[2]], c), ([q[0], q[2], q[3]], c)])
 }

@@ -1298,7 +1298,13 @@ fn snake_sim(vfs: &Vfs) -> Result<()> {
                 i.crouch = false;
                 i.prone = false;
             }
-            ctl.update(&rig, &clips, dt, &i);
+            ctl.update(
+                &rig,
+                &clips,
+                &snake_core::FlatGround { height: 0.0 },
+                dt,
+                &i,
+            );
             t += dt;
         }
         let pose = ctl.pose(&rig, &skel).map_err(anyhow::Error::msg)?;

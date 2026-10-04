@@ -351,7 +351,15 @@ impl Controller {
         }
     }
 
-    pub fn update(&mut self, rig: &HumanRig, clips: &ClipLibrary, dt: f32, input: &Input) {
+    /// Advance one tick. Movement slides along `world`'s obstacles.
+    pub fn update(
+        &mut self,
+        rig: &HumanRig,
+        clips: &ClipLibrary,
+        collision: &dyn crate::world::Collision,
+        dt: f32,
+        input: &Input,
+    ) {
         // Desired movement in world space. Fox space: Y up, a heading of 0
         // faces +Z, and the right-hand side of that heading is -X.
         let (s, c) = input.camera_yaw.sin_cos();
@@ -503,7 +511,18 @@ impl Controller {
 
         // Root motion, in the character's frame, moves and turns it.
         let (dr, dp) = self.player.advance(rig, dt);
-        self.position += self.rotation() * Vec3::new(dp.x, 0.0, dp.z);
+        let delta = self.rotation() * Vec3::new(dp.x, 0.0, dp.z);
+        let radius = if self.stance == Stance::Prone {
+            0.35
+        } else {
+            0.3
+        };
+        let height = match self.stance {
+            Stance::Stand => 1.8,
+            Stance::Crouch => 1.1,
+            Stance::Prone => 0.5,
+        };
+        self.position = collision.slide(self.position, delta, radius, height);
         let f = dr * Vec3::Z;
         self.yaw = wrap_angle(self.yaw + f.x.atan2(f.z));
     }

@@ -423,6 +423,12 @@ fn run() -> Result<()> {
                         .map(|c| c.to_string())
                         .unwrap_or(slot_name);
                     writeln!(out, "  {slot_name:<24} {pc:#018x}  {}", parts.join(", "))?;
+                    if dump {
+                        for (h, _) in vfs.iter().filter(|(h, _)| h & ((1u64 << 51) - 1) == stem) {
+                            let ext = fox_hash::extension_from_id((h >> 51) as u16);
+                            writeln!(out, "      entry {h:#018x} ext {ext:?}")?;
+                        }
+                    }
                     // Decode the largest mip and report per-channel means.
                     let read = |ext: String| {
                         vfs.lookup_hash(((fox_hash::extension_id(&ext) as u64) << 51) | stem)

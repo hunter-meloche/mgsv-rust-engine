@@ -1125,7 +1125,7 @@ void PlaceGun(void* hand) {
     UpdateWorld(gun, hand);
     ForEachChild(gun, [&](void* c) { UpdateWorld(c, gun); });
     static int diag = 0;
-    if (diag++ % 240 == 0) {
+    if (diag++ == 0) {
         const float* hp = &At<float>(hand, kWorldPos);
         const float* gp = &At<float>(gun, kWorldPos);
         const float* gb = &At<float>(gun, 0xE4);

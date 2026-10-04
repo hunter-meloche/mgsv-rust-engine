@@ -114,11 +114,13 @@ fn normal_dds(normal: &Texture, specular: Option<&Texture>) -> Result<Vec<u8>> {
             let y = p[1] as f32 / 127.5 - 1.0;
             let z = (1.0 - x * x - y * y).max(0.0).sqrt();
             let mask = match &spec {
+                // MGSV's specular map is bright (red averages ~230 on the
+                // MRS-4); scaled to the range of vanilla weapon masks.
                 Some((s, sw, sh)) => {
                     let (px_x, px_y) = ((k as u32 % w) * sw / w, (k as u32 / w) * sh / h);
-                    s[(px_y * sw + px_x) as usize][0]
+                    (s[(px_y * sw + px_x) as usize][0] as u32 * 3 / 10) as u8
                 }
-                None => 128,
+                None => 40,
             };
             let b = |v: f32| ((v.clamp(-1.0, 1.0) + 1.0) * 127.5).round() as u8;
             *p = [b(x), b(y), b(z), mask];

@@ -29,6 +29,17 @@ the arrow model, and hits count as Archery. Verified in game: a 9-round
 burst at ~6 m took most of an NPC's health. Needs the Address Library for SKSE Plugins database
 (`versionlib-1-7-104-0.bin`) in `Data/SKSE/Plugins`.
 
+The gun: `mgsv skyrim-export` (run by `deploy.ps1`) converts the MRS-4 from
+your MGSV install into `Data\meshes\snake\wp_west_ar_010.nif` and
+`Data\textures\snake\*.dds` (FMDL to BSTriShape in Skyrim axes/units; FTEX
+base colour passed through as DXT1, the two-channel normal map rebuilt with
+MGSV's specular map as the mask). The plugin loads it with
+`BSModelDB::Demand`, attaches it to the right hand and places it from
+Snake's grip each frame, shown while aiming or reloading. Third person
+only for now. The WU S.Pistol's textures are incomplete in the install
+(only the two largest mips exist, no `.ftex` headers), so it exports
+untextured.
+
 How it runs: Snake's controller and the retarget run on the plugin's own
 60 Hz thread; the hook on `PlayerCharacter::UpdateAnimation` (called from
 Skyrim's job threads) only copies the latest pose into the bone nodes and
@@ -71,6 +82,8 @@ rebuild against the matching SKSE source for other runtimes).
 pwsh skyrim\deploy.ps1 -Skyrim "<Skyrim Special Edition folder>"
 ```
 
-copies `SnakeSKSE.dll` and `snake.dll` into `Data\SKSE\Plugins` and writes
-`snake.ini` with the paths to your MGSV install and this repo's dictionaries.
-Launch with `skse64_loader.exe`. Remove those three files to uninstall.
+copies `SnakeSKSE.dll` and `snake.dll` into `Data\SKSE\Plugins`, writes
+`snake.ini` with the paths to your MGSV install and this repo's dictionaries,
+and (if `target\release\mgsv.exe` is built) exports the weapon meshes and
+textures. Launch with `skse64_loader.exe`. To uninstall, remove those three
+files and the `Data\meshes\snake` and `Data\textures\snake` folders.

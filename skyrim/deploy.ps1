@@ -1,5 +1,7 @@
-# Copy SnakeSKSE.dll + snake.dll into Skyrim's Data/SKSE/Plugins and write
-# snake.ini pointing at this MGSV install. Remove those three files to undo.
+# Copy SnakeSKSE.dll + snake.dll into Skyrim's Data/SKSE/Plugins, write
+# snake.ini pointing at this MGSV install, and export Snake's weapon meshes
+# and textures from your MGSV install into Data/meshes/snake and
+# Data/textures/snake. Remove those files and folders to undo.
 #
 #   pwsh skyrim/deploy.ps1 -Skyrim "H:\SteamLibrary\steamapps\common\Skyrim Special Edition"
 param(
@@ -26,6 +28,16 @@ $ini = @"
 MgsvDir=$mgsv
 ; This repo's dictionaries folder.
 DictionariesDir=$(Join-Path $repo "dictionaries")
+; Damage of each bullet (Skyrim scale; a Hunting Bow does 7).
+BulletDamage=12
 "@
 Set-Content -Path (Join-Path $plugins "snake.ini") -Value $ini -Encoding ASCII
+
+$mgsvExe = Join-Path $repo "target\release\mgsv.exe"
+if (Test-Path $mgsvExe) {
+    & $mgsvExe skyrim-export --skyrim $Skyrim
+    if ($LASTEXITCODE -ne 0) { throw "weapon export failed" }
+} else {
+    Write-Warning "target\release\mgsv.exe not built; skipping the weapon mesh export (cargo build --release -p mgsv-cli)"
+}
 Get-ChildItem $plugins | Where-Object { $_.Name -in @("SnakeSKSE.dll", "snake.dll", "snake.ini") } | Format-Table Name, Length, LastWriteTime

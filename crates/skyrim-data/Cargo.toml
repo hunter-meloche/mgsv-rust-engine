@@ -1,0 +1,12 @@
+[package]
+name = "skyrim-data"
+description = "Readers for Skyrim Special Edition data (BSA archives, NIF node trees) from a local install"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+lz4_flex = "0.14"
+flate2.workspace = true
+thiserror.workspace = true

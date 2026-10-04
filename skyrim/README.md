@@ -4,8 +4,11 @@
 `crates/snake-ffi`) inside Skyrim Special Edition and runs Snake's player
 systems from your own MGSV: TPP install. See `docs/BRIDGE.md` for the design.
 
-Status: **phase A** — the plugin loads, opens the MGSV runtime when Skyrim's
-data has loaded and runs a headless smoke test, logging to
+Status: **phase B (testing)** — in game, press **F8** to toggle Snake mode:
+Snake's animation drives the player's skeleton (retargeted onto Skyrim's
+bones). Skyrim still moves the character; walk / run / dash follow your
+speed, **C** / **Z** toggle crouch / prone, the **right mouse button** aims.
+If anything faults, Snake mode switches itself off. Log:
 `Documents/My Games/Skyrim Special Edition/SKSE/SnakeSKSE.log`.
 
 ## Build (Windows, Visual Studio 2022 with C++)

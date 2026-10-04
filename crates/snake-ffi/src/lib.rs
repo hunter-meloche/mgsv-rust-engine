@@ -471,3 +471,103 @@ pub unsafe extern "C" fn snake_player_status(p: *const SnakePlayer, out: *mut Sn
         recoil: c.recoil,
     };
 }
+
+/// Retargeting onto Skyrim's character skeleton.
+pub struct SnakeRetarget {
+    retarget: snake_runtime::skyrim::SkyrimRetarget,
+    names: Vec<CString>,
+}
+
+/// Build the retarget table from the Skyrim install at `skyrim_dir` (reads
+/// its character `skeleton.nif` from the BSAs). NULL on failure.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_retarget_new(
+    rt: *const SnakeRuntime,
+    skyrim_dir: *const c_char,
+) -> *mut SnakeRetarget {
+    guard(std::ptr::null_mut(), || {
+        // SAFETY: valid runtime pointer or null; NUL-terminated path.
+        let rt = unsafe { rt.as_ref() }.ok_or("null runtime")?;
+        let dir = unsafe { path_arg(skyrim_dir)? };
+        let data = skyrim_data::read_install_file(Path::new(&dir), skyrim_data::CHARACTER_SKELETON)
+            .map_err(|e| e.to_string())?;
+        let nif = skyrim_data::Nif::parse(&data).map_err(|e| e.to_string())?;
+        let retarget = snake_runtime::skyrim::SkyrimRetarget::new(&nif, &rt.assets.skel)
+            .map_err(|e| format!("{e:#}"))?;
+        let names = retarget
+            .names()
+            .map(|n| CString::new(n).unwrap_or_default())
+            .collect();
+        Ok(Box::into_raw(Box::new(SnakeRetarget { retarget, names })))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_retarget_free(r: *mut SnakeRetarget) {
+    if !r.is_null() {
+        // SAFETY: pointer came from snake_retarget_new.
+        drop(unsafe { Box::from_raw(r) });
+    }
+}
+
+/// Number of Skyrim bones written by snake_retarget_apply.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_retarget_count(r: *const SnakeRetarget) -> u32 {
+    // SAFETY: valid pointer or null.
+    unsafe { r.as_ref() }.map_or(0, |r| r.names.len() as u32)
+}
+
+/// Skyrim node name of output bone `i` (e.g. `NPC L UpperArm [LUar]`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_retarget_bone(r: *const SnakeRetarget, i: u32) -> *const c_char {
+    // SAFETY: valid pointer or null.
+    unsafe { r.as_ref() }
+        .and_then(|r| r.names.get(i as usize))
+        .map_or(std::ptr::null(), |n| n.as_ptr())
+}
+
+/// Local transforms (relative to each bone's Skyrim parent, Skyrim axes and
+/// units) for the player's last pose. `rotations` gets one quaternion per
+/// bone; `translations`/`has_translation` (optional) are set for bones whose
+/// translation should change too (the COM: pelvis height). Returns the
+/// number of bones.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_retarget_apply(
+    r: *const SnakeRetarget,
+    p: *const SnakePlayer,
+    rotations: *mut SnakeQuat,
+    translations: *mut SnakeVec3,
+    has_translation: *mut u8,
+    capacity: u32,
+) -> u32 {
+    guard(0, || {
+        // SAFETY: valid pointers or null; arrays hold `capacity` entries.
+        let (r, p) = unsafe {
+            (
+                r.as_ref().ok_or("null retarget")?,
+                p.as_ref().ok_or("null player")?,
+            )
+        };
+        let locals = r.retarget.apply(&p.pose);
+        let n = locals.len().min(capacity as usize);
+        for (i, l) in locals.iter().take(n).enumerate() {
+            unsafe {
+                if !rotations.is_null() {
+                    *rotations.add(i) = SnakeQuat {
+                        x: l.rotation.x,
+                        y: l.rotation.y,
+                        z: l.rotation.z,
+                        w: l.rotation.w,
+                    };
+                }
+                if !has_translation.is_null() {
+                    *has_translation.add(i) = l.translation.is_some() as u8;
+                }
+                if let (Some(t), false) = (l.translation, translations.is_null()) {
+                    *translations.add(i) = t.into();
+                }
+            }
+        }
+        Ok(locals.len() as u32)
+    })
+}

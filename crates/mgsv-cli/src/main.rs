@@ -149,6 +149,25 @@ enum Cmd {
         #[arg(long)]
         auto: bool,
     },
+    /// Dump Skyrim's character skeleton (from Skyrim - Meshes0.bsa): node
+    /// tree with rest transforms and model-space positions.
+    SkyrimSkeleton {
+        /// Skyrim Special Edition folder.
+        #[arg(long)]
+        skyrim: PathBuf,
+        /// Path inside the archives.
+        #[arg(
+            long,
+            default_value = "meshes\\actors\\character\\character assets\\skeleton.nif"
+        )]
+        nif: String,
+    },
+    /// Retarget Snake's poses onto Skyrim's skeleton and report how well limb
+    /// directions match (degrees) over a set of clips.
+    SkyrimRetargetCheck {
+        #[arg(long)]
+        skyrim: PathBuf,
+    },
     /// Run the player controller headless with a scripted input sequence and
     /// print position, speed and clip over time.
     SnakeSim,
@@ -430,6 +449,8 @@ fn run() -> Result<()> {
         } => anim_probe(&vfs, &path, &clip, frame, brief, timeline),
         Cmd::AnimClips => anim_clips(&vfs),
         Cmd::SnakeSim => snake_sim(&vfs),
+        Cmd::SkyrimSkeleton { skyrim, nif } => skyrim_skeleton(&skyrim, &nif),
+        Cmd::SkyrimRetargetCheck { skyrim } => skyrim_retarget_check(&vfs, &skyrim),
         Cmd::Fcnp { path } => {
             let f = fox_data::fcnp::Fcnp::parse(&read_any(&vfs, &path)?)?;
             writeln!(out, "{}: {} connection points", f.model, f.points.len())?;
@@ -1069,6 +1090,208 @@ fn aim_probe(vfs: &Vfs, name: &str) -> Result<()> {
         println!(
             "  {f:>3} chest yaw {cy:>6.1} pitch {cp:>6.1} | R->L hand yaw {hy:>6.1} pitch {hp:>6.1} | Rhand ({:>5.2},{:>5.2},{:>5.2})",
             h.x, h.y, h.z
+        );
+    }
+    Ok(())
+}
+
+fn skyrim_file(skyrim: &Path, inner: &str) -> Result<Vec<u8>> {
+    Ok(skyrim_data::read_install_file(skyrim, inner)?)
+}
+
+fn skyrim_retarget_check(vfs: &Vfs, skyrim: &Path) -> Result<()> {
+    use fox_anim::Vec3;
+    let nif = skyrim_data::Nif::parse(&skyrim_file(
+        skyrim,
+        "meshes\\actors\\character\\character assets\\skeleton.nif",
+    )?)?;
+    let assets = snake_runtime::SnakeAssets::load(vfs)?;
+    let rt = snake_runtime::skyrim::SkyrimRetarget::new(&nif, &assets.skel)?;
+    println!("{} Skyrim bones retargeted", rt.len());
+    let fox_to_sky = |v: Vec3| Vec3::new(-v.x, v.z, v.y);
+    let snake = |n: &str| {
+        assets
+            .skel
+            .find(fox_hash::str_code32(n.as_bytes()))
+            .unwrap()
+    };
+    // (label, Skyrim from, Skyrim to, Snake from, Snake to)
+    let segments = [
+        (
+            "L upper arm",
+            "NPC L UpperArm [LUar]",
+            "NPC L Forearm [LLar]",
+            "SKL_011_LUARM",
+            "SKL_012_LFARM",
+        ),
+        (
+            "L forearm",
+            "NPC L Forearm [LLar]",
+            "NPC L Hand [LHnd]",
+            "SKL_012_LFARM",
+            "SKL_013_LHAND",
+        ),
+        (
+            "R upper arm",
+            "NPC R UpperArm [RUar]",
+            "NPC R Forearm [RLar]",
+            "SKL_021_RUARM",
+            "SKL_022_RFARM",
+        ),
+        (
+            "R forearm",
+            "NPC R Forearm [RLar]",
+            "NPC R Hand [RHnd]",
+            "SKL_022_RFARM",
+            "SKL_023_RHAND",
+        ),
+        (
+            "L thigh",
+            "NPC L Thigh [LThg]",
+            "NPC L Calf [LClf]",
+            "SKL_030_LTHIGH",
+            "SKL_031_LLEG",
+        ),
+        (
+            "L shin",
+            "NPC L Calf [LClf]",
+            "NPC L Foot [Lft ]",
+            "SKL_031_LLEG",
+            "SKL_032_LFOOT",
+        ),
+        (
+            "R thigh",
+            "NPC R Thigh [RThg]",
+            "NPC R Calf [RClf]",
+            "SKL_040_RTHIGH",
+            "SKL_041_RLEG",
+        ),
+        (
+            "R shin",
+            "NPC R Calf [RClf]",
+            "NPC R Foot [Rft ]",
+            "SKL_041_RLEG",
+            "SKL_042_RFOOT",
+        ),
+        (
+            "L foot",
+            "NPC L Foot [Lft ]",
+            "NPC L Toe0 [LToe]",
+            "SKL_032_LFOOT",
+            "SKL_033_LTOE",
+        ),
+        (
+            "neck",
+            "NPC Neck [Neck]",
+            "NPC Head [Head]",
+            "SKL_003_NECK",
+            "SKL_004_HEAD",
+        ),
+    ];
+    let clips = [
+        "snapnon_s_idl_l",
+        "snapnon_s_rn_lp_vr1_l",
+        "snapnon_q_idl_l",
+        "snapnon_c_fst_lp_r",
+        "snaprdy_s_fre0_idl_0",
+        "snapasr_s_fre_pose_25",
+    ];
+    let mut worst = 0f32;
+    for name in clips {
+        let clip = assets
+            .clips
+            .get(name)
+            .with_context(|| format!("clip {name}"))?;
+        let mut sums = vec![0f32; segments.len()];
+        let mut n = 0;
+        let mut height = (0f32, 0f32);
+        for f in (0..=clip.frame_count).step_by(3) {
+            let pose = assets
+                .rig
+                .pose(&assets.skel, &clip, f as f32)
+                .map_err(anyhow::Error::msg)?;
+            let joints: std::collections::HashMap<String, Vec3> =
+                rt.joint_positions(&pose).into_iter().collect();
+            for (k, (_, a, b, sa, sb)) in segments.iter().enumerate() {
+                let sky = (joints[*b] - joints[*a]).normalize_or_zero();
+                let fox = fox_to_sky(pose.positions[snake(sb)] - pose.positions[snake(sa)])
+                    .normalize_or_zero();
+                sums[k] += sky.angle_between(fox).to_degrees();
+            }
+            height = (
+                joints["NPC Head [Head]"].z,
+                fox_to_sky(pose.positions[snake("SKL_004_HEAD")]).z * 70.0,
+            );
+            n += 1;
+        }
+        let means: Vec<String> = sums
+            .iter()
+            .map(|s| format!("{:.1}", s / n as f32))
+            .collect();
+        worst = worst.max(sums.iter().map(|s| s / n as f32).fold(0.0, f32::max));
+        println!(
+            "{name:<24} mean segment angle (deg): {}  | head z sky {:.0} vs snake {:.0}",
+            means.join(" "),
+            height.0,
+            height.1
+        );
+    }
+    println!(
+        "segments: {}",
+        segments.iter().map(|s| s.0).collect::<Vec<_>>().join(", ")
+    );
+    println!("worst mean angle {worst:.1} deg");
+    Ok(())
+}
+
+fn skyrim_skeleton(skyrim: &Path, inner: &str) -> Result<()> {
+    use fox_anim::glam::{Mat3, Vec3};
+    let nif = skyrim_data::Nif::parse(&skyrim_file(skyrim, inner)?)?;
+    println!(
+        "{inner}: NIF {:#x} user {} bs {}, {} blocks, {} nodes",
+        nif.version,
+        nif.user_version,
+        nif.bs_version,
+        nif.nodes.len(),
+        nif.nodes.iter().flatten().count()
+    );
+    // Model-space transforms under both matrix conventions: `rows` treats the
+    // stored rows as the matrix rows (v' = M v), `cols` as its columns.
+    fn walk(nif: &skyrim_data::Nif, block: usize, depth: usize, parent: (Mat3, Vec3, Mat3, Vec3)) {
+        let Some(n) = nif.node(block) else { return };
+        let r = n.rotation;
+        let rows = Mat3::from_cols_array_2d(&r).transpose();
+        let cols = Mat3::from_cols_array_2d(&r);
+        let t = Vec3::from_array(n.translation);
+        let (pr, pt, pc, ptc) = parent;
+        let (mr, mt) = (pr * rows, pt + pr * t);
+        let (mc, mtc) = (pc * cols, ptc + pc * t);
+        println!(
+            "{:indent$}{} [{}]  local t ({:.1}, {:.1}, {:.1})  model(rows) ({:.1}, {:.1}, {:.1})  model(cols) ({:.1}, {:.1}, {:.1})",
+            "",
+            n.name,
+            n.kind,
+            t.x,
+            t.y,
+            t.z,
+            mt.x,
+            mt.y,
+            mt.z,
+            mtc.x,
+            mtc.y,
+            mtc.z,
+            indent = depth * 2
+        );
+        for &c in &n.children {
+            walk(nif, c, depth + 1, (mr, mt, mc, mtc));
+        }
+    }
+    if let Some(root) = nif.root() {
+        walk(
+            &nif,
+            root.block,
+            0,
+            (Mat3::IDENTITY, Vec3::ZERO, Mat3::IDENTITY, Vec3::ZERO),
         );
     }
     Ok(())

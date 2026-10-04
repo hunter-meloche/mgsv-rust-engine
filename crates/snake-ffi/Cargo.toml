@@ -15,3 +15,4 @@ fox-data.workspace = true
 fox-anim.workspace = true
 snake-core.workspace = true
 snake-runtime.workspace = true
+skyrim-data.workspace = true

@@ -549,6 +549,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lz4_flex"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecbdfe44b1bd960b68170b417450a628c43f7cf56bb3c5317e61cb230ee7f226"
+dependencies = [
+ "twox-hash",
+]
+
+[[package]]
 name = "md-5"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -587,6 +596,7 @@ dependencies = [
  "fox-lua",
  "minifb",
  "rayon",
+ "skyrim-data",
  "snake-core",
  "snake-runtime",
 ]
@@ -926,6 +936,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
+name = "skyrim-data"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "lz4_flex",
+ "thiserror",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -951,6 +970,7 @@ version = "0.1.0"
 dependencies = [
  "fox-anim",
  "fox-data",
+ "skyrim-data",
  "snake-core",
  "snake-runtime",
 ]
@@ -964,6 +984,7 @@ dependencies = [
  "fox-archive",
  "fox-data",
  "fox-hash",
+ "skyrim-data",
  "snake-core",
 ]
 
@@ -1025,6 +1046,12 @@ checksum = "e95f91fcc7a621e8b030f6aa23c71fe9838ae2fb4d8118b75602a328f5144044"
 dependencies = [
  "pin-project-lite",
 ]
+
+[[package]]
+name = "twox-hash"
+version = "2.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "86a801b3cea342a06d468c8710662aa29e5e05e4f5c0d62f00bbb7f2ad7941c2"
 
 [[package]]
 name = "typenum"

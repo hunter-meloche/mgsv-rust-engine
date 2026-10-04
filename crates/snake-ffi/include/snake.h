@@ -95,6 +95,19 @@ uint32_t snake_player_take_shots(SnakePlayer *p, SnakeShot *out, uint32_t capaci
 
 void snake_player_status(const SnakePlayer *p, SnakeStatus *out);
 
+/* Retargeting onto Skyrim's character skeleton (read from the Skyrim
+ * install's BSAs). Output bones are in parent-first order. */
+typedef struct SnakeRetarget SnakeRetarget;
+SnakeRetarget *snake_retarget_new(const SnakeRuntime *rt, const char *skyrim_dir);
+void snake_retarget_free(SnakeRetarget *r);
+uint32_t snake_retarget_count(const SnakeRetarget *r);
+const char *snake_retarget_bone(const SnakeRetarget *r, uint32_t i); /* e.g. "NPC L UpperArm [LUar]" */
+/* Local transforms relative to each bone's Skyrim parent (Skyrim axes and
+ * units). has_translation[i] is 1 where translations[i] should be applied
+ * (the COM: pelvis height). Returns the bone count. */
+uint32_t snake_retarget_apply(const SnakeRetarget *r, const SnakePlayer *p, SnakeQuat *rotations,
+                              SnakeVec3 *translations, uint8_t *has_translation, uint32_t capacity);
+
 #ifdef __cplusplus
 }
 #endif

@@ -4,6 +4,8 @@
 
 use std::path::Path;
 
+pub mod skyrim;
+
 use anyhow::{Context, Result};
 use fox_archive::{Fpk, Vfs};
 

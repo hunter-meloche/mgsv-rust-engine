@@ -12,4 +12,5 @@ fox-archive.workspace = true
 fox-data.workspace = true
 fox-anim.workspace = true
 snake-core.workspace = true
+skyrim-data.workspace = true
 anyhow.workspace = true

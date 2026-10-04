@@ -79,6 +79,10 @@ enum Cmd {
     Fox2 { path: String },
     /// Parse every .fox2 inside every .fpkd and report failures.
     Fox2Check,
+    /// Summarise an .fmdl model (PACKAGE.fpk:INNER for files inside packages).
+    Fmdl { path: String },
+    /// Parse and validate every .fmdl inside every .fpk.
+    FmdlCheck,
 }
 
 /// Read a file from the archives, or from inside a package with `PKG:INNER`.
@@ -219,7 +223,94 @@ fn run() -> Result<()> {
             Ok(())
         }
         Cmd::Fox2Check => fox2_check(&vfs),
+        Cmd::Fmdl { path } => {
+            let m = fox_data::Fmdl::parse(&read_any(&vfs, &path)?)?;
+            let names = fox_names(&vfs);
+            let verts: usize = m.meshes.iter().map(|x| x.positions.len()).sum();
+            let tris: usize = m.meshes.iter().map(|x| x.indices.len() / 3).sum();
+            writeln!(
+                out,
+                "fmdl v{}: {} bones, {} meshes, {verts} vertices, {tris} triangles, {} materials, {} textures",
+                m.version,
+                m.bones.len(),
+                m.meshes.len(),
+                m.material_instances.len(),
+                m.textures.len()
+            )?;
+            for (i, b) in m.bones.iter().enumerate().take(12) {
+                writeln!(
+                    out,
+                    "  bone {i:>3} {} parent {}",
+                    m.name(b.name, &names),
+                    b.parent
+                )?;
+            }
+            for (i, g) in m.mesh_groups.iter().enumerate() {
+                writeln!(out, "  group {i:>3} {}", m.name(g.name, &names))?;
+            }
+            match m.validate() {
+                Ok(()) => writeln!(out, "valid")?,
+                Err(e) => writeln!(out, "INVALID: {e}")?,
+            }
+            Ok(())
+        }
+        Cmd::FmdlCheck => fmdl_check(&vfs),
     }
+}
+
+fn fmdl_check(vfs: &Vfs) -> Result<()> {
+    let pkgs: Vec<_> = vfs
+        .iter()
+        .filter(|(h, _)| fox_hash::extension_from_id((h >> 51) as u16) == Some("fpk"))
+        .collect();
+    let files = AtomicUsize::new(0);
+    let meshes = AtomicUsize::new(0);
+    let tris = AtomicUsize::new(0);
+    let failures = std::sync::Mutex::new(Vec::new());
+    pkgs.par_iter().for_each(|(_, r)| {
+        let Ok(data) = vfs.read_ref(*r) else { return };
+        let Ok(pkg) = Fpk::parse(&data) else { return };
+        for e in pkg
+            .entries
+            .iter()
+            .filter(|e| e.clean_path().ends_with(".fmdl"))
+        {
+            files.fetch_add(1, Ordering::Relaxed);
+            let res = pkg
+                .read(e)
+                .map_err(anyhow::Error::from)
+                .and_then(|d| Ok(fox_data::Fmdl::parse(&d)?))
+                .and_then(|m| {
+                    m.validate()?;
+                    Ok(m)
+                });
+            match res {
+                Ok(m) => {
+                    meshes.fetch_add(m.meshes.len(), Ordering::Relaxed);
+                    tris.fetch_add(
+                        m.meshes.iter().map(|x| x.indices.len() / 3).sum(),
+                        Ordering::Relaxed,
+                    );
+                }
+                Err(err) => failures
+                    .lock()
+                    .unwrap()
+                    .push(format!("{}: {err:#}", e.clean_path())),
+            }
+        }
+    });
+    let failures = failures.into_inner().unwrap();
+    println!(
+        "fmdl files: {}, meshes: {}, triangles: {}, failures: {}",
+        files.into_inner(),
+        meshes.into_inner(),
+        tris.into_inner(),
+        failures.len()
+    );
+    for f in failures.iter().take(20) {
+        println!("  {f}");
+    }
+    Ok(())
 }
 
 fn fox2_check(vfs: &Vfs) -> Result<()> {

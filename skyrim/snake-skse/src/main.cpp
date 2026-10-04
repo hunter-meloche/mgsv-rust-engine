@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "skse64/PluginAPI.h"
+#include "skse64/gamethreads.h"
 #include "skse64_common/skse_version.h"
 
 #include "snake.h"
@@ -98,6 +99,7 @@ struct SnakeApi {
     decltype(&snake_player_update) player_update = nullptr;
     decltype(&snake_player_status) player_status = nullptr;
     decltype(&snake_player_transform) player_transform = nullptr;
+    decltype(&snake_player_take_shots) player_take_shots = nullptr;
     decltype(&snake_retarget_new) retarget_new = nullptr;
     decltype(&snake_retarget_count) retarget_count = nullptr;
     decltype(&snake_retarget_bone) retarget_bone = nullptr;
@@ -131,6 +133,7 @@ bool LoadSnakeDll() {
     RESOLVE(player_update, "snake_player_update");
     RESOLVE(player_status, "snake_player_status");
     RESOLVE(player_transform, "snake_player_transform");
+    RESOLVE(player_take_shots, "snake_player_take_shots");
     RESOLVE(retarget_new, "snake_retarget_new");
     RESOLVE(retarget_count, "snake_retarget_count");
     RESOLVE(retarget_bone, "snake_retarget_bone");
@@ -376,6 +379,206 @@ void CheckLayout() {
         errA, worst, errB, errPos, g_layoutOk ? "OK, writes allowed" : "MISMATCH, writes disabled");
 }
 
+// ---- firing (Skyrim projectiles) -------------------------------------------------
+//
+// Snake's controller decides when a shot happens (rate of fire, magazine,
+// reload, recoil). Each shot becomes a real Skyrim projectile launched on the
+// main thread through SKSE's task interface, so Skyrim handles hits against
+// the world, damage, kills and NPC reactions. For now the projectile, damage
+// and speed come from a vanilla bow + arrow (Hunting Bow 0x13985, Iron Arrow
+// 0x1397D); a dedicated bullet record comes later.
+//
+// Addresses: Projectile::Launch and the LaunchData vtable from the Address
+// Library database (versionlib-1-7-104-0.bin: flat u32 offset table indexed
+// by ID after a 0x60-byte header); LookupFormByID from SKSE 2.3.1 (0x1E5860).
+
+constexpr uint32_t kIdProjectileLaunch = 44108;   // Projectile::Launch (AE id)
+constexpr uint32_t kIdLaunchDataVtable = 187478;  // VTABLE_Projectile__LaunchData (AE id)
+constexpr uintptr_t kLookupFormByID = 0x001E5860;
+constexpr uint32_t kHuntingBow = 0x00013985, kIronArrow = 0x0001397D;
+constexpr size_t kFormType = 0x1A;
+constexpr size_t kAmmoProjectile = 0x110;  // TESAmmo AMMO_DATA.projectile
+constexpr uint8_t kTypeWeapon = 0x29, kTypeAmmo = 0x2A, kTypeProjectile = 0x32, kTypeCell = 0x3C;
+
+struct LaunchData {
+    void* vtable;
+    float origin[3];         // 08
+    float contactNormal[3];  // 14
+    void* projectileBase;    // 20
+    void* shooter;           // 28
+    void* combatController;  // 30
+    void* weaponSource;      // 38
+    void* ammoSource;        // 40
+    float angleZ;            // 48
+    float angleX;            // 4C
+    void* unk50;             // 50
+    void* desiredTarget;     // 58
+    float unk60, unk64;      // 60
+    void* parentCell;        // 68
+    void* spell;             // 70
+    uint32_t castingSource;  // 78
+    uint32_t pad7C;
+    void* enchantItem;       // 80
+    void* poison;            // 88
+    int32_t area;            // 90
+    float power;             // 94
+    float scale;             // 98
+    bool alwaysHit, noDamageOutsideCombat, autoAim, chainShatter;  // 9C
+    bool useOrigin, deferInitialization, forceConeOfFire;          // A0
+    uint8_t padA3[5];
+};
+static_assert(sizeof(LaunchData) == 0xA8, "LaunchData layout");
+
+using LaunchFn = uint32_t* (*)(uint32_t* handle, LaunchData* data);
+using LookupFn = void* (*)(uint32_t formId);
+
+struct Firing {
+    LaunchFn launch = nullptr;
+    void* launchDataVtable = nullptr;
+    void* bow = nullptr;
+    void* arrow = nullptr;
+    void* projectile = nullptr;
+    size_t cellOffset = 0;
+    bool ready = false;
+} g_fire;
+
+SKSETaskInterface* g_tasks = nullptr;
+std::atomic<int> g_pendingShots{0};
+std::atomic<int> g_shotsFired{0};
+
+uint8_t FormType(void* form) { return form && Readable(form, 0x20) ? At<uint8_t>(form, kFormType) : 0; }
+
+bool LoadAddressLibrary() {
+    std::wstring path = PluginDir() + L"\\versionlib-1-7-104-0.bin";
+    FILE* f = _wfsopen(path.c_str(), L"rb", _SH_DENYNO);
+    if (!f) {
+        Log("firing: Address Library database not found (%s)", Narrow(path).c_str());
+        return false;
+    }
+    uint32_t header[0x18] = {};
+    fread(header, 4, 0x18, f);
+    if (header[0] != 5 || header[1] != 1 || header[2] != 7 || header[3] != 104) {
+        Log("firing: unexpected Address Library header (format %u, version %u.%u.%u)", header[0], header[1], header[2], header[3]);
+        fclose(f);
+        return false;
+    }
+    uint32_t count = header[0x17];
+    auto read = [&](uint32_t id) -> uintptr_t {
+        if (id >= count) return 0;
+        uint32_t off = 0;
+        _fseeki64(f, 0x60 + int64_t(id) * 4, SEEK_SET);
+        fread(&off, 4, 1, f);
+        return off;
+    };
+    uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    uintptr_t launch = read(kIdProjectileLaunch), vt = read(kIdLaunchDataVtable);
+    fclose(f);
+    if (!launch || !vt) {
+        Log("firing: ids missing from the database");
+        return false;
+    }
+    g_fire.launch = reinterpret_cast<LaunchFn>(base + launch);
+    g_fire.launchDataVtable = reinterpret_cast<void*>(base + vt);
+    Log("firing: %u ids; Projectile::Launch +%llX, LaunchData vtable +%llX", count, (unsigned long long)launch,
+        (unsigned long long)vt);
+    return true;
+}
+
+bool SetUpFiring() {
+    if (!LoadAddressLibrary()) return false;
+    auto lookup = reinterpret_cast<LookupFn>(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)) + kLookupFormByID);
+    g_fire.bow = lookup(kHuntingBow);
+    g_fire.arrow = lookup(kIronArrow);
+    g_fire.projectile = g_fire.arrow && Readable(g_fire.arrow, kAmmoProjectile + 8) ? At<void*>(g_fire.arrow, kAmmoProjectile) : nullptr;
+    Log("firing: bow %p (type %02X), arrow %p (type %02X), projectile %p (type %02X)", g_fire.bow, FormType(g_fire.bow),
+        g_fire.arrow, FormType(g_fire.arrow), g_fire.projectile, FormType(g_fire.projectile));
+    if (FormType(g_fire.bow) != kTypeWeapon || FormType(g_fire.arrow) != kTypeAmmo || FormType(g_fire.projectile) != kTypeProjectile) {
+        Log("firing: form types do not match; firing disabled");
+        return false;
+    }
+    return true;
+}
+
+// The player's parent cell pointer: SE keeps it at +0x60; this runtime has
+// shifted reference data by 8 bytes, so check both and keep the one that
+// points at a cell.
+void* PlayerCell(void* player) {
+    if (!g_fire.cellOffset) {
+        for (size_t off : {size_t(0x68), size_t(0x60)}) {
+            void* c = At<void*>(player, off);
+            Log("firing: parent cell candidate +%zX -> %p (type %02X)", off, c, FormType(c));
+            if (FormType(c) == kTypeCell) {
+                g_fire.cellOffset = off;
+                break;
+            }
+        }
+        if (!g_fire.cellOffset) return nullptr;
+    }
+    return At<void*>(player, g_fire.cellOffset);
+}
+
+bool LaunchOne(void* player) {
+    __try {
+        void* cell = PlayerCell(player);
+        if (!cell) return false;
+        LaunchData d{};
+        d.vtable = g_fire.launchDataVtable;
+        // From the right hand, along the player's aim.
+        const float* angle = &At<float>(player, kRefAngle);  // pitch, roll, heading
+        float pitch = angle[0], heading = angle[2];
+        float dir[3] = {std::sin(heading) * std::cos(pitch), std::cos(heading) * std::cos(pitch), -std::sin(pitch)};
+        float* pos = &At<float>(player, kRefPosition);
+        float origin[3] = {pos[0] + dir[0] * 60.0f, pos[1] + dir[1] * 60.0f, pos[2] + 110.0f};
+        for (size_t i = 0; i < g_nodes.size() && i < g_boneNames.size(); ++i) {
+            if (g_boneNames[i] == "NPC R Hand [RHnd]" && g_nodes[i]) {
+                float* hand = &At<float>(g_nodes[i], kWorldPos);
+                for (int k = 0; k < 3; ++k) origin[k] = hand[k] + dir[k] * 50.0f;
+            }
+        }
+        memcpy(d.origin, origin, sizeof origin);
+        d.projectileBase = g_fire.projectile;
+        d.shooter = player;
+        d.weaponSource = g_fire.bow;
+        d.ammoSource = g_fire.arrow;
+        d.angleZ = heading;
+        d.angleX = pitch;
+        d.parentCell = cell;
+        d.castingSource = 2;  // kOther
+        d.power = 1.0f;
+        d.scale = 1.0f;
+        d.useOrigin = true;
+        d.autoAim = false;
+        uint32_t handle = 0;
+        g_fire.launch(&handle, &d);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+class ShotTask : public TaskDelegate {
+public:
+    void Run() override {
+        void* player = ThePlayer();
+        int n = g_pendingShots.exchange(0);
+        for (int i = 0; i < n && player && g_fire.ready; ++i) {
+            if (!LaunchOne(player)) {
+                Log("firing: launch faulted; firing disabled");
+                g_fire.ready = false;
+                break;
+            }
+            int total = ++g_shotsFired;
+            if (total <= 3 || total % 30 == 0) Log("firing: shot %d launched", total);
+        }
+    }
+    void Dispose() override { delete this; }
+};
+
+void QueueShots(int n) {
+    if (n <= 0 || !g_fire.ready || !g_tasks) return;
+    if (g_pendingShots.fetch_add(n) == 0) g_tasks->AddTask(new ShotTask());
+}
+
 // ---- Snake thread ---------------------------------------------------------------
 //
 // Snake's controller and the retarget run on this plugin's own thread at a
@@ -431,6 +634,7 @@ struct Control {
     FILETIME stamp{};
     std::string move = "auto";
     int aim = -1;
+    int fire = -1;
     std::string stance;  // requested stance, consumed by the Snake thread
 };
 Control g_control;
@@ -454,6 +658,7 @@ void PollControl(int curStance) {
         else if (k == "mode") g_mode = std::atoi(v.c_str()) % 3;
         else if (k == "move") g_control.move = v;
         else if (k == "aim") g_control.aim = std::atoi(v.c_str());
+        else if (k == "fire") g_control.fire = std::atoi(v.c_str());
         else if (k == "stance") g_control.stance = v;
     }
     fclose(f);
@@ -529,7 +734,7 @@ void SnakeThread() {
             else in.crouch = true;                                  // stand <-> crouch
         }
         in.aim = g_control.aim >= 0 ? g_control.aim == 1 : focused && (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
-        in.fire = in.aim && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+        in.fire = in.aim && (g_control.fire >= 0 ? g_control.fire == 1 : focused && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
         in.aim_pitch = -g_pitch.load();
         // Snake's own heading is "forward": Skyrim decides where the actor faces.
         SnakeVec3 snakePos{};
@@ -540,6 +745,11 @@ void SnakeThread() {
             Log("snake_player_update failed: %s", g_snake.last_error());
             g_enabled = false;
             continue;
+        }
+        {
+            SnakeShot shots[16];
+            uint32_t k = g_snake.player_take_shots(g_player, shots, 16);
+            if (k) QueueShots(static_cast<int>(k));
         }
         if (g_snake.retarget_apply(g_retarget, g_player, rot.data(), tr.data(), has.data(), n) != n) {
             Log("snake_retarget_apply failed: %s", g_snake.last_error());
@@ -558,8 +768,9 @@ void SnakeThread() {
             logTimer = 0;
             SnakeStatus st{};
             g_snake.player_status(g_player, &st);
-            Log("snake: speed %.2f m/s stance %d gait %d aiming %d, mode %d, focused %d, hook calls %u", speed, st.stance,
-                st.gait, st.aiming, (int)g_mode, (int)focused, g_hookCalls.exchange(0));
+            Log("snake: speed %.2f m/s stance %d gait %d aiming %d ammo %d/%d%s, shots %d, mode %d, focused %d, hook calls %u",
+                speed, st.stance, st.gait, st.aiming, st.ammo, st.reserve, st.reloading ? " (reloading)" : "",
+                (int)g_shotsFired, (int)g_mode, (int)focused, g_hookCalls.exchange(0));
         }
     }
 }
@@ -723,6 +934,8 @@ void OnMessage(SKSEMessagingInterface::Message* msg) {
     if (msg->type == SKSEMessagingInterface::kMessage_DataLoaded) {
         Log("Skyrim data loaded");
         if (LoadSnakeDll() && OpenRuntime() && InstallHook()) {
+            g_fire.ready = SetUpFiring();
+            Log("firing %s", g_fire.ready ? "ready" : "unavailable");
             g_running = true;
             g_snakeThread = std::thread(SnakeThread);
             g_snakeThread.detach();
@@ -756,6 +969,8 @@ __declspec(dllexport) bool SKSEPlugin_Load(const SKSEInterface* skse) {
         return false;
     }
     g_messaging->RegisterListener(g_handle, "SKSE", OnMessage);
+    g_tasks = static_cast<SKSETaskInterface*>(skse->QueryInterface(kInterface_Task));
+    if (!g_tasks) Log("no task interface (firing disabled)");
     return true;
 }
 

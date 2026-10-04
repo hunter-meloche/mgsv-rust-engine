@@ -12,6 +12,15 @@ sneaking** (Skyrim's sneak key), **X** toggles prone, the **right mouse
 button** raises the weapon (aim pitch from the player's look pitch).
 **F10** cycles debug write modes (2 = full, default; 1 = local only; 0 = off).
 
+Firing: while aiming, the left mouse button fires Snake's weapon. Snake's
+controller decides when shots happen (MRS-4: 720 rpm full auto, 30-round
+magazine, reload, recoil); each shot is launched as a real Skyrim projectile
+on the main thread (SKSE task interface), so Skyrim handles hits, damage and
+reactions. For now the projectile, speed and damage come from the vanilla
+Hunting Bow + Iron Arrow (shots can be picked up as arrows); a dedicated
+bullet record is next. Needs the Address Library for SKSE Plugins database
+(`versionlib-1-7-104-0.bin`) in `Data/SKSE/Plugins`.
+
 How it runs: Snake's controller and the retarget run on the plugin's own
 60 Hz thread; the hook on `PlayerCharacter::UpdateAnimation` (called from
 Skyrim's job threads) only copies the latest pose into the bone nodes and
@@ -19,7 +28,7 @@ never calls into `snake.dll` (calling Rust from the job threads froze the
 game). If anything faults, Snake mode switches itself off.
 
 Testing hooks: `Data/SKSE/Plugins/snake_control.txt` (`enabled=1`, `mode=2`,
-`stance=prone`, `move=run`, `aim=1`) drives the plugin without key presses.
+`stance=prone`, `move=run`, `aim=1`, `fire=1`) drives the plugin without key presses.
 Log: `Documents/My Games/Skyrim Special Edition/SKSE/SnakeSKSE.log`.
 
 Bones: 25 of the 61 retargeted bones exist in the third-person skeleton.

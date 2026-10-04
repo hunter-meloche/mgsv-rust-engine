@@ -1,0 +1,473 @@
+//! C API for Snake's player systems, for hosts such as an SKSE (Skyrim)
+//! plugin. See `include/snake.h` for the C declarations and
+//! `docs/BRIDGE.md` for how a host is expected to use it.
+//!
+//! Conventions: Fox space (Y up, meters, a heading of 0 faces +Z, the right
+//! side of a heading is -X); quaternions are `x, y, z, w`. Every function is
+//! panic-safe: failures return NULL / 0 and set `snake_last_error()`.
+
+#![allow(clippy::missing_safety_doc)]
+
+use std::cell::RefCell;
+use std::ffi::{CStr, CString, c_char, c_void};
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::path::Path;
+use std::sync::Arc;
+
+use fox_anim::{Pose, Quat, Vec3};
+use snake_core::{Collision, Controller, Gait, Hit, Input, Stance};
+use snake_runtime::SnakeAssets;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SnakeVec3 {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SnakeQuat {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub w: f32,
+}
+
+impl From<Vec3> for SnakeVec3 {
+    fn from(v: Vec3) -> Self {
+        Self {
+            x: v.x,
+            y: v.y,
+            z: v.z,
+        }
+    }
+}
+impl From<SnakeVec3> for Vec3 {
+    fn from(v: SnakeVec3) -> Self {
+        Vec3::new(v.x, v.y, v.z)
+    }
+}
+
+/// One tick of input. Booleans are 0/1; `switch_to` is a weapon slot or -1.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SnakeInput {
+    pub move_x: f32,
+    pub move_y: f32,
+    pub camera_yaw: f32,
+    pub aim_pitch: f32,
+    pub sprint: u8,
+    pub walk: u8,
+    pub crouch: u8,
+    pub prone: u8,
+    pub aim: u8,
+    pub fire: u8,
+    pub reload: u8,
+    pub switch_to: i32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SnakeHit {
+    pub point: SnakeVec3,
+    pub normal: SnakeVec3,
+    /// Host id of the object hit, or -1.
+    pub id: i64,
+}
+
+/// The host's world. `raycast` returns 1 and fills `hit` when the segment
+/// `from -> to` hits something. `slide` moves a character capsule (feet
+/// position) by `delta`, sliding along obstacles, writing the new feet
+/// position to `out`; NULL means no obstacles. Arguments are passed by
+/// pointer so any FFI (C, C++, C#, Python ctypes) can implement them.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SnakeWorld {
+    pub user: *mut c_void,
+    pub raycast: Option<
+        unsafe extern "C" fn(*mut c_void, *const SnakeVec3, *const SnakeVec3, *mut SnakeHit) -> i32,
+    >,
+    pub slide: Option<
+        unsafe extern "C" fn(
+            *mut c_void,
+            *const SnakeVec3,
+            *const SnakeVec3,
+            f32,
+            f32,
+            *mut SnakeVec3,
+        ),
+    >,
+}
+
+impl Collision for SnakeWorld {
+    fn raycast(&self, from: Vec3, to: Vec3) -> Option<Hit> {
+        let f = self.raycast?;
+        let mut hit = SnakeHit::default();
+        // SAFETY: the host promised a valid callback and user pointer.
+        let (from, to): (SnakeVec3, SnakeVec3) = (from.into(), to.into());
+        (unsafe { f(self.user, &from, &to, &mut hit) } != 0).then(|| Hit {
+            point: hit.point.into(),
+            normal: hit.normal.into(),
+            id: usize::try_from(hit.id).ok(),
+        })
+    }
+
+    fn slide(&self, feet: Vec3, delta: Vec3, radius: f32, height: f32) -> Vec3 {
+        match self.slide {
+            // SAFETY: as above.
+            Some(f) => {
+                let (feet_c, delta_c): (SnakeVec3, SnakeVec3) = (feet.into(), delta.into());
+                let mut out = SnakeVec3::from(feet + delta);
+                unsafe { f(self.user, &feet_c, &delta_c, radius, height, &mut out) };
+                out.into()
+            }
+            None => feet + delta,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SnakeShot {
+    pub origin: SnakeVec3,
+    pub direction: SnakeVec3,
+    pub speed: f32,
+    pub gravity: f32,
+}
+
+/// Stance: 0 stand, 1 crouch, 2 prone. Gait: 0 idle, 1 walk, 2 run, 3 dash.
+/// `weapon` is the slot in use or -1.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SnakeStatus {
+    pub stance: i32,
+    pub gait: i32,
+    pub aiming: i32,
+    pub weapon: i32,
+    pub ammo: i32,
+    pub reserve: i32,
+    pub reloading: i32,
+    pub recoil: f32,
+}
+
+/// Loaded assets, shared by every player created from it.
+pub struct SnakeRuntime {
+    assets: Arc<SnakeAssets>,
+    bone_names: Vec<Option<CString>>,
+}
+
+pub struct SnakePlayer {
+    assets: Arc<SnakeAssets>,
+    controller: Controller,
+    pose: Pose,
+    /// Shots fired during updates, until the host takes them.
+    shots: Vec<snake_core::Shot>,
+}
+
+thread_local! {
+    static LAST_ERROR: RefCell<CString> = RefCell::new(CString::default());
+}
+
+fn set_error(msg: impl std::fmt::Display) {
+    let text = CString::new(msg.to_string().replace('\0', " ")).unwrap_or_default();
+    LAST_ERROR.with(|e| *e.borrow_mut() = text);
+}
+
+/// Run `f`, turning errors and panics into `fallback` plus a stored message.
+fn guard<T>(fallback: T, f: impl FnOnce() -> Result<T, String>) -> T {
+    match catch_unwind(AssertUnwindSafe(f)) {
+        Ok(Ok(v)) => v,
+        Ok(Err(e)) => {
+            set_error(e);
+            fallback
+        }
+        Err(_) => {
+            set_error("internal panic");
+            fallback
+        }
+    }
+}
+
+unsafe fn path_arg(p: *const c_char) -> Result<String, String> {
+    if p.is_null() {
+        return Err("null path".into());
+    }
+    // SAFETY: caller passes a NUL-terminated string.
+    unsafe { CStr::from_ptr(p) }
+        .to_str()
+        .map(str::to_string)
+        .map_err(|e| e.to_string())
+}
+
+/// The last error message on this thread (empty if none). Valid until the
+/// next failing call on this thread.
+#[unsafe(no_mangle)]
+pub extern "C" fn snake_last_error() -> *const c_char {
+    LAST_ERROR.with(|e| e.borrow().as_ptr())
+}
+
+/// Load everything from a game install. `dictionaries_dir` is the repo's
+/// `dictionaries/` folder (needed to find clips by name). NULL on failure.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_runtime_open(
+    game_dir: *const c_char,
+    dictionaries_dir: *const c_char,
+) -> *mut SnakeRuntime {
+    guard(std::ptr::null_mut(), || {
+        // SAFETY: forwarded caller contract.
+        let (game, dicts) = unsafe { (path_arg(game_dir)?, path_arg(dictionaries_dir)?) };
+        let vfs = snake_runtime::open_game(Path::new(&game), Path::new(&dicts))
+            .map_err(|e| format!("{e:#}"))?;
+        let assets = SnakeAssets::load(&vfs).map_err(|e| format!("{e:#}"))?;
+        let mut names = fox_data::NameTable::new();
+        let _ = names.load_dictionary(Path::new(&dicts).join("mtar_tools/skl_dictionary.txt"));
+        let bone_names = assets
+            .skel
+            .bones
+            .iter()
+            .map(|b| names.resolve32(b.name).and_then(|n| CString::new(n).ok()))
+            .collect();
+        Ok(Box::into_raw(Box::new(SnakeRuntime {
+            assets: Arc::new(assets),
+            bone_names,
+        })))
+    })
+}
+
+/// Free a runtime. Players created from it stay valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_runtime_free(rt: *mut SnakeRuntime) {
+    if !rt.is_null() {
+        // SAFETY: pointer came from snake_runtime_open.
+        drop(unsafe { Box::from_raw(rt) });
+    }
+}
+
+/// Number of skeleton bones (the length of pose arrays).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_bone_count(rt: *const SnakeRuntime) -> u32 {
+    // SAFETY: valid runtime pointer or null.
+    unsafe { rt.as_ref() }.map_or(0, |r| r.assets.skel.bones.len() as u32)
+}
+
+/// Bone name (e.g. `SKL_023_RHAND`), or NULL if unknown. Owned by the runtime.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_bone_name(rt: *const SnakeRuntime, bone: u32) -> *const c_char {
+    // SAFETY: valid runtime pointer or null.
+    unsafe { rt.as_ref() }
+        .and_then(|r| r.bone_names.get(bone as usize)?.as_ref())
+        .map_or(std::ptr::null(), |n| n.as_ptr())
+}
+
+/// Parent bone index, or -1 for the root (and for bad arguments).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_bone_parent(rt: *const SnakeRuntime, bone: u32) -> i32 {
+    // SAFETY: valid runtime pointer or null.
+    unsafe { rt.as_ref() }
+        .and_then(|r| r.assets.skel.bones.get(bone as usize)?.parent)
+        .map_or(-1, |p| p as i32)
+}
+
+/// Number of carried weapons (slots for `switch_to`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_weapon_count(rt: *const SnakeRuntime) -> u32 {
+    // SAFETY: valid runtime pointer or null.
+    unsafe { rt.as_ref() }.map_or(0, |r| r.assets.weapons.len() as u32)
+}
+
+/// A new player at the origin with every weapon equipped. NULL on failure.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_player_new(rt: *const SnakeRuntime) -> *mut SnakePlayer {
+    guard(std::ptr::null_mut(), || {
+        // SAFETY: valid runtime pointer or null.
+        let rt = unsafe { rt.as_ref() }.ok_or("null runtime")?;
+        let assets = rt.assets.clone();
+        let controller = assets.controller().map_err(|e| format!("{e:#}"))?;
+        let pose = controller.pose(&assets.rig, &assets.skel)?;
+        Ok(Box::into_raw(Box::new(SnakePlayer {
+            assets,
+            controller,
+            pose,
+            shots: Vec::new(),
+        })))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_player_free(p: *mut SnakePlayer) {
+    if !p.is_null() {
+        // SAFETY: pointer came from snake_player_new.
+        drop(unsafe { Box::from_raw(p) });
+    }
+}
+
+/// Advance the player by `dt` seconds (call at a fixed rate, e.g. 60 Hz).
+/// `world` may be NULL (flat, obstacle-free, no bullet hits). Returns 1 on
+/// success.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_player_update(
+    p: *mut SnakePlayer,
+    input: *const SnakeInput,
+    world: *const SnakeWorld,
+    dt: f32,
+) -> i32 {
+    guard(0, || {
+        // SAFETY: valid pointers or null.
+        let p = unsafe { p.as_mut() }.ok_or("null player")?;
+        let i = unsafe { input.as_ref() }.copied().unwrap_or_default();
+        let input = Input {
+            move_x: i.move_x,
+            move_y: i.move_y,
+            camera_yaw: i.camera_yaw,
+            sprint: i.sprint != 0,
+            walk: i.walk != 0,
+            crouch: i.crouch != 0,
+            prone: i.prone != 0,
+            aim: i.aim != 0,
+            fire: i.fire != 0,
+            reload: i.reload != 0,
+            aim_pitch: i.aim_pitch,
+            switch_to: usize::try_from(i.switch_to).ok(),
+        };
+        let flat = snake_core::FlatGround {
+            height: f32::NEG_INFINITY,
+        };
+        // SAFETY: valid pointer or null.
+        let collision: &dyn Collision = match unsafe { world.as_ref() } {
+            Some(w) => w,
+            None => &flat,
+        };
+        p.controller
+            .update(&p.assets.rig, &p.assets.clips, collision, dt, &input);
+        p.pose = p.controller.pose(&p.assets.rig, &p.assets.skel)?;
+        let shots = p.controller.take_shots(&p.pose, collision);
+        p.shots.extend(shots);
+        Ok(1)
+    })
+}
+
+/// The character root: feet position and heading (radians about +Y).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_player_transform(
+    p: *const SnakePlayer,
+    position: *mut SnakeVec3,
+    yaw: *mut f32,
+) {
+    // SAFETY: valid pointers or null.
+    if let Some(p) = unsafe { p.as_ref() } {
+        if let Some(out) = unsafe { position.as_mut() } {
+            *out = p.controller.position.into();
+        }
+        if let Some(out) = unsafe { yaw.as_mut() } {
+            *out = p.controller.yaw;
+        }
+    }
+}
+
+/// Teleport the character (e.g. to the host's spawn point).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_player_set_transform(
+    p: *mut SnakePlayer,
+    position: SnakeVec3,
+    yaw: f32,
+) {
+    // SAFETY: valid pointer or null.
+    if let Some(p) = unsafe { p.as_mut() } {
+        p.controller.position = position.into();
+        p.controller.yaw = yaw;
+    }
+}
+
+/// Bone transforms from the last update, in the character's root space
+/// (apply the root transform to place them in the world). Writes up to
+/// `capacity` entries to each array; returns the number of bones.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_player_pose(
+    p: *const SnakePlayer,
+    positions: *mut SnakeVec3,
+    rotations: *mut SnakeQuat,
+    capacity: u32,
+) -> u32 {
+    // SAFETY: valid pointer or null; arrays hold `capacity` entries.
+    let Some(p) = (unsafe { p.as_ref() }) else {
+        return 0;
+    };
+    let n = p.pose.positions.len().min(capacity as usize);
+    for i in 0..n {
+        if !positions.is_null() {
+            unsafe { *positions.add(i) = p.pose.positions[i].into() };
+        }
+        if !rotations.is_null() {
+            let q: Quat = p.pose.rotations[i];
+            unsafe {
+                *rotations.add(i) = SnakeQuat {
+                    x: q.x,
+                    y: q.y,
+                    z: q.z,
+                    w: q.w,
+                }
+            };
+        }
+    }
+    p.pose.positions.len() as u32
+}
+
+/// Shots fired since the last call, in world space. Writes up to `capacity`;
+/// returns the number written (extra shots are dropped).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_player_take_shots(
+    p: *mut SnakePlayer,
+    out: *mut SnakeShot,
+    capacity: u32,
+) -> u32 {
+    // SAFETY: valid pointer or null; `out` holds `capacity` entries.
+    let Some(p) = (unsafe { p.as_mut() }) else {
+        return 0;
+    };
+    let shots = std::mem::take(&mut p.shots);
+    let n = shots.len().min(capacity as usize);
+    if !out.is_null() {
+        for (i, s) in shots.iter().take(n).enumerate() {
+            unsafe {
+                *out.add(i) = SnakeShot {
+                    origin: s.origin.into(),
+                    direction: s.direction.into(),
+                    speed: s.speed,
+                    gravity: s.gravity,
+                }
+            };
+        }
+    }
+    n as u32
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_player_status(p: *const SnakePlayer, out: *mut SnakeStatus) {
+    // SAFETY: valid pointers or null.
+    let (Some(p), Some(out)) = (unsafe { p.as_ref() }, unsafe { out.as_mut() }) else {
+        return;
+    };
+    let c = &p.controller;
+    let w = c.weapon();
+    *out = SnakeStatus {
+        stance: match c.stance {
+            Stance::Stand => 0,
+            Stance::Crouch => 1,
+            Stance::Prone => 2,
+        },
+        gait: match c.gait {
+            Gait::Idle => 0,
+            Gait::Walk => 1,
+            Gait::Run => 2,
+            Gait::Dash => 3,
+        },
+        aiming: c.aiming() as i32,
+        weapon: c.current.map_or(-1, |i| i as i32),
+        ammo: w.map_or(0, |w| w.ammo as i32),
+        reserve: w.map_or(0, |w| w.reserve as i32),
+        reloading: w.is_some_and(|w| w.reloading()) as i32,
+        recoil: c.recoil,
+    };
+}

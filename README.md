@@ -125,3 +125,10 @@ dictionary work of the MGSV modding community. Binary analysis uses
 This is an unofficial project, not affiliated with or endorsed by Konami.
 *Metal Gear Solid V* and *Fox Engine* are trademarks of Konami Digital
 Entertainment.
+
+## Using Snake from another engine
+
+`cargo build --release -p snake-ffi` builds `target/release/snake.dll`, a C
+API for the player systems (header: `crates/snake-ffi/include/snake.h`).
+`python tools/snake_ffi_demo.py` drives it from Python as an example host.
+See `docs/BRIDGE.md` for the Skyrim (SKSE) plan and coordinate conversion.

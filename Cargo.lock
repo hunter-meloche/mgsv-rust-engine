@@ -946,6 +946,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "snake-ffi"
+version = "0.1.0"
+dependencies = [
+ "fox-anim",
+ "fox-data",
+ "snake-core",
+ "snake-runtime",
+]
+
+[[package]]
 name = "snake-runtime"
 version = "0.1.0"
 dependencies = [

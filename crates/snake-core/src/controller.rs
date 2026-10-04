@@ -686,13 +686,20 @@ impl Controller {
     }
     /// Shots fired since the last call, leaving the muzzle of the gun in
     /// `pose` (root space) along the aim direction, in world space.
-    pub fn take_shots(&mut self, pose: &Pose) -> Vec<Shot> {
+    ///
+    /// If the barrel pokes through an obstacle (the character is pressed
+    /// against a wall), shots start at the obstacle instead of beyond it.
+    pub fn take_shots(&mut self, pose: &Pose, world: &dyn crate::world::Collision) -> Vec<Shot> {
         let n = std::mem::take(&mut self.pending_shots);
         let Some(w) = self.weapon() else {
             return Vec::new();
         };
         let (gr, gp) = w.rig.gun_transform(pose);
-        let muzzle = self.position + self.rotation() * (gp + gr * w.rig.muzzle);
+        let mut muzzle = self.position + self.rotation() * (gp + gr * w.rig.muzzle);
+        let centre = Vec3::new(self.position.x, muzzle.y, self.position.z);
+        if let Some(hit) = world.raycast(centre, muzzle) {
+            muzzle = hit.point + (centre - muzzle).normalize_or_zero() * 0.02;
+        }
         let heading = self.yaw + self.aim_yaw;
         let (cp, sp) = (self.aim_pitch.cos(), self.aim_pitch.sin());
         let direction = Vec3::new(heading.sin() * cp, sp, heading.cos() * cp);

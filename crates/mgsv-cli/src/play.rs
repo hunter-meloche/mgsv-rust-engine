@@ -218,7 +218,7 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
         let aim_point = world
             .raycast(eye + forward * 1.0, eye + forward * 300.0)
             .map_or(eye + forward * 300.0, |h| h.point);
-        for shot in ctl.take_shots(&pose) {
+        for shot in ctl.take_shots(&pose, &world) {
             let dir = (aim_point - shot.origin).normalize_or(shot.direction);
             ballistics.fire(shot.origin, dir, shot.speed, shot.gravity);
             flash = 2;

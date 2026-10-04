@@ -1,0 +1,17 @@
+[package]
+name = "snake-ffi"
+description = "C API (DLL) for Snake's player systems, for host engines such as an SKSE plugin"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lib]
+name = "snake"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+fox-data.workspace = true
+fox-anim.workspace = true
+snake-core.workspace = true
+snake-runtime.workspace = true

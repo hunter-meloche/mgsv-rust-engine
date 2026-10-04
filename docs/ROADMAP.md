@@ -50,7 +50,8 @@ game (world, AI, missions) continues afterwards.
 - [ ] Weapons v3: decode recoil/sway (wobbling) sets, more classes (sniper, shotgun, SMG), damage and hit reactions, sound
 - [x] Physics/collision interface: `snake_core::Collision` (raycasts for bullets, capsule sliding for movement), reference `BoxWorld`; `mgsv play` test range with cover, walls and target boards
 - [ ] Recoil/sway: decode `receiverParamSetsWobbling` (7 fields, undocumented; community notes cover `receiverParamSetsBase` = fire rate, aim-assist distance, draw speed, ?, ?, iron sight x2, reload speed)
-- [ ] Library API and a headless test harness; later the SKSE bridge
+- [x] Library API: `snake-runtime` (asset loading) + `snake-ffi` C API (`snake.dll`, `include/snake.h`), host demo `tools/snake_ffi_demo.py`; design for the Skyrim side in `docs/BRIDGE.md`
+- [ ] SKSE plugin (C++, CommonLibSSE-NG): input, Havok raycast/slide callbacks, pose retargeting onto the Skyrim skeleton
 
 ## Next (after the player systems)
 

@@ -31,11 +31,11 @@ impl Raster {
     }
 
     /// Draw world-space triangles `(a, b, c)` with a base colour each, lit by
-    /// a directional light (two-sided).
+    /// a directional light (two-sided), or unlit (emissive) with `None`.
     pub fn draw(
         &mut self,
         view_proj: &Mat4,
-        light: Vec3,
+        light: Option<Vec3>,
         tris: impl Iterator<Item = ([Vec3; 3], Vec3)>,
     ) {
         let (w, h) = (self.width as f32, self.height as f32);
@@ -45,7 +45,7 @@ impl Raster {
             if len < 1e-12 {
                 continue;
             }
-            let lit = 0.35 + 0.65 * (n / len).dot(light).abs();
+            let lit = light.map_or(1.0, |l| 0.35 + 0.65 * (n / len).dot(l).abs());
             let col = rgb(base * lit);
             let clip: [Vec4; 3] = p.map(|v| *view_proj * v.extend(1.0));
             // Reject triangles touching the near plane (simple; the camera
@@ -155,4 +155,16 @@ fn crc32(data: &[u8]) -> u32 {
         }
     }
     !crc
+}
+
+impl Raster {
+    /// Draw a small screen-centre crosshair.
+    pub fn crosshair(&mut self, color: u32) {
+        let (cx, cy) = (self.width / 2, self.height / 2);
+        for d in 4..10 {
+            for (x, y) in [(cx + d, cy), (cx - d, cy), (cx, cy + d), (cx, cy - d)] {
+                self.color[y * self.width + x] = color;
+            }
+        }
+    }
 }

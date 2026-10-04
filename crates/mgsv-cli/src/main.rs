@@ -32,7 +32,7 @@ enum Cmd {
         #[arg(long)]
         named: bool,
     },
-    /// Print one file to stdout.
+    /// Print one file to stdout (PACKAGE.fpk:INNER for files inside packages).
     Cat { path: String },
     /// Extract files into OUT (default: <repo>/extracted, which is gitignored).
     Extract {
@@ -128,6 +128,10 @@ enum Cmd {
     /// Catalogue every player body clip: archive, frames, root travel,
     /// speed and turn (tab-separated).
     AnimClips,
+    /// Dump an .fcnp connection-point file (PACKAGE.fpk:INNER).
+    Fcnp { path: String },
+    /// Parse every .fcnp inside every package.
+    FcnpCheck,
     /// Open a window and drive Snake around a test floor (keyboard + mouse).
     Play {
         /// Quit after this many frames (smoke tests).
@@ -143,6 +147,13 @@ enum Cmd {
     /// Run the player controller headless with a scripted input sequence and
     /// print position, speed and clip over time.
     SnakeSim,
+    /// Development probe: for each frame of a resident clip, the chest and
+    /// right-hand direction (yaw/pitch, degrees) and hand position.
+    AimProbe { clip: String },
+    /// Development probe: attach the rifle to the right hand and report,
+    /// per frame of a clip, the muzzle direction and how far the rifle's
+    /// left-hand grip is from the animated left hand.
+    WeaponProbe { clip: String },
     AnimProbe {
         /// .mtar (PACKAGE.fpk:INNER)
         path: String,
@@ -266,7 +277,7 @@ fn run() -> Result<()> {
             Ok(())
         }
         Cmd::Cat { path } => {
-            out.write_all(&vfs.read(&path)?)?;
+            out.write_all(&read_any(&vfs, &path)?)?;
             Ok(())
         }
         Cmd::Extract {
@@ -448,6 +459,67 @@ fn run() -> Result<()> {
         } => anim_probe(&vfs, &path, &clip, frame, brief, timeline),
         Cmd::AnimClips => anim_clips(&vfs),
         Cmd::SnakeSim => snake_sim(&vfs),
+        Cmd::Fcnp { path } => {
+            let f = fox_data::fcnp::Fcnp::parse(&read_any(&vfs, &path)?)?;
+            writeln!(out, "{}: {} connection points", f.model, f.points.len())?;
+            for c in &f.points {
+                writeln!(
+                    out,
+                    "  {:<24} pos {:>7.3?} rot {:>6.3?} {:?}",
+                    c.name, c.position, c.rotation, c.params
+                )?;
+            }
+            Ok(())
+        }
+        Cmd::FcnpCheck => {
+            let pkgs: Vec<_> = vfs
+                .iter()
+                .filter(|(h, _)| fox_hash::extension_from_id((h >> 51) as u16) == Some("fpk"))
+                .collect();
+            let seen = std::sync::Mutex::new(std::collections::HashSet::new());
+            let (ok, points) = (AtomicUsize::new(0), AtomicUsize::new(0));
+            let failures = std::sync::Mutex::new(Vec::new());
+            pkgs.par_iter().for_each(|(_, r)| {
+                let Ok(data) = vfs.read_ref(*r) else { return };
+                let Ok(pkg) = Fpk::parse(&data) else { return };
+                for e in pkg
+                    .entries
+                    .iter()
+                    .filter(|e| e.clean_path().ends_with(".fcnp"))
+                {
+                    if !seen.lock().unwrap().insert(e.md5) {
+                        continue;
+                    }
+                    match pkg
+                        .read(e)
+                        .map_err(anyhow::Error::from)
+                        .and_then(|d| Ok(fox_data::fcnp::Fcnp::parse(&d)?))
+                    {
+                        Ok(f) => {
+                            ok.fetch_add(1, Ordering::Relaxed);
+                            points.fetch_add(f.points.len(), Ordering::Relaxed);
+                        }
+                        Err(err) => failures
+                            .lock()
+                            .unwrap()
+                            .push(format!("{}: {err:#}", e.clean_path())),
+                    }
+                }
+            });
+            let failures = failures.into_inner().unwrap();
+            println!(
+                "fcnp files: {} ok, {} connection points, {} failures",
+                ok.into_inner(),
+                points.into_inner(),
+                failures.len()
+            );
+            for f in failures.iter().take(20) {
+                println!("  {f}");
+            }
+            Ok(())
+        }
+        Cmd::AimProbe { clip } => aim_probe(&vfs, &clip),
+        Cmd::WeaponProbe { clip } => weapon_probe(&vfs, &clip),
         Cmd::Play { frames, shot, auto } => {
             let (skel, rig) = snake_rig(&vfs)?;
             let clips = player_clip_library(&vfs)?;
@@ -463,12 +535,17 @@ fn run() -> Result<()> {
                     color,
                 ));
             }
+            let gun = Some(load_rifle(&vfs, &skel, &rig, &clips)?);
+            if let Some(g) = &gun {
+                println!("equipped {:?}", g.stats);
+            }
             play::run(
                 play::Assets {
                     skel,
                     rig,
                     clips,
                     parts,
+                    gun,
                 },
                 play::Options { frames, shot, auto },
             )
@@ -967,21 +1044,167 @@ fn anim_poles(vfs: &Vfs) -> Result<()> {
 const PLAYER_RESIDENT: &str = "/Assets/tpp/pack/player/motion/player2_resident_motion.fpk:/Assets/tpp/motion/mtar/player2/player2_resident.mtar";
 
 /// Every clip of the player's resident motion archive, by short name.
+const RIFLE_RECEIVER_MOTION: &str = "/Assets/tpp/pack/player/motion/equip/receiver/pl_rcvr_ar00.fpk:/Assets/tpp/motion/mtar/player2/Receiver/pl_rcvr_ar00.mtar";
+const EQUIP_PARAMETERS: &str =
+    "/Assets/tpp/level_asset/weapon/ParameterTables/parts/EquipParameters.lua";
+
+/// Player clips by short name: the resident set plus the rifle receiver's.
 fn player_clip_library(vfs: &Vfs) -> Result<snake_core::ClipLibrary> {
-    let data = read_any(vfs, PLAYER_RESIDENT)?;
-    let m = fox_data::mtar::Mtar::parse(&data)?;
     let mut lib = snake_core::ClipLibrary::new();
-    for i in 0..m.entries.len() {
-        let Ok(c) = m.clip(&data, i) else { continue };
-        let name = vfs.dictionary.resolve(m.entries[i].hash).0;
-        let short = name
-            .rsplit('/')
-            .next()
-            .unwrap_or(&name)
-            .trim_end_matches(".gani");
-        lib.insert(short, c);
+    for path in [PLAYER_RESIDENT, RIFLE_RECEIVER_MOTION] {
+        let data = read_any(vfs, path)?;
+        let m = fox_data::mtar::Mtar::parse(&data)?;
+        for i in 0..m.entries.len() {
+            let Ok(c) = m.clip(&data, i) else { continue };
+            let name = vfs.dictionary.resolve(m.entries[i].hash).0;
+            let short = name
+                .rsplit('/')
+                .next()
+                .unwrap_or(&name)
+                .trim_end_matches(".gani");
+            lib.insert(short, c);
+        }
     }
     Ok(lib)
+}
+
+/// The AM MRS-4 assault rifle: stats from the game's tables, the rig
+/// attachment calibrated on the aim grid, the model and the back holster.
+fn load_rifle(
+    vfs: &Vfs,
+    skel: &fox_anim::Skeleton,
+    rig: &fox_anim::HumanRig,
+    clips: &snake_core::ClipLibrary,
+) -> Result<play::Gun> {
+    let src = String::from_utf8_lossy(&read_any(vfs, EQUIP_PARAMETERS)?).into_owned();
+    let stats = snake_core::WeaponStats::from_equip_parameters(&src, "WP_West_ar_010")
+        .map_err(anyhow::Error::msg)?;
+    let body = fox_data::fcnp::Fcnp::parse(&read_any(vfs, SNAKE_CNP)?)?;
+    let gun_cnp = fox_data::fcnp::Fcnp::parse(&read_any(vfs, RIFLE_CNP)?)?;
+    let bone = |n: &str| {
+        skel.find(fox_hash::str_code32(n.as_bytes()))
+            .with_context(|| format!("no bone {n}"))
+    };
+    let grid = clips
+        .get("snapasr_s_fre_pose_25")
+        .context("aim grid clip")?;
+    let (_, muzzle) = cnp(&gun_cnp, "CNP_MUZZLE_FLASH")?;
+    let weapon_rig = snake_core::WeaponRig::assault_rifle(
+        rig,
+        skel,
+        &grid,
+        bone("SKL_023_RHAND")?,
+        cnp(&body, "CNP_RIGHT_HAND")?,
+        muzzle,
+    )
+    .map_err(anyhow::Error::msg)?;
+    let model = fox_data::Fmdl::parse(&read_any(vfs, RIFLE_MODEL)?)?;
+    let gun_skel = fox_anim::Skeleton::from_fmdl(&model);
+    let skinned = fox_anim::SkinnedModel::bind(&model, &gun_skel).map_err(anyhow::Error::msg)?;
+    Ok(play::Gun {
+        model: skinned,
+        rest: fox_anim::Pose::rest(&gun_skel),
+        stats,
+        rig: weapon_rig,
+        back: (bone("SKL_300_ASRROOT")?, cnp(&body, "CNP_ASRROOT")?),
+    })
+}
+
+const SNAKE_CNP: &str = "/Assets/tpp/pack/player/parts/plparts_normal.fpk:/Assets/tpp/chara/sna/Scenes/sna0_main0_def.fcnp";
+const RIFLE_MODEL: &str = "/Assets/tpp/pack/collectible/primary/EQP_WP_West_ar_010.fpk:/Assets/tpp/weapon/asw/Scenes/ar00_main0_aw6.fmdl";
+const RIFLE_CNP: &str = "/Assets/tpp/pack/collectible/primary/EQP_WP_West_ar_010.fpk:/Assets/tpp/weapon/asw/Scenes/ar00_main0_aw6.fcnp";
+
+fn cnp(f: &fox_data::fcnp::Fcnp, name: &str) -> Result<(fox_anim::Quat, fox_anim::Vec3)> {
+    let c = f
+        .points
+        .iter()
+        .find(|c| c.name == name)
+        .with_context(|| format!("no {name} in {}", f.model))?;
+    Ok((
+        fox_anim::Quat::from_array(c.rotation),
+        fox_anim::Vec3::from_array(c.position),
+    ))
+}
+
+fn weapon_probe(vfs: &Vfs, name: &str) -> Result<()> {
+    use fox_anim::Vec3;
+    let (skel, rig) = snake_rig(vfs)?;
+    let clips = player_clip_library(vfs)?;
+    let clip = clips.get(name).with_context(|| format!("no clip {name}"))?;
+    let body = fox_data::fcnp::Fcnp::parse(&read_any(vfs, SNAKE_CNP)?)?;
+    let gun = fox_data::fcnp::Fcnp::parse(&read_any(vfs, RIFLE_CNP)?)?;
+    let (rh_rot, rh_pos) = cnp(&body, "CNP_RIGHT_HAND")?;
+    let (lh_rot, lh_pos) = cnp(&body, "CNP_LEFT_HAND")?;
+    let (_, grip) = cnp(&gun, "CNP_LEFT_HAND")?;
+    let (_, muzzle) = cnp(&gun, "CNP_MUZZLE_FLASH")?;
+    let bone = |n: &str| skel.find(fox_hash::str_code32(n.as_bytes())).unwrap();
+    let (rhand, lhand) = (bone("SKL_023_RHAND"), bone("SKL_013_LHAND"));
+    let _ = lh_rot;
+    // Calibrate the hand-to-gun rotation on the centre aim pose (frame 12 of
+    // the 5x5 rifle grid): there the rifle points straight ahead, level.
+    let grid = clips
+        .get("snapasr_s_fre_pose_25")
+        .context("aim grid clip")?;
+    let centre = rig.pose(&skel, &grid, 12.0).map_err(anyhow::Error::msg)?;
+    let hand_to_gun = (centre.rotations[rhand] * rh_rot).inverse();
+    println!("hand-to-gun rotation {:?}", hand_to_gun.to_array());
+    let mut total = 0.0;
+    for f in 0..=clip.frame_count {
+        let pose = rig
+            .pose(&skel, &clip, f as f32)
+            .map_err(anyhow::Error::msg)?;
+        let root_rot = pose.rotations[rhand] * rh_rot * hand_to_gun;
+        let root_pos = pose.positions[rhand] + pose.rotations[rhand] * rh_pos;
+        let grip_world = root_pos + root_rot * grip;
+        let lh_world = pose.positions[lhand] + pose.rotations[lhand] * lh_pos;
+        let fwd = root_rot * Vec3::Z;
+        let m = root_pos + root_rot * muzzle;
+        let d = (grip_world - lh_world).length();
+        total += d;
+        println!(
+            "  {f:>3} muzzle yaw {:>6.1} pitch {:>6.1} at ({:>5.2},{:>5.2},{:>5.2}) | grip-to-left-hand {:.3} m",
+            fwd.x.atan2(fwd.z).to_degrees(),
+            fwd.y.asin().to_degrees(),
+            m.x,
+            m.y,
+            m.z,
+            d
+        );
+    }
+    println!(
+        "mean grip-to-left-hand {:.3} m",
+        total / (clip.frame_count + 1) as f32
+    );
+    Ok(())
+}
+
+fn aim_probe(vfs: &Vfs, name: &str) -> Result<()> {
+    use fox_anim::Vec3;
+    let (skel, rig) = snake_rig(vfs)?;
+    let clips = player_clip_library(vfs)?;
+    let clip = clips.get(name).with_context(|| format!("no clip {name}"))?;
+    let bone = |n: &str| skel.find(fox_hash::str_code32(n.as_bytes())).unwrap();
+    let (chest, hand, lhand) = (
+        bone("SKL_002_CHEST"),
+        bone("SKL_023_RHAND"),
+        bone("SKL_013_LHAND"),
+    );
+    let dir = |v: Vec3| (v.x.atan2(v.z).to_degrees(), v.y.asin().to_degrees());
+    println!("{name}: {} frames", clip.frame_count);
+    for f in 0..=clip.frame_count {
+        let pose = rig
+            .pose(&skel, &clip, f as f32)
+            .map_err(anyhow::Error::msg)?;
+        // Chest forward is +Z in its rest frame; the hand points along -X (right hand).
+        let (cy, cp) = dir(pose.rotations[chest] * Vec3::Z);
+        let (hy, hp) = dir((pose.positions[lhand] - pose.positions[hand]).normalize());
+        let h = pose.positions[hand];
+        println!(
+            "  {f:>3} chest yaw {cy:>6.1} pitch {cp:>6.1} | R->L hand yaw {hy:>6.1} pitch {hp:>6.1} | Rhand ({:>5.2},{:>5.2},{:>5.2})",
+            h.x, h.y, h.z
+        );
+    }
+    Ok(())
 }
 
 fn snake_sim(vfs: &Vfs) -> Result<()> {

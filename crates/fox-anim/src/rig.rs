@@ -79,6 +79,9 @@ pub struct HumanRig {
     quat_segments: Vec<bool>,
     /// IK target segments (stored in anchor space by clips).
     target_segments: Vec<usize>,
+    /// The rig's mask layers (`Upper`, `Lower`, `LArm`, ...) as per-segment
+    /// weights.
+    masks: Vec<(String, Vec<f32>)>,
 }
 
 /// One sampled frame of rig tracks, ready to blend and solve. IK targets are
@@ -189,6 +192,26 @@ impl HumanRig {
             return Err("skeleton bones are not ordered parent-first".into());
         }
         let target_segments = chains.iter().map(|c| c.target).collect();
+        // Each unit owns `track_count` consecutive segments from its first.
+        let masks = frig
+            .masks
+            .iter()
+            .map(|m| {
+                let mut w = vec![0.0; frig.segment_count as usize];
+                for (u, unit) in frig.units.iter().enumerate() {
+                    let Some(&first) = unit.segments.first() else {
+                        continue;
+                    };
+                    let weight = m.weights.get(u).copied().unwrap_or(0.0);
+                    for s in first..first + unit.track_count.max(1) {
+                        if let Some(x) = w.get_mut(s as usize) {
+                            *x = weight;
+                        }
+                    }
+                }
+                (m.name.clone(), w)
+            })
+            .collect();
         Ok(Self {
             segment_count: frig.segment_count as usize,
             drives,
@@ -197,6 +220,7 @@ impl HumanRig {
             pole_axis: Vec3::X,
             quat_segments,
             target_segments,
+            masks,
         })
     }
 
@@ -252,6 +276,47 @@ impl HumanRig {
             })
             .collect();
         RigFrame { values }
+    }
+
+    /// Per-segment weights of one of the rig's mask layers (e.g. `Upper`).
+    pub fn mask(&self, name: &str) -> Option<&[f32]> {
+        self.masks
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, w)| w.as_slice())
+    }
+
+    /// Layer `over` onto `base` with per-segment weights (0 keeps `base`,
+    /// 1 takes `over`), scaled by `amount`.
+    pub fn layer(
+        &self,
+        base: &RigFrame,
+        over: &RigFrame,
+        weights: &[f32],
+        amount: f32,
+    ) -> RigFrame {
+        let mut out = base.clone();
+        for (s, w) in weights.iter().enumerate() {
+            let t = (w * amount).clamp(0.0, 1.0);
+            if t <= 0.0 {
+                continue;
+            }
+            out.values[s] = if self.quat_segments[s] {
+                let (qa, mut qb) = (
+                    Quat::from_array(base.values[s]),
+                    Quat::from_array(over.values[s]),
+                );
+                if qa.dot(qb) < 0.0 {
+                    qb = -qb;
+                }
+                qa.slerp(qb, t).to_array()
+            } else {
+                glam::Vec4::from_array(base.values[s])
+                    .lerp(glam::Vec4::from_array(over.values[s]), t)
+                    .to_array()
+            };
+        }
+        out
     }
 
     /// Summed distance between the IK targets (hands, feet) of two frames:

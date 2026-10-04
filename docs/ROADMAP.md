@@ -44,9 +44,10 @@ game (world, AI, missions) continues afterwards.
 - [x] `mgsv play`: native test window (software rasterizer), WASD + mouse, third-person camera
 - [x] Controller v2: start clips with 0-180 degree turns (`<gait>_st_<l|r><angle>_<foot>`), stop clips chosen by matching foot positions, idle foot variants
 - [ ] Controller v3: in-place turns (`tn_*`), dive, cover, ledges/vaults; tuning against the exe's player parameters
-- [ ] Camera: over-the-shoulder, shoulder swap, aim zoom
-- [ ] Weapons: equip parameters (`EquipParameters.lua`, `TppEquip` ids), recoil, ballistics, reload
-- [ ] Physics/collision interface the controller runs against (pluggable, so Skyrim collision can be fed in)
+- [x] Camera: over-the-shoulder follow, aim zoom (`mgsv play`); [ ] shoulder swap
+- [x] Weapons v1: AM MRS-4 with stats read from `EquipParameters.lua` (720 rpm full auto, 30+210, 5.56 mm at 450 m/s, gravity 18), aim pose grid layered on the upper body, strafing, firing, bullets with drop, reload clip; `.fcnp` attachment (hand / back)
+- [ ] Weapons v2: decode recoil/sway (wobbling) sets, other weapon classes (handgun `snaphg01`, sniper, shotgun), prone aiming (`snapasr_c_*`, `pose_35`), damage
+- [~] Physics/collision interface: `snake_core::Collision` (raycast) used by ballistics; controller collision next
 - [ ] Library API and a headless test harness; later the SKSE bridge
 
 ## Next (after the player systems)

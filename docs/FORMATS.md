@@ -132,3 +132,60 @@ Player archives have 18 units: the **rig units** of `human_finger.frig` (see
 above), not bones. Clip names resolve through
 `dictionaries/mtar_tools/mtar_dictionary.txt` (e.g.
 `snapcqc_s_thw_f.gani`).
+
+## `.fcnp` connection points — verified (820 files, 5,585 points, 0 failures)
+
+Implemented in `crates/fox-data/src/fcnp.rs` (`mgsv fcnp`, `mgsv fcnp-check`);
+layout worked out from retail files.
+
+* Header (32 bytes): `u32 0`, `u32` first node offset, `u32` file size,
+  `StrCode32` model name, `u32` name offset (relative to the hash field).
+* Nodes (0x60 bytes, linked list): `StrCode32` name, `u32` name offset
+  (relative to the node), `u32 0`, `u32 0x30`, `u32 0x30`, 2 x `u32 0`,
+  `i32` previous offset, `i32` next offset (0 ends), `u32` parameter block
+  offset (relative to the node), padding; then position, rotation quaternion
+  and scale (float4 each) at +0x30/+0x40/+0x50.
+* Parameter block: `u32 count`, then `(StrCode32 key, u32 offset, StrCode32
+  value, u32 offset)`; each string offset is relative to its hash. `Parent`
+  names the bone.
+
+Snake's body (`sna0_main0_def.fcnp`): `CNP_RIGHT_HAND` / `CNP_LEFT_HAND`
+(0.08 m along the hand bones), `CNP_ASRROOT` on `SKL_300_ASRROOT` (rifle on the
+back), feet, eye, mouth, knife. Assembled rifle (`ar00_main0_aw6.fcnp`, frame:
+barrel +Z, root at the grip): `CNP_MUZZLE_FLASH` (0.677 m), `CNP_LEFT_HAND`
+(fore grip), `CNP_EJECT`, sights, light, laser.
+
+**Holding the gun.** The gun's frame relative to `CNP_RIGHT_HAND` is not the
+identity. Calibrating it on the centre pose of the rifle aim grid (frame 12 of
+`snapasr_s_fre_pose_25`, where the rifle points straight ahead) makes every
+grid pose land on exact authored angles (yaw +90/+45/0/-45/-90, pitch
++75/+37.5/0/-37.5/-75) with the off hand on the gun's fore grip (5.5 cm).
+
+## Aim pose grids
+
+`snap<weapon>_<s|q|c>_fre_pose_<n>` clips hold one aim pose per frame,
+row-major from the top-left: rows are pitch (up first), columns yaw (left
+first). Rifle: 5 x 5 at 45 / 37.5 degree steps (`pose_25`); ready/handgun:
+3 x 3 (`pose_9`). The game layers them onto the upper body (the rig's `Upper`
+mask) over the `snaprdy_*_fre0_*` strafe loops, whose angle suffix is the
+movement direction relative to the facing (positive = left).
+
+## `EquipParameters.lua` (weapon stats)
+
+`/Assets/tpp/level_asset/weapon/ParameterTables/parts/EquipParameters.lua` is
+a data-only call `TppEquip.ReloadEquipParameterTables2{...}` (read with
+`fox_data::lua_table`). Links used, with 0-based set indices:
+
+* `gunBasic`: weapon, receiver, barrel, magazine, stock, muzzle, ... (AM MRS-4
+  `WP_West_ar_010` = `RC_30101`, `BA_30115`, `AM_30102`, `SK_30113`).
+* `receiver`: id, attack id, base set, wobbling set, system set, sound set.
+* `receiverParamSetsBase[i][0]`: rounds per minute (handguns 300, snipers 60,
+  SMGs 900-1020, rifles 720-810).
+* `receiverParamSetsSystem[i]`: equip type, reticle, trigger
+  (`TRIGGER_FULLAUTO`...).
+* `magazine`: id, equip id, rounds, reserve rounds, bullet.
+* `bullet`: id, speed, speed, gravity (9.8 for grenades; 18 for 5.56 mm,
+  4.5 for sniper rounds), ...
+
+Not yet decoded: the remaining base-set fields and the wobbling (recoil/sway)
+set.

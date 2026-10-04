@@ -12,9 +12,13 @@
 //!
 //! Stops are chosen by matching foot positions against the current pose.
 
+use std::sync::Arc;
+
 use fox_anim::{HumanRig, Pose, Quat, Skeleton, Vec3};
+use fox_data::mtar::Clip;
 
 use crate::motion::{ClipLibrary, MotionPlayer};
+use crate::weapon::{WeaponRig, WeaponStats};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Stance {
@@ -63,6 +67,43 @@ pub struct Input {
     pub crouch: bool,
     /// Pressed this tick: toggle prone.
     pub prone: bool,
+    /// Hold to raise the weapon and aim along the camera.
+    pub aim: bool,
+    /// Hold to fire (while aiming).
+    pub fire: bool,
+    /// Pressed this tick: reload.
+    pub reload: bool,
+    /// Camera pitch (radians, up positive): where the weapon aims.
+    pub aim_pitch: f32,
+}
+
+/// A shot fired this tick, in world space.
+#[derive(Clone, Copy, Debug)]
+pub struct Shot {
+    pub origin: Vec3,
+    pub direction: Vec3,
+    pub speed: f32,
+    pub gravity: f32,
+}
+
+/// The equipped weapon and its runtime state.
+pub struct Armed {
+    pub stats: WeaponStats,
+    pub rig: WeaponRig,
+    pub ammo: u32,
+    pub reserve: u32,
+    grids: [Arc<Clip>; 2],
+    reload_clip: Arc<Clip>,
+    cooldown: f32,
+    /// Seconds into the reload clip, while reloading.
+    reloading: Option<f32>,
+    fire_held: bool,
+}
+
+impl Armed {
+    pub fn reloading(&self) -> bool {
+        self.reloading.is_some()
+    }
 }
 
 /// Clip naming for one weapon set (`snapnon` = unarmed) in
@@ -204,6 +245,8 @@ enum State {
     Changing {
         to: Stance,
     },
+    /// Weapon raised: strafing locomotion, body follows the camera.
+    Aim,
 }
 
 /// Crossfade time between locomotion loops (seconds).
@@ -220,6 +263,15 @@ pub struct Controller {
     state: State,
     player: MotionPlayer,
     names: ClipNames,
+    pub weapon: Option<Armed>,
+    /// 0..1 blend of the aiming upper body.
+    aim_weight: f32,
+    /// Aim direction relative to the body (radians).
+    aim_yaw: f32,
+    aim_pitch: f32,
+    /// Accumulated recoil (radians of camera pitch) for the host to apply.
+    pub recoil: f32,
+    pending_shots: u32,
 }
 
 impl Controller {
@@ -242,7 +294,39 @@ impl Controller {
             state: State::Idle,
             player: MotionPlayer::new(&idle, clips.get(&idle).unwrap(), true),
             names,
+            weapon: None,
+            aim_weight: 0.0,
+            aim_yaw: 0.0,
+            aim_pitch: 0.0,
+            recoil: 0.0,
+            pending_shots: 0,
         })
+    }
+
+    /// Equip a weapon (full magazine).
+    pub fn equip(
+        &mut self,
+        clips: &ClipLibrary,
+        stats: WeaponStats,
+        rig: WeaponRig,
+    ) -> Result<(), String> {
+        let get = |n: &str| clips.get(n).ok_or_else(|| format!("missing clip {n}"));
+        self.weapon = Some(Armed {
+            grids: [get(rig.grid[0])?, get(rig.grid[1])?],
+            reload_clip: get(rig.reload)?,
+            ammo: stats.magazine,
+            reserve: stats.reserve,
+            stats,
+            rig,
+            cooldown: 0.0,
+            reloading: None,
+            fire_held: false,
+        });
+        Ok(())
+    }
+
+    pub fn aiming(&self) -> bool {
+        self.state == State::Aim
     }
 
     /// The clip currently playing (for debugging / HUD).
@@ -315,7 +399,57 @@ impl Controller {
             }
         }
 
+        self.update_weapon(dt, input);
+        let can_aim = self.weapon.is_some() && self.stance != Stance::Prone;
+        let aim_now = input.aim && can_aim && !matches!(self.state, State::Changing { .. });
+        if aim_now {
+            self.state = State::Aim;
+        } else if self.state == State::Aim {
+            // Lower the weapon: back to plain locomotion.
+            if moving {
+                let name = self.names.looping(self.stance, gait);
+                self.play(clips, &name, true, FADE);
+                self.gait = gait;
+                self.state = State::Loop;
+            } else {
+                self.foot = Foot::L;
+                self.enter_idle(clips);
+            }
+        }
+        let target_w = if self.state == State::Aim { 1.0 } else { 0.0 };
+        self.aim_weight += (target_w - self.aim_weight).clamp(-6.0 * dt, 6.0 * dt);
+
         match self.state {
+            State::Aim => {
+                // Body turns toward the camera; the rest is taken by the aim grid.
+                let diff = wrap_angle(input.camera_yaw - self.yaw);
+                self.yaw = wrap_angle(self.yaw + diff.clamp(-10.0 * dt, 10.0 * dt));
+                self.aim_yaw = wrap_angle(input.camera_yaw - self.yaw);
+                self.aim_pitch = input.aim_pitch;
+                let s = if self.stance == Stance::Crouch {
+                    "q"
+                } else {
+                    "s"
+                };
+                let name = if moving {
+                    let rel = wrap_angle(want_yaw - self.yaw).to_degrees();
+                    let mut dir = ((rel / 45.0).round() as i32) * 45;
+                    if dir == -180 {
+                        dir = 180;
+                    }
+                    let g = if input.walk || amount < 0.6 {
+                        "wk"
+                    } else {
+                        "rn"
+                    };
+                    self.gait = if g == "wk" { Gait::Walk } else { Gait::Run };
+                    format!("snaprdy_{s}_fre0_{g}_lp_{dir}")
+                } else {
+                    self.gait = Gait::Idle;
+                    format!("snaprdy_{s}_fre0_idl_0")
+                };
+                self.play(clips, &name, true, 0.2);
+            }
             State::Changing { to } => {
                 if self.player.finished() || self.player.progress() > 0.95 {
                     self.stance = to;
@@ -428,9 +562,88 @@ impl Controller {
         }
     }
 
+    fn update_weapon(&mut self, dt: f32, input: &Input) {
+        let aiming = self.state == State::Aim;
+        self.recoil *= (-8.0 * dt).exp();
+        let Some(w) = self.weapon.as_mut() else {
+            return;
+        };
+        w.cooldown -= dt;
+        if let Some(t) = w.reloading.as_mut() {
+            *t += dt;
+            if *t >= w.reload_clip.frame_count as f32 / crate::FPS {
+                let take = (w.stats.magazine - w.ammo).min(w.reserve);
+                w.ammo += take;
+                w.reserve -= take;
+                w.reloading = None;
+            }
+        } else if input.reload && w.ammo < w.stats.magazine && w.reserve > 0 {
+            w.reloading = Some(0.0);
+        }
+        let trigger = input.fire && (w.stats.full_auto || !w.fire_held);
+        w.fire_held = input.fire;
+        if aiming && trigger && w.reloading.is_none() && w.cooldown <= 0.0 && self.aim_weight > 0.8
+        {
+            if w.ammo > 0 {
+                w.ammo -= 1;
+                w.cooldown = 60.0 / w.stats.rounds_per_minute.max(1.0);
+                self.pending_shots += 1;
+                // Placeholder kick until the receiver wobble fields are decoded.
+                self.recoil += 0.6f32.to_radians();
+            } else if w.reserve > 0 {
+                w.reloading = Some(0.0);
+            }
+        }
+    }
+
+    /// Shots fired since the last call, leaving the muzzle of the gun in
+    /// `pose` (root space) along the aim direction, in world space.
+    pub fn take_shots(&mut self, pose: &Pose) -> Vec<Shot> {
+        let n = std::mem::take(&mut self.pending_shots);
+        let Some(w) = &self.weapon else {
+            return Vec::new();
+        };
+        let (gr, gp) = w.rig.gun_transform(pose);
+        let muzzle = self.position + self.rotation() * (gp + gr * w.rig.muzzle);
+        let heading = self.yaw + self.aim_yaw;
+        let (cp, sp) = (self.aim_pitch.cos(), self.aim_pitch.sin());
+        let direction = Vec3::new(heading.sin() * cp, sp, heading.cos() * cp);
+        (0..n)
+            .map(|_| Shot {
+                origin: muzzle,
+                direction,
+                speed: w.stats.bullet_speed,
+                gravity: w.stats.bullet_gravity,
+            })
+            .collect()
+    }
+
+    /// Whether the gun should be drawn in the hand (else holstered).
+    pub fn weapon_in_hand(&self) -> bool {
+        self.weapon
+            .as_ref()
+            .is_some_and(|w| self.aim_weight > 0.05 || w.reloading())
+    }
+
     /// Skeleton pose in the character's root space.
     pub fn pose(&self, rig: &HumanRig, skel: &Skeleton) -> Result<Pose, String> {
-        Ok(rig.solve(skel, &self.player.frame(rig)?))
+        let mut frame = self.player.frame(rig)?;
+        if let (Some(w), Some(upper)) = (&self.weapon, rig.mask("Upper")) {
+            if self.aim_weight > 0.0 {
+                let grid = &w.grids[(self.stance == Stance::Crouch) as usize];
+                let aim =
+                    w.rig
+                        .aim_frame(rig, grid, self.aim_yaw, self.aim_pitch + self.recoil * 0.5)?;
+                frame = rig.layer(&frame, &aim, upper, self.aim_weight);
+            }
+            if let Some(t) = w.reloading {
+                let len = w.reload_clip.frame_count as f32 / crate::FPS;
+                let ramp = (t / 0.15).min((len - t) / 0.15).clamp(0.0, 1.0);
+                let reload = rig.sample_frame(&w.reload_clip, t * crate::FPS)?;
+                frame = rig.layer(&frame, &reload, upper, ramp);
+            }
+        }
+        Ok(rig.solve(skel, &frame))
     }
 }
 

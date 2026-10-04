@@ -12,7 +12,8 @@ sneaking** (Skyrim's sneak key), **X** toggles prone, the **right mouse
 button** raises the weapon. While aiming, the player's (empty) hands are
 drawn, so the actor turns with the camera and strafes like Snake's aim walk;
 aim pitch follows the camera. Skyrim's own attack/block input is off in
-Snake mode.
+Snake mode, and Skyrim's weapon/shield attachment nodes are hidden (the
+equipped weapon still gets drawn, just not shown).
 **F10** cycles debug write modes (2 = full, default; 1 = local only; 0 = off).
 
 Firing: while aiming, the left mouse button fires Snake's weapon. Snake's
@@ -24,7 +25,8 @@ Snake's right hand, with MGSV's muzzle speed and drop (MRS-4 450 m/s).
 The bullet is a private in-memory copy of the vanilla Hunting Bow, Iron
 Arrow and arrow projectile records (no pick-up, `BulletDamage` in
 `snake.ini`, default 12); the vanilla records are untouched. It still uses
-the arrow model. Needs the Address Library for SKSE Plugins database
+the arrow model, and hits count as Archery. Verified in game: a 9-round
+burst at ~6 m took most of an NPC's health. Needs the Address Library for SKSE Plugins database
 (`versionlib-1-7-104-0.bin`) in `Data/SKSE/Plugins`.
 
 How it runs: Snake's controller and the retarget run on the plugin's own

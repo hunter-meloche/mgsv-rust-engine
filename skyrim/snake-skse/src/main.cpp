@@ -990,6 +990,55 @@ std::vector<uint8_t> g_hookHas;
 uint64_t g_appliedSeq = 0;
 int g_hookFrames = 0;
 
+// Skyrim's own weapon and shield attach under the WEAPON and SHIELD nodes
+// (drawn when Snake aims); those are hidden while Snake mode is on, in both
+// the third- and first-person skeletons. NiAVObject::flags is at +0xF4,
+// bit 0 = hidden; each node's own bit is restored afterwards.
+constexpr size_t kAvFlags = 0xF4;
+const char* const kWeaponNodeNames[] = {"WEAPON", "SHIELD"};
+struct WeaponNodes {
+    void* root = nullptr;
+    void* nodes[2] = {};
+    uint32_t wasHidden[2] = {};
+    bool hidden = false;
+};
+WeaponNodes g_weaponNodes[2];  // third person, first person
+
+void SetWeaponsHidden(void* player, bool hide) {
+    for (int fp = 0; fp < 2; ++fp) {
+        WeaponNodes& w = g_weaponNodes[fp];
+        void* root = Get3D(player, fp == 1);
+        if (root != w.root) {  // new 3D: the old nodes are gone
+            w = WeaponNodes{};
+            w.root = root;
+            for (int i = 0; i < 2 && root; ++i) w.nodes[i] = FindNode(root, kWeaponNodeNames[i]);
+        }
+        // Skyrim clears the flag when it attaches a drawn weapon, so it is
+        // set again every frame.
+        if (!root || (!hide && !w.hidden)) continue;
+        for (int i = 0; i < 2; ++i) {
+            if (!w.nodes[i]) continue;
+            uint32_t& flags = At<uint32_t>(w.nodes[i], kAvFlags);
+            if (hide) {
+                if (!w.hidden) w.wasHidden[i] = flags & 1u;
+                flags |= 1u;
+            } else {
+                flags = (flags & ~1u) | w.wasHidden[i];
+            }
+        }
+        w.hidden = hide;
+    }
+}
+
+bool SafeSetWeaponsHidden(void* player, bool hide) {
+    __try {
+        SetWeaponsHidden(player, hide);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 void ApplySnake(void* player, float delta) {
     void* root = Get3D(player, false);
     if (!root) return;
@@ -1105,10 +1154,19 @@ void HookedUpdateAnimation(void* self, float delta) {
     g_hookCalls.fetch_add(1, std::memory_order_relaxed);
     if (!g_enabled || !g_retarget || self != ThePlayer()) {
         g_havePos = false;
+        if (self == ThePlayer() && (g_weaponNodes[0].hidden || g_weaponNodes[1].hidden)) {
+            std::unique_lock<std::mutex> lock(g_hookMutex, std::try_to_lock);
+            if (lock.owns_lock()) SafeSetWeaponsHidden(self, false);
+        }
         return;
     }
     std::unique_lock<std::mutex> lock(g_hookMutex, std::try_to_lock);
     if (!lock.owns_lock()) return;
+    static bool hideFailed = false;
+    if (!hideFailed && !SafeSetWeaponsHidden(self, true)) {
+        hideFailed = true;
+        Log("could not hide Skyrim's weapon nodes");
+    }
     if (!SafeApply(self, delta)) {
         g_enabled = false;
         g_cachedRoot = nullptr;

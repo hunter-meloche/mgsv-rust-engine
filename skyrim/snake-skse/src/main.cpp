@@ -791,7 +791,7 @@ struct ShotSound {
 
 IXAudio2* g_audio = nullptr;
 IXAudio2MasteringVoice* g_master = nullptr;
-std::vector<ShotSound> g_shotSounds;  // by weapon index (empty data = none)
+std::vector<std::vector<ShotSound>> g_shotSounds;  // by weapon index: its variations
 
 bool ReadWav(const std::wstring& path, ShotSound& out) {
     FILE* f = _wfsopen(path.c_str(), L"rb", _SH_DENYNO);
@@ -837,20 +837,23 @@ void SetUpSounds() {
         std::string mesh = g_snake.weapon_mesh(g_runtime, i) ? g_snake.weapon_mesh(g_runtime, i) : "";
         size_t slash = mesh.find_last_of("\\/"), dot = mesh.rfind('.');
         std::string id = mesh.substr(slash + 1, dot - slash - 1);
-        std::wstring path = PluginDir() + L"\\snake_sounds\\" + std::wstring(id.begin(), id.end()) + L"_shot.wav";
-        ShotSound& s = g_shotSounds[i];
-        if (!ReadWav(path, s)) {
-            Log("sound: no shot sound for %s (%s)", id.c_str(), Narrow(path).c_str());
-            s.data.clear();
-            continue;
+        // Variations: <id>_shot.wav, <id>_shot1.wav, <id>_shot2.wav, ...
+        std::wstring base = PluginDir() + L"\\snake_sounds\\" + std::wstring(id.begin(), id.end()) + L"_shot";
+        for (int k = 0; k < 16; ++k) {
+            std::wstring path = base + (k ? std::to_wstring(k) : L"") + L".wav";
+            ShotSound s;
+            if (!ReadWav(path, s)) break;
+            for (int v = 0; v < 4; ++v) {
+                IXAudio2SourceVoice* voice = nullptr;
+                if (SUCCEEDED(g_audio->CreateSourceVoice(&voice, &s.format))) s.voices.push_back(voice);
+            }
+            Log("sound: %s shot %d: %u Hz x%u, %.2f s", id.c_str(), k, s.format.nSamplesPerSec, s.format.nChannels,
+                s.data.size() / double(s.format.nAvgBytesPerSec));
+            g_shotSounds[i].push_back(std::move(s));
         }
-        for (int v = 0; v < 8; ++v) {
-            IXAudio2SourceVoice* voice = nullptr;
-            if (SUCCEEDED(g_audio->CreateSourceVoice(&voice, &s.format))) s.voices.push_back(voice);
-        }
-        Log("sound: %s shot %u Hz x%u, %.2f s, %zu voices, volume %.2f", id.c_str(), s.format.nSamplesPerSec,
-            s.format.nChannels, s.data.size() / double(s.format.nAvgBytesPerSec), s.voices.size(), volume);
+        if (g_shotSounds[i].empty()) Log("sound: no shot sound for %s (%s.wav)", id.c_str(), Narrow(base).c_str());
     }
+    Log("sound: volume %.2f", volume);
 }
 
 // Muzzle flash: the exported gun mesh has four flash shapes
@@ -872,8 +875,16 @@ void TriggerFlash() {
 }
 
 void PlayShot(int weapon) {
-    if (weapon < 0 || weapon >= (int)g_shotSounds.size()) return;
-    ShotSound& s = g_shotSounds[weapon];
+    if (weapon < 0 || weapon >= (int)g_shotSounds.size() || g_shotSounds[weapon].empty()) return;
+    // A random variation, never the same one twice in a row.
+    auto& variations = g_shotSounds[weapon];
+    static uint32_t seed = 0x9E3779B9u;
+    static size_t last = SIZE_MAX;
+    seed = seed * 1664525u + 1013904223u;
+    size_t pick = (seed >> 16) % variations.size();
+    if (pick == last && variations.size() > 1) pick = (pick + 1) % variations.size();
+    last = pick;
+    ShotSound& s = variations[pick];
     if (s.voices.empty()) return;
     IXAudio2SourceVoice* v = s.voices[s.next++ % s.voices.size()];
     v->Stop();

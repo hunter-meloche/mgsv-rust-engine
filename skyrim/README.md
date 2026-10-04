@@ -53,7 +53,9 @@ Gunshot sound: played with XAudio2 from
 `snake.ini`). MGSV's Wwise event names are hashed, so the MRS-4's shot is
 picked by ear from `common_bank_01.sbp` (most of its sounds are plain PCM;
 `mgsv sound-export` writes one as a `.wav`) and recorded in the weapon table
-(`shot_sound`); until then the plugin is silent.
+(`shot_sound`). The MRS-4 uses four 48 kHz stereo variations from one mixer
+in `common_bank_01` (exported as `_shot.wav`, `_shot1.wav`, ...), one picked
+at random per shot.
 
 Exported meshes: Fox triangles wind the other way from Skyrim's, so the
 export reverses them (checked against vanilla meshes, whose triangles face

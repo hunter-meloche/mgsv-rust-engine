@@ -154,22 +154,26 @@ pub fn export_weapons(vfs: &Vfs, data_dir: &Path) -> Result<ExportReport> {
     for def in &WEAPONS {
         export_weapon(vfs, def.id, def.model, data_dir, &mut report)
             .with_context(|| format!("exporting {}", def.id))?;
-        if let Some((bank, id)) = def.shot_sound {
-            let path = sound_path(data_dir, def.id);
-            export_sound(vfs, bank, id, &path).with_context(|| format!("{} shot sound", def.id))?;
-            report.files.push(path);
+        if let Some((bank, ids)) = def.shot_sound {
+            for (k, &id) in ids.iter().enumerate() {
+                let path = sound_path(data_dir, def.id, k);
+                export_sound(vfs, bank, id, &path).with_context(|| format!("{} shot sound {id}", def.id))?;
+                report.files.push(path);
+            }
         }
     }
     Ok(report)
 }
 
-/// Where the plugin looks for weapon `id`'s gunshot (`.wav`).
-pub fn sound_path(data_dir: &Path, id: &str) -> PathBuf {
+/// Where the plugin looks for variation `k` of weapon `id`'s gunshot:
+/// `<id>_shot.wav`, `<id>_shot1.wav`, `<id>_shot2.wav`, ...
+pub fn sound_path(data_dir: &Path, id: &str, k: usize) -> PathBuf {
+    let suffix = if k == 0 { String::new() } else { k.to_string() };
     data_dir
         .join("SKSE")
         .join("Plugins")
         .join("snake_sounds")
-        .join(format!("{}_shot.wav", id.to_ascii_lowercase()))
+        .join(format!("{}_shot{suffix}.wav", id.to_ascii_lowercase()))
 }
 
 /// Write sound `id` of the `.sbp` at `bank` (an archive path) as a `.wav`.

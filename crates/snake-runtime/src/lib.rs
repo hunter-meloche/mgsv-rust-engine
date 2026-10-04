@@ -144,9 +144,10 @@ pub struct WeaponDef {
     /// Body connection point (and bone) it rides on when not in the hands.
     holster: Option<(&'static str, &'static str)>,
     color: [f32; 3],
-    /// The gunshot sound: a sound bank and the id of a 16-bit PCM sound in
-    /// it (event names are hashed, so sounds were matched by ear).
-    shot_sound: Option<(&'static str, u32)>,
+    /// The gunshot: a sound bank and the ids of 16-bit PCM variations in it
+    /// (one is picked at random per shot). Wwise event names are hashed, so
+    /// these were matched by ear.
+    shot_sound: Option<(&'static str, &'static [u32])>,
 }
 
 pub const WEAPONS: [WeaponDef; 2] = [
@@ -167,7 +168,9 @@ pub const WEAPONS: [WeaponDef; 2] = [
         },
         holster: Some(("SKL_300_ASRROOT", "CNP_ASRROOT")),
         color: [0.22, 0.22, 0.22],
-        shot_sound: None,
+        // Chosen by ear from common_bank_01's gunshot-like sounds (one
+        // mixer's 48 kHz stereo shots).
+        shot_sound: Some((COMMON_BANK, &[144297022, 269696546, 380692384, 695595645])),
     },
     // WU S.Pistol (tranquilizer).
     WeaponDef {
@@ -189,6 +192,9 @@ pub const WEAPONS: [WeaponDef; 2] = [
         shot_sound: None,
     },
 ];
+
+/// The always-loaded sound bank with TPP's common sound effects.
+pub const COMMON_BANK: &str = "/Assets/tpp/sound/asset/common_bank_01.sbp";
 
 pub const EQUIP_PARAMETERS: &str =
     "/Assets/tpp/level_asset/weapon/ParameterTables/parts/EquipParameters.lua";

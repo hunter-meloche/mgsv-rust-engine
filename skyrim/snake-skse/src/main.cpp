@@ -180,6 +180,10 @@ constexpr uintptr_t kPlayerSingleton = 0x03230778;  // PlayerCharacter** (SKSE g
 constexpr size_t kVtUpdateAnimation = 0x7D;          // TESObjectREFR::UpdateAnimation(float)
 constexpr size_t kVtGet3D1 = 0x6F;                   // TESObjectREFR::Get3D1(bool firstPerson)
 constexpr size_t kVtAsNode = 0x03;                   // NiObject::AsNode()
+constexpr size_t kVtAsGeometry = 0x07;               // NiObject::AsGeometry()
+constexpr size_t kGeomSkinInstance = 0x130;          // BSGeometry runtime data + 0x10
+constexpr size_t kSkinBones = 0x28;                  // NiSkinInstance::bones (NiAVObject**)
+constexpr size_t kSkinBoneCount = 0x3C;              // NiSkinInstance::numMatrices
 // TESObjectREFR data (OBJ_REFR) sits 8 bytes later than in SE on this
 // runtime (verified in game): angle (pitch, roll, heading) at 0x48,
 // location at 0x54.
@@ -221,6 +225,11 @@ void* AsNode(void* obj) {
 }
 
 const char* Name(void* obj) { return At<const char*>(obj, kName); }
+
+void* AsGeometry(void* obj) {
+    using Fn = void* (*)(void*);
+    return reinterpret_cast<Fn>(Vtable(obj)[kVtAsGeometry])(obj);
+}
 
 template <class F>
 void ForEachChild(void* node, F&& f) {
@@ -273,6 +282,45 @@ bool Readable(const void* p, size_t n) {
     if (!p || !VirtualQuery(p, &mbi, sizeof mbi)) return false;
     if (mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) return false;
     return reinterpret_cast<const char*>(p) + n <= reinterpret_cast<const char*>(mbi.BaseAddress) + mbi.RegionSize;
+}
+
+// Bones referenced by skinned geometry under `obj` (name -> node). Skyrim
+// keeps some bones (fingers, toes, twists) out of the skeleton's child
+// arrays at runtime, but the skin instances still point at them.
+void CollectSkinBones(void* obj, std::unordered_map<std::string, void*>& out, int depth = 0) {
+    if (!obj || depth > 64 || !Readable(obj, 0x140)) return;
+    if (void* node = AsNode(obj)) {
+        ForEachChild(node, [&](void* c) { CollectSkinBones(c, out, depth + 1); });
+        return;
+    }
+    void* geom = AsGeometry(obj);
+    if (!geom) return;
+    void* skin = At<void*>(geom, kGeomSkinInstance);
+    if (!skin || !Readable(skin, 0x48)) return;
+    void** bones = At<void**>(skin, kSkinBones);
+    uint32_t n = At<uint32_t>(skin, kSkinBoneCount);
+    if (!bones || n > 512 || !Readable(bones, n * sizeof(void*))) return;
+    for (uint32_t i = 0; i < n; ++i) {
+        void* b = bones[i];
+        if (!b || !Readable(b, 0x18)) continue;
+        const char* nm = Name(b);
+        if (nm && Readable(nm, 1)) out.emplace(nm, b);
+    }
+}
+
+// Inventory of a 3D tree: node count, geometry count, and names matching
+// finger / toe / twist bones (diagnostics for the missing bones).
+void Inventory(void* obj, const char* label, int depth, int& nodes, int& geoms, std::string& hits) {
+    if (!obj || depth > 64 || !Readable(obj, 0x140)) return;
+    const char* nm = Name(obj);
+    if (nm && Readable(nm, 1) && (strstr(nm, "Finger") || strstr(nm, "Toe") || strstr(nm, "Twist")) && hits.size() < 600)
+        hits += std::string(" ") + nm;
+    if (void* node = AsNode(obj)) {
+        ++nodes;
+        ForEachChild(node, [&](void* c) { Inventory(c, label, depth + 1, nodes, geoms, hits); });
+    } else if (AsGeometry(obj)) {
+        ++geoms;
+    }
 }
 
 // Raw dump of a node's child array (to check the layout assumptions).
@@ -539,8 +587,28 @@ void ApplySnake(void* player, float delta) {
             missing += g_nodes.back() == nullptr;
         }
         g_cachedRoot = root;
-        Log("player 3D %p (%s): found %zu of %zu retarget bones", root, Name(root) ? Name(root) : "?",
+        Log("player 3D %p (%s): found %zu of %zu retarget bones in the node tree", root, Name(root) ? Name(root) : "?",
             g_nodes.size() - missing, g_nodes.size());
+        if (missing) {
+            std::unordered_map<std::string, void*> skinBones;
+            CollectSkinBones(root, skinBones);
+            int recovered = 0;
+            for (size_t i = 0; i < g_nodes.size(); ++i) {
+                if (g_nodes[i]) continue;
+                auto it = skinBones.find(g_boneNames[i]);
+                if (it == skinBones.end()) continue;
+                g_nodes[i] = it->second;
+                ++recovered;
+                void* parent = At<void*>(it->second, kParent);
+                if (recovered <= 3)
+                    Log("  via skin: %s (parent %s)", g_boneNames[i].c_str(),
+                        parent && Readable(parent, 0x18) && Name(parent) ? Name(parent) : "none");
+            }
+            // In third person Skyrim only keeps the bones its meshes use: fingers,
+            // toes and forearm twists exist in the first-person skeleton only.
+            Log("recovered %d bones via skinned geometry; %d not in the third-person skeleton (first-person only)",
+                recovered, missing - recovered);
+        }
         CheckLayout();
         g_hookFrames = 0;
     }

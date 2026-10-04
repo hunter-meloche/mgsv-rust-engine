@@ -22,9 +22,10 @@ Testing hooks: `Data/SKSE/Plugins/snake_control.txt` (`enabled=1`, `mode=2`,
 `stance=prone`, `move=run`, `aim=1`) drives the plugin without key presses.
 Log: `Documents/My Games/Skyrim Special Edition/SKSE/SnakeSKSE.log`.
 
-Known gaps: fingers, toes and forearm twist bones are not reachable through
-the live skeleton's child arrays (Skyrim keeps them elsewhere at runtime), so
-those 36 bones stay on Skyrim's animation for now.
+Bones: 25 of the 61 retargeted bones exist in the third-person skeleton.
+The rest (fingers, toes, forearm twists) are only in Skyrim's first-person
+skeleton; the third-person body meshes are skinned to the 24 bones that are
+there, so every bone that deforms the visible body is driven.
 
 ## Build (Windows, Visual Studio 2022 with C++)
 

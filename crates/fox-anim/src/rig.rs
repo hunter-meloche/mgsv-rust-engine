@@ -336,3 +336,58 @@ fn solve_two_bone(
     let lower = frame_rotation(lower_rest, c.plane_normal, end - joint, normal);
     (upper, lower, reach)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::skeleton::Bone;
+
+    /// A leg: thigh at the origin, knee 0.4 down, foot 0.4 below that.
+    fn leg() -> (Skeleton, IkChain) {
+        let bone = |parent, y: f32| Bone {
+            name: 0,
+            parent,
+            rest_local: Vec3::new(0.0, y, 0.0),
+            rest_model: Vec3::ZERO,
+        };
+        let skel = Skeleton {
+            bones: vec![bone(None, 0.0), bone(Some(0), -0.4), bone(Some(1), -0.4)],
+        };
+        let chain = IkChain {
+            upper: 0,
+            lower: 1,
+            effector: 2,
+            target: 0,
+            pole: 0,
+            plane_normal: Vec3::X,
+        };
+        (skel, chain)
+    }
+
+    #[test]
+    fn two_bone_reaches_target_and_bends_toward_pole() {
+        let (skel, c) = leg();
+        let target = Vec3::new(0.0, -0.6, 0.1);
+        let (upper, lower, reach) = solve_two_bone(&skel, &c, Vec3::ZERO, target, Vec3::Z);
+        let knee = upper * skel.bones[1].rest_local;
+        let foot = knee + lower * skel.bones[2].rest_local;
+        assert!(
+            (foot - target).length() < 1e-4,
+            "foot {foot} target {target}"
+        );
+        assert!(knee.z > 0.1, "knee should bend forward, got {knee}");
+        assert!(reach < 1.0);
+        // The bend plane stays the rest one (normal X): no sideways knee.
+        assert!(knee.x.abs() < 1e-4 && foot.x.abs() < 1e-4);
+    }
+
+    #[test]
+    fn unreachable_target_straightens_the_limb() {
+        let (skel, c) = leg();
+        let target = Vec3::new(0.0, -2.0, 0.0);
+        let (upper, lower, reach) = solve_two_bone(&skel, &c, Vec3::ZERO, target, Vec3::Z);
+        let foot = upper * skel.bones[1].rest_local + lower * skel.bones[2].rest_local;
+        assert!(reach > 2.0);
+        assert!((foot - Vec3::new(0.0, -0.8, 0.0)).length() < 1e-2, "{foot}");
+    }
+}

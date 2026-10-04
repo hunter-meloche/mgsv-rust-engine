@@ -97,6 +97,7 @@ struct SnakeApi {
     decltype(&snake_bone_count) bone_count = nullptr;
     decltype(&snake_bone_name) bone_name = nullptr;
     decltype(&snake_weapon_count) weapon_count = nullptr;
+    decltype(&snake_weapon_mesh) weapon_mesh = nullptr;
     decltype(&snake_player_new) player_new = nullptr;
     decltype(&snake_player_update) player_update = nullptr;
     decltype(&snake_player_status) player_status = nullptr;
@@ -106,6 +107,7 @@ struct SnakeApi {
     decltype(&snake_retarget_count) retarget_count = nullptr;
     decltype(&snake_retarget_bone) retarget_bone = nullptr;
     decltype(&snake_retarget_apply) retarget_apply = nullptr;
+    decltype(&snake_retarget_held_weapon) retarget_held_weapon = nullptr;
 } g_snake;
 
 SnakeRuntime* g_runtime = nullptr;
@@ -131,6 +133,7 @@ bool LoadSnakeDll() {
     RESOLVE(bone_count, "snake_bone_count");
     RESOLVE(bone_name, "snake_bone_name");
     RESOLVE(weapon_count, "snake_weapon_count");
+    RESOLVE(weapon_mesh, "snake_weapon_mesh");
     RESOLVE(player_new, "snake_player_new");
     RESOLVE(player_update, "snake_player_update");
     RESOLVE(player_status, "snake_player_status");
@@ -140,6 +143,7 @@ bool LoadSnakeDll() {
     RESOLVE(retarget_count, "snake_retarget_count");
     RESOLVE(retarget_bone, "snake_retarget_bone");
     RESOLVE(retarget_apply, "snake_retarget_apply");
+    RESOLVE(retarget_held_weapon, "snake_retarget_held_weapon");
 #undef RESOLVE
     Log("loaded %s", Narrow(dll).c_str());
     return true;
@@ -407,6 +411,7 @@ constexpr uint32_t kIdProjectileLaunch = 44108;   // Projectile::Launch (AE id)
 constexpr uint32_t kIdLaunchDataVtable = 187478;  // VTABLE_Projectile__LaunchData (AE id)
 constexpr uint32_t kIdPlayerCamera = 400802;      // PlayerCamera* singleton (AE id)
 constexpr uint32_t kIdAttackBlockVtable = 208719; // VTABLE_AttackBlockHandler (AE id)
+constexpr uint32_t kIdModelDemand = 75782;        // BSModelDB::Demand (AE id)
 constexpr uintptr_t kLookupFormByID = 0x001E5860;
 constexpr uint32_t kHuntingBow = 0x00013985, kIronArrow = 0x0001397D;
 constexpr size_t kFormType = 0x1A;
@@ -466,6 +471,7 @@ struct Firing {
     void* launchDataVtable = nullptr;
     void** camera = nullptr;  // &PlayerCamera singleton
     void** attackBlockVtable = nullptr;
+    void* modelDemand = nullptr;
     void* weapon = nullptr;   // bullet copies
     void* ammo = nullptr;
     void* projectile = nullptr;
@@ -507,7 +513,8 @@ bool LoadAddressLibrary() {
         return off;
     };
     uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-    uintptr_t launch = read(kIdProjectileLaunch), vt = read(kIdLaunchDataVtable), cam = read(kIdPlayerCamera), ab = read(kIdAttackBlockVtable);
+    uintptr_t launch = read(kIdProjectileLaunch), vt = read(kIdLaunchDataVtable), cam = read(kIdPlayerCamera), ab = read(kIdAttackBlockVtable),
+              demand = read(kIdModelDemand);
     fclose(f);
     if (!launch || !vt) {
         Log("firing: ids missing from the database");
@@ -517,6 +524,7 @@ bool LoadAddressLibrary() {
     g_fire.launchDataVtable = reinterpret_cast<void*>(base + vt);
     g_fire.camera = cam ? reinterpret_cast<void**>(base + cam) : nullptr;
     g_fire.attackBlockVtable = ab ? reinterpret_cast<void**>(base + ab) : nullptr;
+    g_fire.modelDemand = demand ? reinterpret_cast<void*>(base + demand) : nullptr;
     Log("firing: %u ids; Projectile::Launch +%llX, LaunchData vtable +%llX, PlayerCamera +%llX", count,
         (unsigned long long)launch, (unsigned long long)vt, (unsigned long long)cam);
     return true;
@@ -789,6 +797,9 @@ struct PoseBuffer {
     std::vector<SnakeQuat> rot;
     std::vector<SnakeVec3> tr;
     std::vector<uint8_t> has;
+    int gun = -1;  // weapon in Snake's hands, -1 none
+    SnakeVec3 gunPos{};
+    SnakeQuat gunRot{0, 0, 0, 1};
     uint64_t seq = 0;
 } g_pose;
 
@@ -958,11 +969,17 @@ void SnakeThread() {
             g_enabled = false;
             continue;
         }
+        SnakeVec3 gunPos{};
+        SnakeQuat gunRot{0, 0, 0, 1};
+        int gun = g_snake.retarget_held_weapon(g_retarget, g_player, &gunPos, &gunRot);
         {
             std::lock_guard<std::mutex> lock(g_pose.m);
             g_pose.rot = rot;
             g_pose.tr = tr;
             g_pose.has = has;
+            g_pose.gun = gun;
+            g_pose.gunPos = gunPos;
+            g_pose.gunRot = gunRot;
             ++g_pose.seq;
         }
         logTimer += dt;
@@ -989,6 +1006,139 @@ std::vector<SnakeVec3> g_hookTr;
 std::vector<uint8_t> g_hookHas;
 uint64_t g_appliedSeq = 0;
 int g_hookFrames = 0;
+int g_hookGun = -1;
+SnakeVec3 g_hookGunPos{};
+SnakeQuat g_hookGunRot{0, 0, 0, 1};
+
+// ---- Snake's gun model ---------------------------------------------------------
+//
+// The weapon mesh written by `mgsv skyrim-export` (Data\meshes\snake\*.nif)
+// is loaded with BSModelDB::Demand and attached under the right hand on the
+// main thread; the hook then places it every frame from Snake's grip
+// (snake_retarget_held_weapon) and hides it when no gun is in the hands.
+
+constexpr size_t kVtAttachChild = 0x35;  // NiNode::AttachChild(NiAVObject*, bool)
+const char* const kRightHand = "NPC R Hand [RHnd]";
+
+struct ModelArgs {  // BSModelDB::DBTraits::ArgsType
+    uint32_t lodMult = 0;
+    uint32_t texLoadLevel = 3;
+    bool unk8 = true, unk9 = false, unkA = true, postProcess = true;
+};
+using DemandFn = uint32_t (*)(const char* path, void** out, const ModelArgs* args);
+
+std::atomic<void*> g_gunNode{nullptr};    // loaded model root
+std::atomic<void*> g_gunParent{nullptr};  // hand node it is attached to
+std::atomic<bool> g_gunQueued{false};
+bool g_gunLoadFailed = false;
+
+uint32_t SafeDemand(const char* path, void** out) {
+    __try {
+        ModelArgs args;
+        return reinterpret_cast<DemandFn>(g_fire.modelDemand)(path, out, &args);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0xFFFFFFFF;
+    }
+}
+
+bool SafeAttach(void* parent, void* child) {
+    __try {
+        using Fn = void (*)(void*, void*, bool);
+        reinterpret_cast<Fn>(Vtable(parent)[kVtAttachChild])(parent, child, false);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+class AttachGunTask : public TaskDelegate {
+public:
+    void Run() override {
+        g_gunQueued = false;
+        void* player = ThePlayer();
+        void* root = player ? Get3D(player, false) : nullptr;
+        void* hand = root ? FindNode(root, kRightHand) : nullptr;
+        if (!hand) return;
+        if (!g_gunNode && !g_gunLoadFailed) {
+            const char* mesh = g_snake.weapon_mesh(g_runtime, 0);
+            void* node = nullptr;
+            uint32_t err = mesh && g_fire.modelDemand ? SafeDemand(mesh, &node) : 0xFFFFFFFE;
+            Log("gun model %s: error %u, node %p (%s)", mesh ? mesh : "?", err, node, node ? Name(node) : "-");
+            if (err != 0 || !node) {
+                g_gunLoadFailed = true;  // run `mgsv skyrim-export --skyrim <Skyrim dir>` to create it
+                return;
+            }
+            g_gunNode = node;
+        }
+        void* gun = g_gunNode;
+        if (gun && g_gunParent != hand) {
+            if (SafeAttach(hand, gun)) {
+                g_gunParent = hand;
+                Log("gun model attached to %s (%p)", kRightHand, hand);
+            } else {
+                g_gunLoadFailed = true;
+                Log("attaching the gun model faulted");
+            }
+        }
+    }
+    void Dispose() override { delete this; }
+};
+
+// World transform of `node` from its parent's world and its own local.
+void UpdateWorld(void* node, void* parent) {
+    float prot[9], ppos[3];
+    memcpy(prot, &At<float>(parent, kWorldRot), sizeof prot);
+    memcpy(ppos, &At<float>(parent, kWorldPos), sizeof ppos);
+    float ps = At<float>(parent, kWorldScale);
+    float* lp = &At<float>(node, kLocalPos);
+    float scaled[3] = {lp[0] * ps, lp[1] * ps, lp[2] * ps}, rotated[3];
+    MatVec(prot, scaled, rotated);
+    MatMul(prot, &At<float>(node, kLocalRot), &At<float>(node, kWorldRot));
+    float* wp = &At<float>(node, kWorldPos);
+    for (int k = 0; k < 3; ++k) wp[k] = ppos[k] + rotated[k];
+    At<float>(node, kWorldScale) = ps * At<float>(node, kLocalScale);
+}
+
+void SetHidden(void* node, bool hidden) {
+    uint32_t& flags = At<uint32_t>(node, 0xF4);
+    flags = hidden ? (flags | 1u) : (flags & ~1u);
+}
+
+// Place (or hide) the gun under `hand`; queue the attach when needed.
+void PlaceGun(void* hand) {
+    void* gun = g_gunNode;
+    if (!hand || g_gunLoadFailed) return;
+    if (!gun || g_gunParent != hand) {
+        if (g_tasks && !g_gunQueued.exchange(true)) g_tasks->AddTask(new AttachGunTask());
+        return;
+    }
+    if (g_hookGun < 0) {
+        SetHidden(gun, true);
+        return;
+    }
+    SetHidden(gun, false);
+    QuatToMat(g_hookGunRot, &At<float>(gun, kLocalRot));
+    float* lp = &At<float>(gun, kLocalPos);
+    lp[0] = g_hookGunPos.x;
+    lp[1] = g_hookGunPos.y;
+    lp[2] = g_hookGunPos.z;
+    UpdateWorld(gun, hand);
+    ForEachChild(gun, [&](void* c) { UpdateWorld(c, gun); });
+    static int diag = 0;
+    if (diag++ % 240 == 0) {
+        const float* hp = &At<float>(hand, kWorldPos);
+        const float* gp = &At<float>(gun, kWorldPos);
+        const float* gb = &At<float>(gun, 0xE4);
+        Log("gun %d: local %.1f %.1f %.1f, world %.0f %.0f %.0f (hand %.0f %.0f %.0f), flags %08X, bound %.0f %.0f %.0f r %.0f",
+            g_hookGun, g_hookGunPos.x, g_hookGunPos.y, g_hookGunPos.z, gp[0], gp[1], gp[2], hp[0], hp[1], hp[2],
+            At<uint32_t>(gun, 0xF4), gb[0], gb[1], gb[2], gb[3]);
+        ForEachChild(gun, [&](void* c) {
+            const float* cb = &At<float>(c, 0xE4);
+            Log("  child %s flags %08X bound %.0f %.0f %.0f r %.0f", Name(c) ? Name(c) : "?", At<uint32_t>(c, 0xF4), cb[0],
+                cb[1], cb[2], cb[3]);
+        });
+    }
+}
 
 // Skyrim's own weapon and shield attach under the WEAPON and SHIELD nodes
 // (drawn when Snake aims); those are hidden while Snake mode is on, in both
@@ -1101,6 +1251,9 @@ void ApplySnake(void* player, float delta) {
             g_hookRot = g_pose.rot;
             g_hookTr = g_pose.tr;
             g_hookHas = g_pose.has;
+            g_hookGun = g_pose.gun;
+            g_hookGunPos = g_pose.gunPos;
+            g_hookGunRot = g_pose.gunRot;
             g_appliedSeq = g_pose.seq;
         }
     }
@@ -1135,6 +1288,11 @@ void ApplySnake(void* player, float delta) {
         for (int k = 0; k < 3; ++k) wp[k] = ppos[k] + rotated[k];
         At<float>(node, kWorldScale) = ps * At<float>(node, kLocalScale);
     }
+    if (mode >= 2) {
+        for (size_t i = 0; i < n; ++i) {
+            if (g_boneNames[i] == kRightHand) PlaceGun(g_nodes[i]);
+        }
+    }
     if (g_hookFrames++ < 3) Log("hook t%u: applied pose %llu (mode %d)", GetCurrentThreadId(), g_appliedSeq, mode);
 }
 
@@ -1156,7 +1314,10 @@ void HookedUpdateAnimation(void* self, float delta) {
         g_havePos = false;
         if (self == ThePlayer() && (g_weaponNodes[0].hidden || g_weaponNodes[1].hidden)) {
             std::unique_lock<std::mutex> lock(g_hookMutex, std::try_to_lock);
-            if (lock.owns_lock()) SafeSetWeaponsHidden(self, false);
+            if (lock.owns_lock()) {
+                SafeSetWeaponsHidden(self, false);
+                if (void* gun = g_gunNode) SetHidden(gun, true);
+            }
         }
         return;
     }

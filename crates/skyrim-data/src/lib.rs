@@ -3,7 +3,9 @@
 //! install; nothing is embedded.
 
 pub mod bsa;
+pub mod dds;
 pub mod nif;
+pub mod nif_write;
 
 pub use bsa::Bsa;
 pub use nif::Nif;

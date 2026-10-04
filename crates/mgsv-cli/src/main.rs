@@ -89,6 +89,27 @@ enum Cmd {
     Fox2Check,
     /// Summarise an .fmdl model (PACKAGE.fpk:INNER for files inside packages).
     Fmdl { path: String },
+    /// List an .fmdl's materials and textures, with the archive entries of
+    /// each texture (`.ftex` and its `N.ftexs` parts).
+    FmdlTex {
+        path: String,
+        /// Hex-dump each .ftex header and the start of each .ftexs part.
+        #[arg(long)]
+        dump: bool,
+    },
+    /// Hex-dump the blocks of a NIF from a Skyrim install's BSAs (or a
+    /// loose file path).
+    SkyrimNif {
+        #[arg(long)]
+        skyrim: PathBuf,
+        path: String,
+    },
+    /// Export Snake's weapons (meshes and textures, from this MGSV install)
+    /// into a Skyrim SE install's Data folder for the SnakeSKSE plugin.
+    SkyrimExport {
+        #[arg(long)]
+        skyrim: PathBuf,
+    },
     /// Parse and validate every .fmdl inside every .fpk.
     FmdlCheck,
     /// Find files inside packages whose path contains PATTERN; prints
@@ -197,6 +218,26 @@ enum Cmd {
 
 /// Names for .fox2 hashes: FoxTool's dictionary plus identifiers harvested
 /// from the user's own mgsvtpp.exe.
+/// Material texture slot names used by TPP shaders (matched by hash).
+const TEXTURE_SLOTS: &[&str] = &[
+    "Base_Tex_SRGB",
+    "Base_Tex_LIN",
+    "NormalMap_Tex_NRM",
+    "SpecularMap_Tex_LIN",
+    "SpecularMap_Tex_SRGB",
+    "Translucent_Tex_LIN",
+    "Layer_Tex_SRGB",
+    "LayerMask_Tex_LIN",
+    "Dirty_Tex_LIN",
+    "Dirty_Tex_SRGB",
+    "MatParamMap_Tex_LIN",
+    "SubNormalMap_Tex_NRM",
+    "CubeMap_Tex_LIN",
+    "Emissive_Tex_SRGB",
+    "Incidence_Tex_LIN",
+    "RoughnessMap_Tex_LIN",
+];
+
 fn fox_names(vfs: &Vfs) -> fox_data::NameTable {
     let mut names = fox_data::NameTable::new();
     let _ = names.load_dictionary(repo_dir().join("dictionaries/fox_dictionary.txt"));
@@ -337,6 +378,100 @@ fn run() -> Result<()> {
             match m.validate() {
                 Ok(()) => writeln!(out, "valid")?,
                 Err(e) => writeln!(out, "INVALID: {e}")?,
+            }
+            Ok(())
+        }
+        Cmd::FmdlTex { path, dump } => {
+            let m = fox_data::Fmdl::parse(&read_any(&vfs, &path)?)?;
+            let names = fox_names(&vfs);
+            for (i, mi) in m.material_instances.iter().enumerate() {
+                writeln!(
+                    out,
+                    "material {i} {} ({}) textures {:?} parameters {:?}",
+                    m.name(mi.name, &names),
+                    m.name(m.materials[mi.material as usize].name, &names),
+                    mi.textures,
+                    mi.parameters
+                )?;
+                // A material's texture slots are entries of the parameter
+                // table whose reference indexes the texture table.
+                for slot in m.material_parameters.get(mi.textures.clone()).unwrap_or_default() {
+                    let Some(t) = m.textures.get(slot.reference as usize) else {
+                        continue;
+                    };
+                    let pc = m.path_code64s.get(t.reference as usize).copied().unwrap_or(0);
+                    let stem = pc & ((1u64 << 51) - 1);
+                    let mut parts = Vec::new();
+                    for ext in ["ftex", "1.ftexs", "2.ftexs", "3.ftexs", "4.ftexs", "5.ftexs", "6.ftexs"] {
+                        let id = ((fox_hash::extension_id(ext) as u64) << 51) | stem;
+                        if let Some(r) = vfs.lookup_hash(id) {
+                            let data = vfs.read_ref(r).unwrap_or_default();
+                            parts.push(format!("{ext} {}", data.len()));
+                            if dump {
+                                let n = if ext == "ftex" { data.len() } else { 48.min(data.len()) };
+                                for (row, chunk) in data[..n].chunks(16).enumerate() {
+                                    let hex: Vec<String> = chunk.iter().map(|b| format!("{b:02x}")).collect();
+                                    writeln!(out, "    {ext:>8} {:04x}: {}", row * 16, hex.join(" "))?;
+                                }
+                            }
+                        }
+                    }
+                    let slot_name = m.name(slot.name, &names);
+                    let slot_name = TEXTURE_SLOTS
+                        .iter()
+                        .find(|c| format!("{:#x}", fox_hash::str_code64(c.as_bytes()) & 0xFFFF_FFFF_FFFF) == slot_name)
+                        .map(|c| c.to_string())
+                        .unwrap_or(slot_name);
+                    writeln!(out, "  {slot_name:<24} {pc:#018x}  {}", parts.join(", "))?;
+                    // Decode the largest mip and report per-channel means.
+                    let read = |ext: String| {
+                        vfs.lookup_hash(((fox_hash::extension_id(&ext) as u64) << 51) | stem)
+                            .and_then(|r| vfs.read_ref(r).ok())
+                    };
+                    if let Some(header) = read("ftex".into()) {
+                        let f = fox_data::Ftex::parse(&header)?;
+                        let mips = f.read_mips(|n| read(format!("{n}.ftexs")))?;
+                        let mut info = format!("{:?} {}x{} v{:.2}, {} of {} mips", f.format, f.width, f.height, f.version, mips.len(), f.mips.len());
+                        if let Some(m0) = mips.first() {
+                            let px = fox_data::ftex::decode_rgba(f.format, f.width, f.height, m0)?;
+                            let mut sum = [0f64; 4];
+                            for p in &px {
+                                for k in 0..4 {
+                                    sum[k] += p[k] as f64;
+                                }
+                            }
+                            let n = px.len() as f64;
+                            info += &format!(", mean rgba {:.0} {:.0} {:.0} {:.0}", sum[0] / n, sum[1] / n, sum[2] / n, sum[3] / n);
+                        }
+                        writeln!(out, "      {info}")?;
+                    }
+                }
+            }
+            Ok(())
+        }
+        Cmd::SkyrimNif { skyrim, path } => {
+            let data = match std::fs::read(&path) {
+                Ok(d) => d,
+                Err(_) => skyrim_data::read_install_file(&skyrim, &path)?,
+            };
+            let nif = skyrim_data::Nif::parse(&data)?;
+            writeln!(out, "user version {}, bs version {}, strings {:?}", nif.user_version, nif.bs_version, nif.strings)?;
+            for (i, (kind, range)) in nif.blocks.iter().enumerate() {
+                writeln!(out, "block {i} {kind} ({} bytes)", range.len())?;
+                for (row, chunk) in data[range.clone()].chunks(16).enumerate().take(12) {
+                    let hex: Vec<String> = chunk.iter().map(|b| format!("{b:02x}")).collect();
+                    writeln!(out, "  {:04x}: {}", row * 16, hex.join(" "))?;
+                }
+            }
+            Ok(())
+        }
+        Cmd::SkyrimExport { skyrim } => {
+            let report = snake_runtime::skyrim_export::export_weapons(&vfs, &skyrim.join("Data"))?;
+            for f in &report.files {
+                writeln!(out, "wrote {} ({} bytes)", f.display(), std::fs::metadata(f).map(|m| m.len()).unwrap_or(0))?;
+            }
+            for n in &report.notes {
+                writeln!(out, "note: {n}")?;
             }
             Ok(())
         }

@@ -34,6 +34,10 @@ pub struct Nif {
     pub block_types: Vec<String>,
     /// Block index -> node (None for non-node blocks).
     pub nodes: Vec<Option<NifNode>>,
+    /// Header string table.
+    pub strings: Vec<String>,
+    /// Each block's type name and byte range in the file.
+    pub blocks: Vec<(String, std::ops::Range<usize>)>,
 }
 
 struct R<'a> {
@@ -143,9 +147,11 @@ impl Nif {
         }
 
         let mut nodes = Vec::with_capacity(num_blocks);
+        let mut blocks = Vec::with_capacity(num_blocks);
         for (i, (&t, &size)) in type_of.iter().zip(&sizes).enumerate() {
             let start = r.p;
             let kind = block_types.get(t).cloned().unwrap_or_default();
+            blocks.push((kind.clone(), start..start + size));
             if NODE_TYPES.contains(&kind.as_str()) {
                 let mut b = R {
                     b: &data[..start + size],
@@ -208,6 +214,8 @@ impl Nif {
             bs_version,
             block_types,
             nodes,
+            strings,
+            blocks,
         })
     }
 

@@ -156,6 +156,8 @@ pub struct SnakeStatus {
 pub struct SnakeRuntime {
     assets: Arc<SnakeAssets>,
     bone_names: Vec<Option<CString>>,
+    /// Skyrim mesh path of each weapon (relative to `Data\meshes`).
+    weapon_meshes: Vec<CString>,
 }
 
 pub struct SnakePlayer {
@@ -229,9 +231,15 @@ pub unsafe extern "C" fn snake_runtime_open(
             .iter()
             .map(|b| names.resolve32(b.name).and_then(|n| CString::new(n).ok()))
             .collect();
+        let weapon_meshes = assets
+            .weapons
+            .iter()
+            .map(|w| CString::new(snake_runtime::skyrim_export::mesh_path(w.id)).unwrap_or_default())
+            .collect();
         Ok(Box::into_raw(Box::new(SnakeRuntime {
             assets: Arc::new(assets),
             bone_names,
+            weapon_meshes,
         })))
     })
 }
@@ -275,6 +283,16 @@ pub unsafe extern "C" fn snake_bone_parent(rt: *const SnakeRuntime, bone: u32) -
 pub unsafe extern "C" fn snake_weapon_count(rt: *const SnakeRuntime) -> u32 {
     // SAFETY: valid runtime pointer or null.
     unsafe { rt.as_ref() }.map_or(0, |r| r.assets.weapons.len() as u32)
+}
+
+/// Skyrim mesh of weapon `i` (relative to `Data\meshes`, written by
+/// `mgsv skyrim-export`), or NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_weapon_mesh(rt: *const SnakeRuntime, i: u32) -> *const c_char {
+    // SAFETY: valid runtime pointer or null.
+    unsafe { rt.as_ref() }
+        .and_then(|r| r.weapon_meshes.get(i as usize))
+        .map_or(std::ptr::null(), |s| s.as_ptr())
 }
 
 /// A new player at the origin with every weapon equipped. NULL on failure.
@@ -524,6 +542,46 @@ pub unsafe extern "C" fn snake_retarget_bone(r: *const SnakeRetarget, i: u32) ->
     unsafe { r.as_ref() }
         .and_then(|r| r.names.get(i as usize))
         .map_or(std::ptr::null(), |n| n.as_ptr())
+}
+
+/// The weapon in Snake's hands, if any: its index, and its transform
+/// relative to Skyrim's right hand (`NPC R Hand [RHnd]`), in Skyrim axes
+/// and units, for the mesh written by `mgsv skyrim-export`. Returns -1 when
+/// no weapon is in the hands.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_retarget_held_weapon(
+    r: *const SnakeRetarget,
+    p: *const SnakePlayer,
+    translation: *mut SnakeVec3,
+    rotation: *mut SnakeQuat,
+) -> i32 {
+    guard(-1, || {
+        // SAFETY: valid pointers or null.
+        let (r, p) = unsafe {
+            (
+                r.as_ref().ok_or("null retarget")?,
+                p.as_ref().ok_or("null player")?,
+            )
+        };
+        let ctl = &p.controller;
+        let Some(i) = ctl.current.filter(|_| ctl.weapon_in_hand()) else {
+            return Ok(-1);
+        };
+        let w = p.assets.weapons.get(i).ok_or("no such weapon")?;
+        let held = w.rig.gun_transform(&p.pose);
+        let Some((q, t)) = r.retarget.attach_local(&p.pose, "NPC R Hand [RHnd]", held) else {
+            return Ok(-1);
+        };
+        unsafe {
+            if !translation.is_null() {
+                *translation = t.into();
+            }
+            if !rotation.is_null() {
+                *rotation = SnakeQuat { x: q.x, y: q.y, z: q.z, w: q.w };
+            }
+        }
+        Ok(i as i32)
+    })
 }
 
 /// Local transforms (relative to each bone's Skyrim parent, Skyrim axes and

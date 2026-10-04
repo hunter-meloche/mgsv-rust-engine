@@ -74,6 +74,9 @@ uint32_t snake_bone_count(const SnakeRuntime *rt);
 const char *snake_bone_name(const SnakeRuntime *rt, uint32_t bone); /* NULL if unknown */
 int32_t snake_bone_parent(const SnakeRuntime *rt, uint32_t bone);   /* -1 for the root */
 uint32_t snake_weapon_count(const SnakeRuntime *rt);
+/* Skyrim mesh of weapon i (relative to Data\meshes, written by
+ * `mgsv skyrim-export`), or NULL. */
+const char *snake_weapon_mesh(const SnakeRuntime *rt, uint32_t i);
 
 SnakePlayer *snake_player_new(const SnakeRuntime *rt);
 void snake_player_free(SnakePlayer *p);
@@ -107,6 +110,12 @@ const char *snake_retarget_bone(const SnakeRetarget *r, uint32_t i); /* e.g. "NP
  * (the COM: pelvis height). Returns the bone count. */
 uint32_t snake_retarget_apply(const SnakeRetarget *r, const SnakePlayer *p, SnakeQuat *rotations,
                               SnakeVec3 *translations, uint8_t *has_translation, uint32_t capacity);
+
+/* The weapon in Snake's hands: returns its index (-1 if none) and its
+ * transform relative to Skyrim's "NPC R Hand [RHnd]" (Skyrim axes and units)
+ * for the exported mesh. */
+int32_t snake_retarget_held_weapon(const SnakeRetarget *r, const SnakePlayer *p, SnakeVec3 *translation,
+                                   SnakeQuat *rotation);
 
 #ifdef __cplusplus
 }

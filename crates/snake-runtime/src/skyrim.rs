@@ -357,6 +357,27 @@ impl SkyrimRetarget {
         out
     }
 
+    /// Transform of an object Snake holds at `held` (root space, e.g. the
+    /// gun from `WeaponRig::gun_transform`) relative to Skyrim bone `bone`,
+    /// in Skyrim axes and units, for an object whose own geometry is
+    /// converted the same way. None if `bone` is not driven by Snake.
+    ///
+    /// The bone's model rotation is `C R C^-1 A` (A its alignment), so the
+    /// held object's local rotation is `A^-1 C (R^-1 G) C^-1`.
+    pub fn attach_local(&self, pose: &Pose, bone: &str, held: (Quat, Vec3)) -> Option<(Quat, Vec3)> {
+        let b = self.bones.iter().find(|b| b.name == bone)?;
+        let s = b.source?;
+        let (hr, hp) = (*pose.rotations.get(s)?, *pose.positions.get(s)?);
+        let inv = hr.inverse();
+        let (q_rel, t_rel) = (inv * held.0, inv * (held.1 - hp));
+        let c = basis();
+        let ai = b.aligned.inverse();
+        Some((
+            (ai * c * q_rel * c.inverse()).normalize(),
+            ai * (fox_to_sky(t_rel) * UNITS_PER_METER),
+        ))
+    }
+
     /// Model-space joint positions of the retargeted Skyrim skeleton (for
     /// checks): rest local translations under the retargeted rotations.
     pub fn joint_positions(&self, pose: &Pose) -> Vec<(String, Vec3)> {

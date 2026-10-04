@@ -5,6 +5,7 @@
 use std::path::Path;
 
 pub mod skyrim;
+pub mod skyrim_export;
 
 use anyhow::{Context, Result};
 use fox_archive::{Fpk, Vfs};
@@ -28,6 +29,8 @@ pub fn open_game(game_dir: &Path, dictionaries: &Path) -> Result<Vfs> {
 
 /// A weapon ready to use: stats, rig attachment, model.
 pub struct LoadedWeapon {
+    /// Equipment id, e.g. `WP_West_ar_010`.
+    pub id: &'static str,
     pub model: fox_anim::SkinnedModel,
     pub rest: fox_anim::Pose,
     pub stats: snake_core::WeaponStats,
@@ -243,6 +246,7 @@ pub fn load_weapon(
         None => None,
     };
     Ok(LoadedWeapon {
+        id: def.id,
         model: skinned,
         rest: fox_anim::Pose::rest(&gun_skel),
         stats,

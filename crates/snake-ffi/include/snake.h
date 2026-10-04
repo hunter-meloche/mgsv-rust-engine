@@ -117,6 +117,12 @@ uint32_t snake_retarget_apply(const SnakeRetarget *r, const SnakePlayer *p, Snak
 /* The weapon in Snake's hands: returns its index (-1 if none) and its
  * transform relative to Skyrim's "NPC R Hand [RHnd]" (Skyrim axes and units)
  * for the exported mesh. */
+/* Where weapon `weapon`'s exported mesh goes this frame: 1 = in Snake's
+ * hands (transform relative to "NPC R Hand [RHnd]"), 2 = holstered
+ * (relative to "NPC Spine2 [Spn2]"), 0 = not shown. Skyrim axes/units. */
+int32_t snake_retarget_weapon_place(const SnakeRetarget *r, const SnakePlayer *p, uint32_t weapon,
+                                    SnakeVec3 *translation, SnakeQuat *rotation);
+
 int32_t snake_retarget_held_weapon(const SnakeRetarget *r, const SnakePlayer *p, SnakeVec3 *translation,
                                    SnakeQuat *rotation);
 

@@ -35,8 +35,10 @@ your MGSV install into `Data\meshes\snake\wp_west_ar_010.nif` and
 base colour passed through as DXT1, the two-channel normal map rebuilt with
 MGSV's specular map as the mask). The plugin loads it with
 `BSModelDB::Demand`, attaches it to the right hand and places it from
-Snake's grip each frame, shown while aiming or reloading. Third person
-only for now. The WU S.Pistol's textures are incomplete in the install
+Snake's grip each frame while aiming or reloading; otherwise it rides on
+its MGSV holster point (`CNP_ASRROOT`, at the left hip), placed relative to
+Skyrim's `NPC Spine2` (snake_retarget_weapon_place). Third person only for
+now. The WU S.Pistol's textures are incomplete in the install
 (only the two largest mips exist, no `.ftex` headers), so it exports
 untextured.
 

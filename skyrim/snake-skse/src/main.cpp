@@ -109,7 +109,7 @@ struct SnakeApi {
     decltype(&snake_retarget_count) retarget_count = nullptr;
     decltype(&snake_retarget_bone) retarget_bone = nullptr;
     decltype(&snake_retarget_apply) retarget_apply = nullptr;
-    decltype(&snake_retarget_held_weapon) retarget_held_weapon = nullptr;
+    decltype(&snake_retarget_weapon_place) retarget_weapon_place = nullptr;
 } g_snake;
 
 SnakeRuntime* g_runtime = nullptr;
@@ -146,7 +146,7 @@ bool LoadSnakeDll() {
     RESOLVE(retarget_count, "snake_retarget_count");
     RESOLVE(retarget_bone, "snake_retarget_bone");
     RESOLVE(retarget_apply, "snake_retarget_apply");
-    RESOLVE(retarget_held_weapon, "snake_retarget_held_weapon");
+    RESOLVE(retarget_weapon_place, "snake_retarget_weapon_place");
 #undef RESOLVE
     Log("loaded %s", Narrow(dll).c_str());
     return true;
@@ -922,7 +922,7 @@ struct PoseBuffer {
     std::vector<SnakeQuat> rot;
     std::vector<SnakeVec3> tr;
     std::vector<uint8_t> has;
-    int gun = -1;  // weapon in Snake's hands, -1 none
+    int gun = 0;  // weapon 0 placement: 0 hidden, 1 in the hands, 2 holstered
     SnakeVec3 gunPos{};
     SnakeQuat gunRot{0, 0, 0, 1};
     uint64_t seq = 0;
@@ -1106,7 +1106,8 @@ void SnakeThread() {
         }
         SnakeVec3 gunPos{};
         SnakeQuat gunRot{0, 0, 0, 1};
-        int gun = g_snake.retarget_held_weapon(g_retarget, g_player, &gunPos, &gunRot);
+        // The attached mesh is weapon 0's (the MRS-4): in the hands or holstered.
+        int gun = g_snake.retarget_weapon_place(g_retarget, g_player, 0, &gunPos, &gunRot);
         {
             std::lock_guard<std::mutex> lock(g_pose.m);
             g_pose.rot = rot;
@@ -1141,7 +1142,7 @@ std::vector<SnakeVec3> g_hookTr;
 std::vector<uint8_t> g_hookHas;
 uint64_t g_appliedSeq = 0;
 int g_hookFrames = 0;
-int g_hookGun = -1;
+int g_hookGun = 0;  // 0 hidden, 1 in the hands, 2 holstered (spine-relative)
 SnakeVec3 g_hookGunPos{};
 SnakeQuat g_hookGunRot{0, 0, 0, 1};
 
@@ -1149,8 +1150,10 @@ SnakeQuat g_hookGunRot{0, 0, 0, 1};
 //
 // The weapon mesh written by `mgsv skyrim-export` (Data\meshes\snake\*.nif)
 // is loaded with BSModelDB::Demand and attached under the right hand on the
-// main thread; the hook then places it every frame from Snake's grip
-// (snake_retarget_held_weapon) and hides it when no gun is in the hands.
+// main thread; the hook then places it every frame from Snake's grip or his
+// holster (snake_retarget_weapon_place). It stays parented to the hand; a
+// holstered placement (relative to the spine) is converted through the two
+// bones' world transforms.
 
 constexpr size_t kVtAttachChild = 0x35;  // NiNode::AttachChild(NiAVObject*, bool)
 const char* const kRightHand = "NPC R Hand [RHnd]";
@@ -1249,7 +1252,7 @@ void SetHidden(void* node, bool hidden) {
 }
 
 // Place (or hide) the gun under `hand`; queue the attach when needed.
-void PlaceGun(void* hand) {
+void PlaceGun(void* hand, void* spine) {
     void* gun = g_gunNode;
     if (!hand || g_gunLoadFailed) return;
     if (!gun || g_gunParent != hand) {
@@ -1257,7 +1260,7 @@ void PlaceGun(void* hand) {
         return;
     }
     void* flash = g_flashParent == hand ? static_cast<void*>(g_flashNode) : nullptr;
-    if (g_hookGun < 0) {
+    if (g_hookGun == 0 || (g_hookGun == 2 && !spine)) {
         SetHidden(gun, true);
         if (flash) SetHidden(flash, true);
         return;
@@ -1269,16 +1272,36 @@ void PlaceGun(void* hand) {
     SetHidden(gun, false);
     float* r = &At<float>(gun, kLocalRot);
     float* lp = &At<float>(gun, kLocalPos);
-    QuatToMat(g_hookGunRot, r);
-    lp[0] = g_hookGunPos.x;
-    lp[1] = g_hookGunPos.y;
-    lp[2] = g_hookGunPos.z;
+    if (g_hookGun == 1) {
+        QuatToMat(g_hookGunRot, r);
+        lp[0] = g_hookGunPos.x;
+        lp[1] = g_hookGunPos.y;
+        lp[2] = g_hookGunPos.z;
+    } else {
+        // Holster: spine-relative -> world -> hand-relative.
+        float rs[9], rw[9], pw[3], d[3];
+        QuatToMat(g_hookGunRot, rs);
+        const float* ms = &At<float>(spine, kWorldRot);
+        const float* mh = &At<float>(hand, kWorldRot);
+        const float* ps = &At<float>(spine, kWorldPos);
+        const float* ph = &At<float>(hand, kWorldPos);
+        float ss = At<float>(spine, kWorldScale), sh = At<float>(hand, kWorldScale);
+        float pl[3] = {g_hookGunPos.x * ss, g_hookGunPos.y * ss, g_hookGunPos.z * ss};
+        MatMul(ms, rs, rw);
+        MatVec(ms, pl, pw);
+        for (int k = 0; k < 3; ++k) d[k] = ps[k] + pw[k] - ph[k];
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j)  // r = mh^T rw
+                r[i * 3 + j] = mh[0 * 3 + i] * rw[0 * 3 + j] + mh[1 * 3 + i] * rw[1 * 3 + j] + mh[2 * 3 + i] * rw[2 * 3 + j];
+            lp[i] = (mh[0 * 3 + i] * d[0] + mh[1 * 3 + i] * d[1] + mh[2 * 3 + i] * d[2]) / (sh > 0 ? sh : 1.0f);
+        }
+    }
     // Flash: same rotation as the gun, at its muzzle; one random cell.
     if (!flash) return;
-    bool flashing = NowMs() < g_flashUntil && g_hookGun < (int)g_muzzles.size();
+    bool flashing = g_hookGun == 1 && NowMs() < g_flashUntil && !g_muzzles.empty();
     SetHidden(flash, !flashing);
     if (!flashing) return;
-    const SnakeVec3& m = g_muzzles[g_hookGun];
+    const SnakeVec3& m = g_muzzles[0];
     memcpy(&At<float>(flash, kLocalRot), r, 9 * sizeof(float));
     float* fp = &At<float>(flash, kLocalPos);
     float mv[3] = {m.x, m.y, m.z}, rm[3];
@@ -1440,9 +1463,13 @@ void ApplySnake(void* player, float delta) {
         At<float>(node, kWorldScale) = ps * At<float>(node, kLocalScale);
     }
     if (mode >= 2) {
+        void* hand = nullptr;
+        void* spine = nullptr;
         for (size_t i = 0; i < n; ++i) {
-            if (g_boneNames[i] == kRightHand) PlaceGun(g_nodes[i]);
+            if (g_boneNames[i] == kRightHand) hand = g_nodes[i];
+            if (g_boneNames[i] == "NPC Spine2 [Spn2]") spine = g_nodes[i];
         }
+        PlaceGun(hand, spine);
     }
     if (g_hookFrames++ < 3) Log("hook t%u: applied pose %llu (mode %d)", GetCurrentThreadId(), g_appliedSeq, mode);
 }

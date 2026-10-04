@@ -559,6 +559,51 @@ pub unsafe extern "C" fn snake_retarget_bone(r: *const SnakeRetarget, i: u32) ->
         .map_or(std::ptr::null(), |n| n.as_ptr())
 }
 
+/// Where weapon `weapon`'s exported mesh goes this frame: returns 1 when it
+/// is in Snake's hands (transform relative to Skyrim's `NPC R Hand [RHnd]`),
+/// 2 when it is holstered (relative to `NPC Spine2 [Spn2]`), 0 when it is
+/// not shown (no holster point). Skyrim axes and units.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_retarget_weapon_place(
+    r: *const SnakeRetarget,
+    p: *const SnakePlayer,
+    weapon: u32,
+    translation: *mut SnakeVec3,
+    rotation: *mut SnakeQuat,
+) -> i32 {
+    guard(0, || {
+        // SAFETY: valid pointers or null.
+        let (r, p) = unsafe {
+            (
+                r.as_ref().ok_or("null retarget")?,
+                p.as_ref().ok_or("null player")?,
+            )
+        };
+        let w = p.assets.weapons.get(weapon as usize).ok_or("no such weapon")?;
+        let ctl = &p.controller;
+        let (place, bone, held) = if ctl.current == Some(weapon as usize) && ctl.weapon_in_hand() {
+            (1, "NPC R Hand [RHnd]", w.rig.gun_transform(&p.pose))
+        } else if let Some((b, (hr, ht))) = w.back {
+            let (br, bp) = (p.pose.rotations[b], p.pose.positions[b]);
+            (2, "NPC Spine2 [Spn2]", (br * hr, bp + br * ht))
+        } else {
+            return Ok(0);
+        };
+        let Some((q, t)) = r.retarget.attach_local(&p.pose, bone, held) else {
+            return Ok(0);
+        };
+        unsafe {
+            if !translation.is_null() {
+                *translation = t.into();
+            }
+            if !rotation.is_null() {
+                *rotation = SnakeQuat { x: q.x, y: q.y, z: q.z, w: q.w };
+            }
+        }
+        Ok(place)
+    })
+}
+
 /// The weapon in Snake's hands, if any: its index, and its transform
 /// relative to Skyrim's right hand (`NPC R Hand [RHnd]`), in Skyrim axes
 /// and units, for the mesh written by `mgsv skyrim-export`. Returns -1 when

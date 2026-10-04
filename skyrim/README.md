@@ -4,12 +4,26 @@
 `crates/snake-ffi`) inside Skyrim Special Edition and runs Snake's player
 systems from your own MGSV: TPP install. See `docs/BRIDGE.md` for the design.
 
-Status: **phase B (testing)** — in game, press **F8** to toggle Snake mode:
+Status: **phase B works in game** — press **F8** to toggle Snake mode:
 Snake's animation drives the player's skeleton (retargeted onto Skyrim's
-bones). Skyrim still moves the character; walk / run / dash follow your
+bones; verified in Riverwood: idle, crouch and prone show on the stock
+Dragonborn). Skyrim still moves the character; walk / run / dash follow your
 speed, **C** / **Z** toggle crouch / prone, the **right mouse button** aims.
-If anything faults, Snake mode switches itself off. Log:
-`Documents/My Games/Skyrim Special Edition/SKSE/SnakeSKSE.log`.
+**F10** cycles debug write modes (2 = full, default; 1 = local only; 0 = off).
+
+How it runs: Snake's controller and the retarget run on the plugin's own
+60 Hz thread; the hook on `PlayerCharacter::UpdateAnimation` (called from
+Skyrim's job threads) only copies the latest pose into the bone nodes and
+never calls into `snake.dll` (calling Rust from the job threads froze the
+game). If anything faults, Snake mode switches itself off.
+
+Testing hooks: `Data/SKSE/Plugins/snake_control.txt` (`enabled=1`, `mode=2`,
+`stance=prone`, `move=run`, `aim=1`) drives the plugin without key presses.
+Log: `Documents/My Games/Skyrim Special Edition/SKSE/SnakeSKSE.log`.
+
+Known gaps: fingers, toes and forearm twist bones are not reachable through
+the live skeleton's child arrays (Skyrim keeps them elsewhere at runtime), so
+those 36 bones stay on Skyrim's animation for now.
 
 ## Build (Windows, Visual Studio 2022 with C++)
 

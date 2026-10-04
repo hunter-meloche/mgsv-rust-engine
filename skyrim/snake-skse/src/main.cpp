@@ -2,6 +2,7 @@
 // Rust crates) into Skyrim Special Edition through SKSE.
 //
 // Phase B: Snake's animation drives the player's skeleton. Press F8 in game
+// (F10 cycles write modes: compute only / local transforms / + world)
 // to toggle. Skyrim still moves the character; Snake's controller picks
 // walk / run / dash from the player's actual speed, C and Z toggle crouch
 // and prone, the right mouse button raises the weapon. Every frame, after
@@ -21,7 +22,9 @@
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
+#include <atomic>
 #include <mutex>
+#include <thread>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -258,18 +261,8 @@ void QuatToMat(const SnakeQuat& q, float* m) {
 
 using UpdateAnimationFn = void (*)(void* self, float delta);
 UpdateAnimationFn g_originalUpdateAnimation = nullptr;
-std::mutex g_mutex;
-bool g_enabled = false;
-bool g_f8Down = false, g_f9Down = false, g_cDown = false, g_zDown = false;
-// 0 = compute only (no writes), 1 = write local transforms, 2 = also world.
-int g_mode = 0;
-bool g_layoutOk = false;
-float g_lastPos[3] = {0, 0, 0};
-bool g_havePos = false;
-void* g_cachedRoot = nullptr;
 std::vector<void*> g_nodes;
-double g_logTimer = 0;
-int g_frames = 0;
+bool g_layoutOk = false;
 
 bool Readable(const void* p, size_t n) {
     MEMORY_BASIC_INFORMATION mbi{};
@@ -331,15 +324,179 @@ void CheckLayout() {
         errA, worst, errB, errPos, g_layoutOk ? "OK, writes allowed" : "MISMATCH, writes disabled");
 }
 
-// ---- per-frame hook --------------------------------------------------------------
+// ---- Snake thread ---------------------------------------------------------------
+//
+// Snake's controller and the retarget run on this plugin's own thread at a
+// fixed 60 Hz. Skyrim calls UpdateAnimation from varying job threads; running
+// Rust code there hung the game, so the hook below never calls snake.dll: it
+// only reports the player's position and copies the latest finished pose.
 
+std::atomic<bool> g_enabled{false};
+std::atomic<int> g_mode{2};  // 0 compute only, 1 local transforms, 2 local + world (default)
+std::atomic<float> g_speed{0.0f};  // player speed (m/s), measured by the hook
+std::atomic<bool> g_running{false};
+std::atomic<uint32_t> g_hookCalls{0};  // player UpdateAnimation calls (for the status log)
+std::thread g_snakeThread;
 
-bool KeyPressed(int vk, bool& wasDown) {
-    bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
-    bool pressed = down && !wasDown;
-    wasDown = down;
-    return pressed;
+struct PoseBuffer {
+    std::mutex m;
+    std::vector<SnakeQuat> rot;
+    std::vector<SnakeVec3> tr;
+    std::vector<uint8_t> has;
+    uint64_t seq = 0;
+} g_pose;
+
+bool SkyrimFocused() {
+    DWORD pid = 0;
+    GetWindowThreadProcessId(GetForegroundWindow(), &pid);
+    return pid == GetCurrentProcessId();
 }
+
+// Edge-triggered key, only while Skyrim has focus. Starts as "down" so a key
+// already held (or stuck) when the plugin starts does not toggle anything.
+struct Key {
+    int vk;
+    bool wasDown = true;
+    bool Pressed(bool focused) {
+        bool down = focused && (GetAsyncKeyState(vk) & 0x8000) != 0;
+        bool pressed = down && !wasDown;
+        wasDown = down;
+        return pressed;
+    }
+};
+
+// Test/control file: Data/SKSE/Plugins/snake_control.txt, re-read when it
+// changes. Lines `key=value`: enabled=0|1, mode=0|1|2, stance=stand|crouch|prone,
+// move=auto|idle|walk|run|dash, aim=0|1.
+struct Control {
+    FILETIME stamp{};
+    std::string move = "auto";
+    int aim = -1;
+    std::string stance;  // requested stance, consumed by the Snake thread
+};
+Control g_control;
+
+void PollControl(int curStance) {
+    std::wstring path = PluginDir() + L"\\snake_control.txt";
+    WIN32_FILE_ATTRIBUTE_DATA a{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &a)) return;
+    if (CompareFileTime(&a.ftLastWriteTime, &g_control.stamp) == 0) return;
+    g_control.stamp = a.ftLastWriteTime;
+    FILE* f = _wfsopen(path.c_str(), L"r", _SH_DENYNO);
+    if (!f) return;
+    char line[256];
+    while (fgets(line, sizeof line, f)) {
+        std::string l(line);
+        while (!l.empty() && (l.back() == 0x0A || l.back() == 0x0D || l.back() == 0x20)) l.pop_back();
+        auto eq = l.find('=');
+        if (eq == std::string::npos) continue;
+        std::string k = l.substr(0, eq), v = l.substr(eq + 1);
+        if (k == "enabled") g_enabled = v == "1";
+        else if (k == "mode") g_mode = std::atoi(v.c_str()) % 3;
+        else if (k == "move") g_control.move = v;
+        else if (k == "aim") g_control.aim = std::atoi(v.c_str());
+        else if (k == "stance") g_control.stance = v;
+    }
+    fclose(f);
+    Log("control: enabled %d mode %d move %s aim %d stance %s (current %d)", (int)g_enabled, (int)g_mode,
+        g_control.move.c_str(), g_control.aim, g_control.stance.c_str(), curStance);
+}
+
+void SnakeThread() {
+    Key f8{VK_F8}, f9{VK_F10}, c{'C'}, z{'Z'};
+    const double dt = 1.0 / 60.0;
+    auto next = std::chrono::steady_clock::now();
+    double logTimer = 0;
+    uint32_t n = g_snake.retarget_count(g_retarget);
+    std::vector<SnakeQuat> rot(n);
+    std::vector<SnakeVec3> tr(n);
+    std::vector<uint8_t> has(n);
+    Log("snake thread %u running at 60 Hz", GetCurrentThreadId());
+    while (g_running) {
+        next += std::chrono::microseconds(16667);
+        std::this_thread::sleep_until(next);
+        bool focused = SkyrimFocused();
+        SnakeStatus cur{};
+        g_snake.player_status(g_player, &cur);
+        PollControl(cur.stance);
+        if (f9.Pressed(focused)) {
+            int m = (g_mode + 1) % 3;
+            g_mode = m;
+            Log("write mode %d (%s)", m, m == 0 ? "compute only" : m == 1 ? "local transforms" : "local + world transforms");
+        }
+        if (f8.Pressed(focused)) {
+            g_enabled = !g_enabled;
+            Log("Snake mode %s", g_enabled ? "ON" : "OFF");
+        }
+        if (!g_enabled) continue;
+
+        float speed = g_speed;
+        const std::string& mv = g_control.move;
+        if (mv == "idle") speed = 0;
+        else if (mv == "walk") speed = 1.5f;
+        else if (mv == "run") speed = 4.0f;
+        else if (mv == "dash") speed = 7.0f;
+        SnakeInput in{};
+        in.switch_to = -1;
+        in.move_y = speed > 0.3f ? 1.0f : 0.0f;
+        in.walk = speed > 0.3f && speed < 2.6f;
+        in.sprint = speed > 5.5f;
+        in.crouch = c.Pressed(focused);
+        in.prone = z.Pressed(focused);
+        // Requested stance from the control file: toggle toward it.
+        const int want = g_control.stance == "stand" ? 0 : g_control.stance == "crouch" ? 1 : g_control.stance == "prone" ? 2 : -1;
+        if (want >= 0 && want != cur.stance) {
+            if (want == 2 || cur.stance == 2) in.prone = true;
+            else in.crouch = true;
+        } else if (want >= 0) {
+            g_control.stance.clear();
+        }
+        in.aim = g_control.aim >= 0 ? g_control.aim == 1 : focused && (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+        in.fire = in.aim && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+        // Snake's own heading is "forward": Skyrim decides where the actor faces.
+        SnakeVec3 snakePos{};
+        float snakeYaw = 0;
+        g_snake.player_transform(g_player, &snakePos, &snakeYaw);
+        in.camera_yaw = snakeYaw;
+        if (!g_snake.player_update(g_player, &in, nullptr, static_cast<float>(dt))) {
+            Log("snake_player_update failed: %s", g_snake.last_error());
+            g_enabled = false;
+            continue;
+        }
+        if (g_snake.retarget_apply(g_retarget, g_player, rot.data(), tr.data(), has.data(), n) != n) {
+            Log("snake_retarget_apply failed: %s", g_snake.last_error());
+            g_enabled = false;
+            continue;
+        }
+        {
+            std::lock_guard<std::mutex> lock(g_pose.m);
+            g_pose.rot = rot;
+            g_pose.tr = tr;
+            g_pose.has = has;
+            ++g_pose.seq;
+        }
+        logTimer += dt;
+        if (logTimer > 2.0) {
+            logTimer = 0;
+            SnakeStatus st{};
+            g_snake.player_status(g_player, &st);
+            Log("snake: speed %.2f m/s stance %d gait %d aiming %d, mode %d, focused %d, hook calls %u", speed, st.stance,
+                st.gait, st.aiming, (int)g_mode, (int)focused, g_hookCalls.exchange(0));
+        }
+    }
+}
+
+// ---- per-frame hook (Skyrim job threads) -----------------------------------------
+
+std::mutex g_hookMutex;  // the player's hook state (try-locked, never waited on)
+float g_lastPos[3] = {0, 0, 0};
+bool g_havePos = false;
+void* g_cachedRoot = nullptr;
+std::vector<SnakeQuat> g_hookRot;
+std::vector<SnakeVec3> g_hookTr;
+std::vector<uint8_t> g_hookHas;
+uint64_t g_appliedSeq = 0;
+int g_hookFrames = 0;
 
 void ApplySnake(void* player, float delta) {
     void* root = Get3D(player, false);
@@ -354,69 +511,45 @@ void ApplySnake(void* player, float delta) {
         g_cachedRoot = root;
         Log("player 3D %p (%s): found %zu of %zu retarget bones", root, Name(root) ? Name(root) : "?",
             g_nodes.size() - missing, g_nodes.size());
-        for (size_t i = 0; i < g_nodes.size(); ++i)
-            if (!g_nodes[i]) Log("  missing: %s", g_boneNames[i].c_str());
-        for (const char* nm : {"NPC L Forearm [LLar]", "NPC L Hand [LHnd]", "NPC L Foot [Lft ]", "NPC L UpperArm [LUar]"})
-            for (size_t i = 0; i < g_boneNames.size(); ++i)
-                if (g_boneNames[i] == nm) DumpChildren(g_nodes[i]);
         CheckLayout();
-        g_frames = 0;
+        g_hookFrames = 0;
     }
 
-    // Snake's input from what the player is doing.
+    // Player speed for Snake's gait.
     float* pos = &At<float>(player, kRefPosition);
-    float speed = 0;
     if (g_havePos && delta > 0) {
         float dx = pos[0] - g_lastPos[0], dy = pos[1] - g_lastPos[1];
-        speed = std::sqrt(dx * dx + dy * dy) / delta / 70.0f;  // m/s
+        g_speed = std::sqrt(dx * dx + dy * dy) / delta / 70.0f;
     }
     memcpy(g_lastPos, pos, sizeof g_lastPos);
     g_havePos = true;
 
-    SnakeInput in{};
-    in.switch_to = -1;
-    in.move_y = speed > 0.3f ? 1.0f : 0.0f;
-    in.walk = speed > 0.3f && speed < 2.6f;
-    in.sprint = speed > 5.5f;
-    in.crouch = KeyPressed('C', g_cDown);
-    in.prone = KeyPressed('Z', g_zDown);
-    in.aim = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
-    in.fire = in.aim && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-    // Keep Snake's own heading as "forward": Skyrim decides where the actor faces.
-    SnakeVec3 snakePos{};
-    float snakeYaw = 0;
-    g_snake.player_transform(g_player, &snakePos, &snakeYaw);
-    in.camera_yaw = snakeYaw;
-    g_snake.player_update(g_player, &in, nullptr, delta);
-
-    uint32_t n = static_cast<uint32_t>(g_nodes.size());
-    std::vector<SnakeQuat> rot(n);
-    std::vector<SnakeVec3> tr(n);
-    std::vector<uint8_t> hasTr(n);
-    if (g_snake.retarget_apply(g_retarget, g_player, rot.data(), tr.data(), hasTr.data(), n) != n) return;
-    if (g_frames < 3) {
-        bool finite = true;
-        for (uint32_t i = 0; i < n; ++i) finite &= std::isfinite(rot[i].x + rot[i].y + rot[i].z + rot[i].w);
-        Log("frame %d: mode %d, retarget output finite: %d", g_frames + 1, g_mode, finite);
-    }
-    if (g_mode < 1 || !g_layoutOk) {
-        ++g_frames;
-        return;
-    }
-    for (uint32_t i = 0; i < n; ++i) {
-        void* node = g_nodes[i];
-        if (!node) continue;
-        QuatToMat(rot[i], &At<float>(node, kLocalRot));
-        if (hasTr[i]) {
-            float* lp = &At<float>(node, kLocalPos);
-            lp[0] = tr[i].x;
-            lp[1] = tr[i].y;
-            lp[2] = tr[i].z;
+    int mode = g_mode;
+    if (mode < 1 || !g_layoutOk) return;
+    // Latest pose from the Snake thread, if it is not mid-write.
+    {
+        std::unique_lock<std::mutex> lock(g_pose.m, std::try_to_lock);
+        if (lock.owns_lock() && g_pose.seq != g_appliedSeq) {
+            g_hookRot = g_pose.rot;
+            g_hookTr = g_pose.tr;
+            g_hookHas = g_pose.has;
+            g_appliedSeq = g_pose.seq;
         }
     }
-    // World transforms of the retargeted bones, parent-first (table order),
-    // from each bone's actual parent node.
-    for (uint32_t i = 0; i < n && g_mode >= 2; ++i) {
+    size_t n = (std::min)(g_nodes.size(), g_hookRot.size());
+    for (size_t i = 0; i < n; ++i) {
+        void* node = g_nodes[i];
+        if (!node) continue;
+        QuatToMat(g_hookRot[i], &At<float>(node, kLocalRot));
+        if (g_hookHas[i]) {
+            float* lp = &At<float>(node, kLocalPos);
+            lp[0] = g_hookTr[i].x;
+            lp[1] = g_hookTr[i].y;
+            lp[2] = g_hookTr[i].z;
+        }
+    }
+    // World transforms of the retargeted bones, parent-first (table order).
+    for (size_t i = 0; i < n && mode >= 2; ++i) {
         void* node = g_nodes[i];
         if (!node) continue;
         void* parent = At<void*>(node, kParent);
@@ -434,17 +567,10 @@ void ApplySnake(void* player, float delta) {
         for (int k = 0; k < 3; ++k) wp[k] = ppos[k] + rotated[k];
         At<float>(node, kWorldScale) = ps * At<float>(node, kLocalScale);
     }
-    if (g_frames++ < 3) Log("frame %d: dt %.4f speed %.2f m/s", g_frames, delta, speed);
-    g_logTimer += delta;
-    if (g_logTimer > 2.0) {
-        g_logTimer = 0;
-        SnakeStatus st{};
-        g_snake.player_status(g_player, &st);
-        Log("snake: speed %.2f m/s stance %d gait %d aiming %d", speed, st.stance, st.gait, st.aiming);
-    }
+    if (g_hookFrames++ < 3) Log("hook t%u: applied pose %llu (mode %d)", GetCurrentThreadId(), g_appliedSeq, mode);
 }
 
-// SEH guard: a fault inside Snake's per-frame code turns Snake mode off
+// SEH guard: a fault inside the hook's Snake code turns Snake mode off
 // instead of crashing the game. (No C++ objects in this frame.)
 bool SafeApply(void* self, float delta) {
     __try {
@@ -457,19 +583,14 @@ bool SafeApply(void* self, float delta) {
 
 void HookedUpdateAnimation(void* self, float delta) {
     g_originalUpdateAnimation(self, delta);
-    if (self != ThePlayer() || !g_retarget) return;
-    std::lock_guard<std::mutex> lock(g_mutex);
-    if (KeyPressed(VK_F9, g_f9Down)) {
-        g_mode = (g_mode + 1) % 3;
-        g_frames = 0;
-        Log("write mode %d (%s)", g_mode, g_mode == 0 ? "compute only" : g_mode == 1 ? "local transforms" : "local + world transforms");
-    }
-    if (KeyPressed(VK_F8, g_f8Down)) {
-        g_enabled = !g_enabled;
+    g_hookCalls.fetch_add(1, std::memory_order_relaxed);
+    if (!g_enabled || !g_retarget || self != ThePlayer()) {
         g_havePos = false;
-        Log("Snake mode %s", g_enabled ? "ON" : "OFF");
+        return;
     }
-    if (g_enabled && !SafeApply(self, delta)) {
+    std::unique_lock<std::mutex> lock(g_hookMutex, std::try_to_lock);
+    if (!lock.owns_lock()) return;
+    if (!SafeApply(self, delta)) {
         g_enabled = false;
         g_cachedRoot = nullptr;
         Log("fault in Snake mode; turned it off (please send this log)");
@@ -491,7 +612,7 @@ bool InstallHook() {
     g_originalUpdateAnimation = reinterpret_cast<UpdateAnimationFn>(vt[kVtUpdateAnimation]);
     vt[kVtUpdateAnimation] = reinterpret_cast<void*>(&HookedUpdateAnimation);
     VirtualProtect(&vt[kVtUpdateAnimation], sizeof(void*), old, &old);
-    Log("hooked PlayerCharacter::UpdateAnimation (vtable %p, original %p); press F8 in game for Snake mode", vt,
+    Log("hooked PlayerCharacter::UpdateAnimation (vtable %p, original %p); press F8 in game for Snake mode, F10 for write mode", vt,
         g_originalUpdateAnimation);
     return true;
 }
@@ -499,7 +620,11 @@ bool InstallHook() {
 void OnMessage(SKSEMessagingInterface::Message* msg) {
     if (msg->type == SKSEMessagingInterface::kMessage_DataLoaded) {
         Log("Skyrim data loaded");
-        if (LoadSnakeDll() && OpenRuntime()) InstallHook();
+        if (LoadSnakeDll() && OpenRuntime() && InstallHook()) {
+            g_running = true;
+            g_snakeThread = std::thread(SnakeThread);
+            g_snakeThread.detach();
+        }
     }
 }
 

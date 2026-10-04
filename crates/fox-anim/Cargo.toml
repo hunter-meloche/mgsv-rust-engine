@@ -1,0 +1,11 @@
+[package]
+name = "fox-anim"
+description = "Fox Engine animation playback: skeletons, clip sampling, rig solve (IK)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+fox-data.workspace = true
+glam = "0.30"

@@ -99,6 +99,44 @@ enum Cmd {
     Frig { path: String },
     /// Parse every .frig inside every package; one line per distinct rig.
     FrigCheck,
+    /// Development probe: print Snake's rest skeleton for the rig bones and
+    /// the sampled rig-unit values of one clip at one frame.
+    /// Pose Snake with every clip of every player motion archive and report
+    /// rig-solve statistics (IK reach, foot heights, root motion).
+    AnimCheck {
+        /// List clips whose IK targets go far out of reach.
+        #[arg(long)]
+        verbose: bool,
+        /// Compare candidate pole-axis conventions by wrist/ankle bend.
+        #[arg(long)]
+        poles: bool,
+    },
+    /// Write a local HTML stick-figure viewer of Snake posed by clips
+    /// (default output: extracted/anim_view.html, which stays on this machine).
+    AnimView {
+        /// .mtar (PACKAGE.fpk:INNER)
+        path: String,
+        /// Substrings of clip names to include (repeatable; default: first 8 clips).
+        #[arg(long)]
+        clip: Vec<String>,
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    AnimProbe {
+        /// .mtar (PACKAGE.fpk:INNER)
+        path: String,
+        /// Clip index, or a substring of the clip name.
+        #[arg(long, default_value = "0")]
+        clip: String,
+        #[arg(long, default_value_t = 0.0)]
+        frame: f32,
+        /// Skip the rest-skeleton listing.
+        #[arg(long)]
+        brief: bool,
+        /// Instead of one frame, print root and IK-target tracks per frame.
+        #[arg(long)]
+        timeline: bool,
+    },
 }
 
 /// Read a file from the archives, or from inside a package with `PKG:INNER`.
@@ -380,6 +418,21 @@ fn run() -> Result<()> {
             Ok(())
         }
         Cmd::FrigCheck => frig_check(&vfs),
+        Cmd::AnimProbe {
+            path,
+            clip,
+            frame,
+            brief,
+            timeline,
+        } => anim_probe(&vfs, &path, &clip, frame, brief, timeline),
+        Cmd::AnimCheck { verbose, poles } => {
+            if poles {
+                anim_poles(&vfs)
+            } else {
+                anim_check(&vfs, verbose)
+            }
+        }
+        Cmd::AnimView { path, clip, out } => anim_view(&vfs, &path, &clip, out),
         Cmd::Find { pattern } => {
             let pkgs: Vec<_> = vfs
                 .iter()
@@ -639,6 +692,386 @@ fn bone_names(vfs: &Vfs) -> Result<()> {
         })
         .count();
     println!("sna0_main0_def.fmdl bones named: {hit}/{}", fm.bones.len());
+    Ok(())
+}
+
+const HUMAN_RIG: &str =
+    "/Assets/tpp/pack/mission2/common/mis_com_chico_gz.fpk:/Assets/tpp/rig/frig/human_finger.frig";
+const SNAKE_BODY: &str = "/Assets/tpp/pack/player/parts/plparts_normal.fpk:/Assets/tpp/chara/sna/Scenes/sna0_main0_def.fmdl";
+
+fn snake_rig(vfs: &Vfs) -> Result<(fox_anim::Skeleton, fox_anim::HumanRig)> {
+    let rig = fox_data::frig::Frig::parse(&read_any(vfs, HUMAN_RIG)?)?;
+    let skel = fox_anim::Skeleton::from_fmdl(&fox_data::Fmdl::parse(&read_any(vfs, SNAKE_BODY)?)?);
+    let human = fox_anim::HumanRig::new(&rig, &skel).map_err(anyhow::Error::msg)?;
+    Ok((skel, human))
+}
+
+/// Every distinct `.mtar` in the player motion packages, as (path, bytes).
+fn player_motion_archives(vfs: &Vfs) -> Result<Vec<(String, Vec<u8>)>> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for (h, r) in vfs.iter() {
+        let (name, _) = vfs.dictionary.resolve(h);
+        if !name.starts_with("/Assets/tpp/pack/player/motion/") || !name.ends_with(".fpk") {
+            continue;
+        }
+        let data = vfs.read_ref(r)?;
+        let pkg = Fpk::parse(&data)?;
+        for e in pkg
+            .entries
+            .iter()
+            .filter(|e| e.clean_path().ends_with(".mtar"))
+        {
+            if seen.insert(e.md5) {
+                out.push((format!("{name}:{}", e.clean_path()), pkg.read(e)?));
+            }
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(out)
+}
+
+fn anim_view(vfs: &Vfs, path: &str, filters: &[String], out: Option<PathBuf>) -> Result<()> {
+    use std::fmt::Write as _;
+    let (skel, rig) = snake_rig(vfs)?;
+    let names = fox_names(vfs);
+    let data = read_any(vfs, path)?;
+    let m = fox_data::mtar::Mtar::parse(&data)?;
+    let clip_name = |i: usize| vfs.dictionary.resolve(m.entries[i].hash).0;
+    let picked: Vec<usize> = if filters.is_empty() {
+        (0..m.entries.len().min(8)).collect()
+    } else {
+        (0..m.entries.len())
+            .filter(|&i| filters.iter().any(|f| clip_name(i).contains(f.as_str())))
+            .collect()
+    };
+    let mut json = String::from("{\"bones\":[");
+    for (i, b) in skel.bones.iter().enumerate() {
+        let n = names
+            .resolve32(b.name)
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{:#010x}", b.name));
+        let parent = b.parent.map_or(-1, |p| p as i64);
+        write!(
+            json,
+            "{}{{\"name\":\"{n}\",\"parent\":{parent}}}",
+            if i > 0 { "," } else { "" }
+        )?;
+    }
+    json.push_str("],\"clips\":[");
+    let mut first_clip = true;
+    for &i in &picked {
+        let c = m.clip(&data, i)?;
+        let name = clip_name(i);
+        let short = name
+            .rsplit('/')
+            .next()
+            .unwrap_or(&name)
+            .trim_end_matches(".gani");
+        let (mut frames, mut roots, mut reach) = (Vec::new(), Vec::new(), Vec::new());
+        for f in 0..=c.frame_count {
+            let pose = rig.pose(&skel, &c, f as f32).map_err(anyhow::Error::msg)?;
+            let p: Vec<String> = pose
+                .positions
+                .iter()
+                .flat_map(|v| [v.x, v.y, v.z])
+                .map(|x| format!("{x:.3}"))
+                .collect();
+            frames.push(format!("[{}]", p.join(",")));
+            let (q, t) = rig.root(&c, f as f32);
+            roots.push(format!(
+                "[{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.3}]",
+                q.x, q.y, q.z, q.w, t.x, t.y, t.z
+            ));
+            let r: Vec<String> = pose.ik_reach.iter().map(|x| format!("{x:.2}")).collect();
+            reach.push(format!("[{}]", r.join(",")));
+        }
+        write!(
+            json,
+            "{}{{\"name\":\"{short}\",\"frames\":[{}],\"root\":[{}],\"reach\":[{}]}}",
+            if first_clip { "" } else { "," },
+            frames.join(","),
+            roots.join(","),
+            reach.join(",")
+        )?;
+        first_clip = false;
+        println!("  {short} ({} frames)", c.frame_count);
+    }
+    json.push_str("]}");
+    let html = include_str!("anim_view.html").replace("/*DATA*/null", &json);
+    let out = out.unwrap_or_else(|| repo_dir().join("extracted/anim_view.html"));
+    std::fs::create_dir_all(out.parent().unwrap())?;
+    std::fs::write(&out, html)?;
+    println!("{} clips -> {}", picked.len(), out.display());
+    Ok(())
+}
+
+/// For each candidate pole axis, the mean rotation between each IK chain's
+/// lower bone and its effector (forearm/hand, shin/foot) over every frame of
+/// every player clip. The right convention keeps wrists and ankles natural.
+fn anim_poles(vfs: &Vfs) -> Result<()> {
+    use fox_anim::Vec3;
+    let (skel, mut rig) = snake_rig(vfs)?;
+    let archives = player_motion_archives(vfs)?;
+    let mut clips = Vec::new();
+    for (_, data) in &archives {
+        let Ok(m) = fox_data::mtar::Mtar::parse(data) else {
+            continue;
+        };
+        if m.segment_count != 56 {
+            continue;
+        }
+        clips.extend((0..m.entries.len()).filter_map(|i| m.clip(data, i).ok()));
+    }
+    let joints = rig.ik_joints();
+    for (label, axis) in [
+        ("+X", Vec3::X),
+        ("-X", -Vec3::X),
+        ("+Y", Vec3::Y),
+        ("-Y", -Vec3::Y),
+        ("+Z", Vec3::Z),
+        ("-Z", -Vec3::Z),
+    ] {
+        rig.set_pole_axis(axis);
+        let mut sum = vec![0f64; joints.len() * 2];
+        let mut n = 0usize;
+        for c in &clips {
+            for f in (0..=c.frame_count).step_by(3) {
+                let pose = rig.pose(&skel, c, f as f32).map_err(anyhow::Error::msg)?;
+                for (k, &(lower, eff)) in joints.iter().enumerate() {
+                    sum[k] += pose.rotations[lower]
+                        .angle_between(pose.rotations[eff])
+                        .to_degrees() as f64;
+                    // Swing only: where the effector's own axis points vs the lower bone.
+                    let d = skel.bones[eff].rest_local.normalize();
+                    let swing = (pose.rotations[lower] * d).angle_between(pose.rotations[eff] * d);
+                    sum[k + joints.len()] += swing.to_degrees() as f64;
+                }
+                n += 1;
+            }
+        }
+        let means: Vec<String> = sum
+            .iter()
+            .map(|s| format!("{:>6.1}", s / n as f64))
+            .collect();
+        println!(
+            "pole axis {label}: mean joint angle (L arm, R arm, L leg, R leg) {} | swing only {}",
+            means[..4].join(" "),
+            means[4..].join(" ")
+        );
+    }
+    Ok(())
+}
+
+fn anim_check(vfs: &Vfs, verbose: bool) -> Result<()> {
+    let (skel, rig) = snake_rig(vfs)?;
+    let foot = |n: &str| skel.find(fox_hash::str_code32(n.as_bytes())).unwrap();
+    let (lfoot, rfoot) = (foot("SKL_032_LFOOT"), foot("SKL_042_RFOOT"));
+    let archives = player_motion_archives(vfs)?;
+    let (mut clips, mut frames, mut nan, mut stretched, mut skipped) = (0, 0usize, 0, 0usize, 0);
+    let mut foot_y = Vec::new();
+    let mut reach = vec![Vec::new(); 4];
+    for (path, data) in &archives {
+        // Old-format archives (facial sets) are not body motion.
+        let Ok(m) = fox_data::mtar::Mtar::parse(data) else {
+            continue;
+        };
+        if m.segment_count != 56 {
+            continue;
+        }
+        for i in 0..m.entries.len() {
+            let Ok(c) = m.clip(data, i) else { continue };
+            clips += 1;
+            let mut worst = 0f32;
+            let mut worst_frame = 0;
+            for f in 0..=c.frame_count {
+                let pose = match rig.pose(&skel, &c, f as f32) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        if f == 0 {
+                            skipped += 1;
+                            println!("  skip {path} clip {i}: {e}");
+                        }
+                        break;
+                    }
+                };
+                frames += 1;
+                if pose.positions.iter().any(|p| !p.is_finite())
+                    || pose.rotations.iter().any(|q| !q.is_finite())
+                {
+                    nan += 1;
+                }
+                stretched += pose.ik_reach.iter().filter(|&&r| r > 1.02).count();
+                for (k, r) in pose.ik_reach.iter().enumerate() {
+                    reach[k].push(*r);
+                }
+                let w = pose.ik_reach.iter().copied().fold(0f32, f32::max);
+                if w > worst {
+                    worst = w;
+                    worst_frame = f;
+                }
+                foot_y.push(pose.positions[lfoot].y.min(pose.positions[rfoot].y));
+            }
+            if verbose && worst > 1.5 {
+                let (name, _) = vfs.dictionary.resolve(m.entries[i].hash);
+                println!(
+                    "  reach {worst:>6.2} at frame {worst_frame:>4}/{}  {}  {path}",
+                    c.frame_count,
+                    name.rsplit('/').next().unwrap_or(&name)
+                );
+            }
+        }
+    }
+    foot_y.sort_by(f32::total_cmp);
+    let pct = |p: f32| foot_y[((foot_y.len() - 1) as f32 * p) as usize];
+    println!(
+        "{} archives, {clips} clips ({skipped} skipped), {frames} frames posed; non-finite poses: {nan}; IK targets >2% out of reach: {stretched} of {}",
+        archives.len(),
+        frames * 4
+    );
+    for (k, r) in reach.iter_mut().enumerate() {
+        r.sort_by(f32::total_cmp);
+        let q = |p: f32| r[((r.len() - 1) as f32 * p) as usize];
+        println!(
+            "IK chain {k} reach: p1 {:.2} p50 {:.2} p90 {:.2} p99 {:.2}",
+            q(0.01),
+            q(0.5),
+            q(0.9),
+            q(0.99)
+        );
+    }
+    println!(
+        "lowest foot height: p1 {:.3}  p50 {:.3}  p99 {:.3}",
+        pct(0.01),
+        pct(0.5),
+        pct(0.99)
+    );
+    Ok(())
+}
+
+fn anim_probe(
+    vfs: &Vfs,
+    path: &str,
+    clip: &str,
+    frame: f32,
+    brief: bool,
+    timeline: bool,
+) -> Result<()> {
+    use fox_anim::{Quat, Vec3};
+    let names = fox_names(vfs);
+    let name = |h: u32| {
+        names
+            .resolve32(h)
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{h:#010x}"))
+    };
+    let rig = fox_data::frig::Frig::parse(&read_any(vfs, HUMAN_RIG)?)?;
+    let skel = fox_anim::Skeleton::from_fmdl(&fox_data::Fmdl::parse(&read_any(vfs, SNAKE_BODY)?)?);
+    if !brief {
+        println!("rig bone list:");
+    }
+    for (i, &(ri, h)) in rig.bones.iter().enumerate().filter(|_| !brief) {
+        let s = skel.find(h);
+        let rest = s.map(|s| {
+            let b = &skel.bones[s];
+            format!(
+                "skel {s:>3} parent {:>3?} local {:>6.3?} model {:>6.3?}",
+                b.parent,
+                b.rest_local.to_array(),
+                b.rest_model.to_array()
+            )
+        });
+        println!(
+            "  {i:>2} rig {ri:>3} {:<16} {}",
+            name(h),
+            rest.unwrap_or_default()
+        );
+    }
+    let data = read_any(vfs, path)?;
+    let m = fox_data::mtar::Mtar::parse(&data)?;
+    let clip = match clip.parse::<usize>() {
+        Ok(i) => i,
+        Err(_) => (0..m.entries.len())
+            .find(|&i| vfs.dictionary.resolve(m.entries[i].hash).0.contains(clip))
+            .with_context(|| format!("no clip matching {clip}"))?,
+    };
+    let c = m.clip(&data, clip)?;
+    if timeline {
+        let ch: Vec<&fox_data::mtar::Channel> = c.tracks.iter().flat_map(|t| &t.channels).collect();
+        let v3 = |s: usize, f: u32| {
+            let a = fox_anim::sample::sample(ch[s], f as f32);
+            format!("({:>6.3},{:>6.3},{:>6.3})", a[0], a[1], a[2])
+        };
+        let yaw = |s: usize, f: u32| {
+            let q = Quat::from_array(fox_anim::sample::sample(ch[s], f as f32));
+            let z = q * Vec3::Z;
+            z.x.atan2(z.z).to_degrees()
+        };
+        println!(
+            "frame  root_dq_yaw root_dv                 waist_yaw waist_pos               Lhand                   Lfoot                   Rfoot"
+        );
+        for f in 0..=c.frame_count {
+            println!(
+                "{f:>4} {:>8.2} {}  {:>8.2} {} {} {} {}",
+                yaw(0, f),
+                v3(1, f),
+                yaw(2, f),
+                v3(3, f),
+                v3(9, f),
+                v3(16, f),
+                v3(19, f)
+            );
+        }
+        return Ok(());
+    }
+    println!(
+        "clip {clip}: {} ({} frames) at frame {frame}",
+        vfs.dictionary.resolve(m.entries[clip].hash).0,
+        c.frame_count
+    );
+    for (u, t) in c.tracks.iter().enumerate() {
+        println!("  unit {u:>2} {:<20} flags {}", name(t.name), t.flags);
+        for ch in &t.channels {
+            let v = fox_anim::sample::sample(ch, frame);
+            if matches!(
+                ch.kind,
+                fox_data::mtar::SegmentType::Quat | fox_data::mtar::SegmentType::QuatDiff
+            ) {
+                let q = Quat::from_array(v);
+                let ax = |a: Vec3| {
+                    let r = q * a;
+                    format!("({:>5.2},{:>5.2},{:>5.2})", r.x, r.y, r.z)
+                };
+                println!(
+                    "      {:?} q {:>6.3?}  X->{} Y->{} Z->{}",
+                    ch.kind,
+                    v,
+                    ax(Vec3::X),
+                    ax(Vec3::Y),
+                    ax(Vec3::Z)
+                );
+            } else {
+                println!("      {:?} {:>7.3?}", ch.kind, v);
+            }
+        }
+    }
+    let human = fox_anim::HumanRig::new(&rig, &skel).map_err(anyhow::Error::msg)?;
+    let pose = human.pose(&skel, &c, frame).map_err(anyhow::Error::msg)?;
+    println!("pose (IK reach {:.2?}):", pose.ik_reach);
+    for (i, &(_, h)) in rig.bones.iter().enumerate().take(21) {
+        let s = skel.find(h).unwrap();
+        println!(
+            "  {i:>2} {:<16} pos {:>6.3?}",
+            name(h),
+            pose.positions[s].to_array()
+        );
+    }
+    let (r, t) = human.root_motion(&c, 0.0, frame);
+    println!(
+        "root motion 0..{frame}: rot {:>6.3?} trans {:>6.3?}",
+        r.to_array(),
+        t.to_array()
+    );
     Ok(())
 }
 

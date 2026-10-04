@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/fox-hash", "crates/fox-archive", "crates/fox-lua", "crates/fox-data", "crates/mgsv-cli"]
+members = ["crates/fox-hash", "crates/fox-archive", "crates/fox-lua", "crates/fox-data", "crates/fox-anim", "crates/mgsv-cli"]
 resolver = "3"
 
 [workspace.package]
@@ -13,6 +13,7 @@ fox-hash = { path = "crates/fox-hash" }
 fox-archive = { path = "crates/fox-archive" }
 fox-lua = { path = "crates/fox-lua" }
 fox-data = { path = "crates/fox-data" }
+fox-anim = { path = "crates/fox-anim" }
 flate2 = "1"
 md-5 = "0.10"
 memmap2 = "0.9"

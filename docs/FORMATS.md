@@ -67,6 +67,24 @@ types from the MTAR layout, semantics from the add-on's mapping):
 | LTOE / RTOE | LocalOrientation | quat | local rotation |
 | LF10 / RF10 | MultiLocalOrientation | 16 × quat | local rotations of 16 consecutive bone-list bones (fingers, palm) |
 
+Spaces, verified on every player clip (`mgsv anim-check`, crate
+`fox-anim`):
+
+* Fox character space: Y up, forward +Z, the character's left +X. Rest
+  rotations are identity (FMDL bones carry translations only), so
+  orientation tracks are the bones' model-space rotations directly.
+* The root unit's "diff" segments are the root's rotation/position relative
+  to the root at the clip's **last** frame (they reach identity/zero there),
+  not per-frame deltas.
+* IK target positions are in that same end-anchored space (a planted foot's
+  target stays constant while the root moves); all other tracks (waist,
+  orientations, poles) are relative to the root. Waist position is
+  `(0, height, 0)`.
+* The pole quaternion's **+X axis** is the elbow/knee bend direction. Over all
+  2,816 clips this gives mean wrist/ankle swing of 22°/18–21°; every other
+  axis gives about 60–90°. The rig's chain-plane normal `n` is the rest bend
+  plane: rest bend direction = `rest_dir × n` (elbows back, knees forward).
+
 Animals use their own rigs (`tpp_dog`, `tpp_horse`, ...); the Sahelanthropus
 rig has 72 units.
 

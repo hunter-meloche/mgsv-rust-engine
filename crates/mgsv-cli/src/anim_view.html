@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Snake Pose Viewer</title>
+<style>
+  :root { --bg: #111418; --fg: #d8dde3; --dim: #7d8794; --accent: #e0a040; --left: #4fa3e0; --right: #e05a4f; --grid: #252b33; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 13px system-ui, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px; }
+  select, button, input { background: #1c2128; color: var(--fg); border: 1px solid #333b45; border-radius: 4px; padding: 4px 8px; font: inherit; }
+  input[type=range] { padding: 0; flex: 1; min-width: 160px; }
+  #info { color: var(--dim); font-variant-numeric: tabular-nums; }
+  canvas { display: block; width: 100%; height: calc(100vh - 56px); touch-action: none; }
+</style>
+</head>
+<body>
+<header>
+  <select id="clip"></select>
+  <button id="play">Pause</button>
+  <label><input type="checkbox" id="motion" checked> root motion</label>
+  <input type="range" id="frame" min="0" value="0">
+  <span id="info"></span>
+</header>
+<canvas id="c"></canvas>
+<script>
+const DATA = /*DATA*/null;
+const cv = document.getElementById('c'), g = cv.getContext('2d');
+const sel = document.getElementById('clip'), slider = document.getElementById('frame');
+const info = document.getElementById('info'), playBtn = document.getElementById('play');
+const motion = document.getElementById('motion');
+DATA.clips.forEach((c, i) => sel.add(new Option(c.name, i)));
+let clip = 0, frame = 0, playing = true, yaw = 0.6, pitch = 0.25, last = performance.now();
+const side = DATA.bones.map(b => /^SKL_\d+_L/.test(b.name) ? 1 : /^SKL_\d+_R/.test(b.name) ? -1 : 0);
+// Body bones (SKL_0xx, fingers SKL_1xx/2xx) drawn bold; helpers thin.
+const body = DATA.bones.map(b => /^SKL_[0-2]\d\d_/.test(b.name));
+
+function setClip(i) { clip = i; frame = 0; slider.max = DATA.clips[i].frames.length - 1; }
+sel.onchange = () => setClip(+sel.value);
+slider.oninput = () => { frame = +slider.value; };
+playBtn.onclick = () => { playing = !playing; playBtn.textContent = playing ? 'Pause' : 'Play'; };
+let drag = null;
+cv.onpointerdown = e => { drag = [e.clientX, e.clientY]; cv.setPointerCapture(e.pointerId); };
+cv.onpointermove = e => { if (!drag) return; yaw += (e.clientX - drag[0]) * 0.01; pitch = Math.max(-1.4, Math.min(1.4, pitch + (e.clientY - drag[1]) * 0.01)); drag = [e.clientX, e.clientY]; };
+cv.onpointerup = () => { drag = null; };
+
+function bonePos(c, f, i) {
+  const p = c.frames[f], x = p[i * 3], y = p[i * 3 + 1], z = p[i * 3 + 2];
+  if (!motion.checked) return [x, y, z];
+  const r = c.root[f]; // [qx, qy, qz, qw, px, py, pz]
+  const [qx, qy, qz, qw] = r;
+  const tx = 2 * (qy * z - qz * y), ty = 2 * (qz * x - qx * z), tz = 2 * (qx * y - qy * x);
+  return [x + qw * tx + (qy * tz - qz * ty) + r[4], y + qw * ty + (qz * tx - qx * tz) + r[5], z + qw * tz + (qx * ty - qy * tx) + r[6]];
+}
+
+function draw() {
+  const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== w * dpr || cv.height !== h * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg'); g.fillRect(0, 0, w, h);
+  const c = DATA.clips[clip];
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const scale = Math.min(w, h) / 2.0;
+  // Camera follows the waist horizontally.
+  const ctr = bonePos(c, frame, 0);
+  const proj = ([x, y, z]) => {
+    x -= ctr[0]; z -= ctr[2];
+    const x1 = x * cy - z * sy, z1 = x * sy + z * cy;
+    const y2 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
+    const d = 6 / (6 + z2);
+    return [w / 2 - x1 * scale * d, h / 2 - (y2 - 0.9) * scale * d];
+  };
+  // Ground grid (y = 0).
+  g.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--grid'); g.lineWidth = 1;
+  const gx = Math.round(ctr[0] * 2) / 2, gz = Math.round(ctr[2] * 2) / 2;
+  for (let k = -3; k <= 3; k++) {
+    let a = proj([gx + k * 0.5, 0, gz - 1.5]), b = proj([gx + k * 0.5, 0, gz + 1.5]);
+    g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.stroke();
+    a = proj([gx - 1.5, 0, gz + k * 0.5]); b = proj([gx + 1.5, 0, gz + k * 0.5]);
+    g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.stroke();
+  }
+  const css = getComputedStyle(document.documentElement);
+  const col = s => s > 0 ? css.getPropertyValue('--left') : s < 0 ? css.getPropertyValue('--right') : css.getPropertyValue('--fg');
+  DATA.bones.forEach((b, i) => {
+    if (b.parent < 0) return;
+    const a = proj(bonePos(c, frame, b.parent)), e = proj(bonePos(c, frame, i));
+    g.strokeStyle = col(side[i]); g.globalAlpha = body[i] ? 1 : 0.35; g.lineWidth = body[i] ? 3 : 1;
+    g.beginPath(); g.moveTo(...a); g.lineTo(...e); g.stroke();
+  });
+  g.globalAlpha = 1;
+  info.textContent = `frame ${frame} / ${c.frames.length - 1}   reach ${c.reach[frame].map(v => v.toFixed(2)).join(' ')}`;
+}
+
+function tick(now) {
+  if (playing && now - last >= 1000 / 30) {
+    last = now; frame = (frame + 1) % DATA.clips[clip].frames.length; slider.value = frame;
+  }
+  draw(); requestAnimationFrame(tick);
+}
+setClip(0); requestAnimationFrame(tick);
+</script>
+</body>
+</html>

@@ -35,8 +35,9 @@ game (world, AI, missions) continues afterwards.
 - [x] `.mtar` motion archive container (clip table); `mgsv find` across packages
 - [x] `.gani` clip decoding: 7,572 clips / 10.1M keyframes, exact frame accounting (`mgsv mtar-check`)
 - [x] `.frig` rig: all 9 rigs parse; `human_finger.frig` maps the 18 player track units to bones (`mgsv frig`)
-- [ ] Two-bone / arm IK solve
-- [ ] Playback core: sample clips, apply rig units to Snake's skeleton
+- [x] Playback core (`crates/fox-anim`): sample clips, rig solve with arm/leg two-bone IK, root motion. All 2,816 player clips pose with 0 unreachable IK targets (`mgsv anim-check`); local stick-figure viewer (`mgsv anim-view`)
+- [ ] Forearm/upper-arm twist distribution (helper bones `SKL_5xx_*_HLP` follow their parents for now); Hermite interpolation flag
+- [ ] Skinned mesh: pose Snake's `.fmdl` meshes with the solved skeleton
 - [x] Bone names: 153/153 of Snake's bones, 18/18 track units, all player clip names
 - [ ] Player controller: stances (stand, crouch, prone, crawl), dive, sprint, cover; recover parameters from the binary and `.fox2` player data
 - [ ] Camera: over-the-shoulder, shoulder swap, aim zoom

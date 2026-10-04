@@ -15,6 +15,7 @@ fox-hash.workspace = true
 fox-archive.workspace = true
 fox-lua.workspace = true
 fox-data.workspace = true
+fox-anim.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 rayon.workspace = true

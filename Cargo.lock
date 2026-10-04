@@ -235,6 +235,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fox-anim"
+version = "0.1.0"
+dependencies = [
+ "fox-data",
+ "glam",
+]
+
+[[package]]
 name = "fox-archive"
 version = "0.1.0"
 dependencies = [
@@ -278,6 +286,12 @@ dependencies = [
  "typenum",
  "version_check",
 ]
+
+[[package]]
+name = "glam"
+version = "0.30.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19fc433e8437a212d1b6f1e68c7824af3aed907da60afa994e7f542d18d12aa9"
 
 [[package]]
 name = "heck"
@@ -362,6 +376,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "fox-anim",
  "fox-archive",
  "fox-data",
  "fox-hash",

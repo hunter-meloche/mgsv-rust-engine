@@ -67,9 +67,10 @@ impl SnakeAssets {
             ));
         }
         let equip_src = String::from_utf8_lossy(&read_any(vfs, EQUIP_PARAMETERS)?).into_owned();
+        let damage_src = String::from_utf8_lossy(&read_any(vfs, DAMAGE_PARAMETERS)?).into_owned();
         let weapons = WEAPONS
             .iter()
-            .map(|def| load_weapon(vfs, def, &equip_src, &skel, &rig, &clips))
+            .map(|def| load_weapon(vfs, def, &equip_src, &damage_src, &skel, &rig, &clips))
             .collect::<Result<_>>()?;
         Ok(Self {
             skel,
@@ -193,6 +194,9 @@ pub const WEAPONS: [WeaponDef; 2] = [
     },
 ];
 
+/// Damage of every attack (`TppDamage.ReloadDamageParameter`).
+pub const DAMAGE_PARAMETERS: &str = "/Assets/tpp/level_asset/damage/ParameterTables/DamageParameterTables.lua";
+
 /// The always-loaded sound bank with TPP's common sound effects.
 pub const COMMON_BANK: &str = "/Assets/tpp/sound/asset/common_bank_01.sbp";
 
@@ -226,12 +230,14 @@ pub fn load_weapon(
     vfs: &Vfs,
     def: &WeaponDef,
     equip_src: &str,
+    damage_src: &str,
     skel: &fox_anim::Skeleton,
     rig: &fox_anim::HumanRig,
     clips: &snake_core::ClipLibrary,
 ) -> Result<LoadedWeapon> {
-    let stats = snake_core::WeaponStats::from_equip_parameters(equip_src, def.id)
+    let mut stats = snake_core::WeaponStats::from_equip_parameters(equip_src, def.id)
         .map_err(anyhow::Error::msg)?;
+    stats.apply_damage_parameters(damage_src).map_err(anyhow::Error::msg)?;
     let body = fox_data::fcnp::Fcnp::parse(&read_any(vfs, SNAKE_CNP)?)?;
     let gun_cnp = fox_data::fcnp::Fcnp::parse(&read_any(vfs, def.cnp)?)?;
     let bone = |n: &str| {

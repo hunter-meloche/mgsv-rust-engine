@@ -22,6 +22,14 @@ pub struct WeaponStats {
     pub bullet_speed: f32,
     /// Bullet drop acceleration (m/s^2); 9.8 for grenades, lower for sniper rounds.
     pub bullet_gravity: f32,
+    /// The receiver's attack (`TppDamage.ATK_*`), keying the damage table.
+    pub attack: String,
+    /// Lethal damage per hit (MGSV scale: the MRS-4 does 600); 0 until
+    /// [`WeaponStats::apply_damage_parameters`].
+    pub lethal_damage: f32,
+    /// Sleep (tranquilizer) damage per hit; the WU S.Pistol does 750 and no
+    /// lethal damage.
+    pub sleep_damage: f32,
 }
 
 impl WeaponStats {
@@ -92,7 +100,35 @@ impl WeaponStats {
             bullet: strip(bullet),
             bullet_speed: num(bl, 1)? as f32,
             bullet_gravity: num(bl, 3)? as f32,
+            attack: ident(rc, 1)
+                .map(|a| a.trim_start_matches("TppDamage.").to_string())
+                .unwrap_or_default(),
+            lethal_damage: 0.0,
+            sleep_damage: 0.0,
         })
+    }
+
+    /// Fill in the damage of this weapon's attack from the
+    /// `TppDamage.ReloadDamageParameter{DamageParameter={...}}` table, whose
+    /// rows start `attack, lethal damage, ?, ?, sleep damage, ...`.
+    pub fn apply_damage_parameters(&mut self, src: &str) -> Result<(), String> {
+        let t = parse_call_argument(src, "TppDamage.ReloadDamageParameter").map_err(|e| e.to_string())?;
+        let rows = t
+            .get("DamageParameter")
+            .and_then(LuaValue::as_table)
+            .ok_or("no DamageParameter table")?;
+        let key = format!("TppDamage.{}", self.attack);
+        let row = rows.row(&key).ok_or_else(|| format!("{} not in DamageParameter", self.attack))?;
+        let num = |i: usize| -> Result<f32, String> {
+            row.items
+                .get(i)
+                .and_then(LuaValue::as_f64)
+                .map(|v| v as f32)
+                .ok_or_else(|| format!("{}: field {i} not a number", self.attack))
+        };
+        self.lethal_damage = num(1)?;
+        self.sleep_damage = num(4)?;
+        Ok(())
     }
 }
 

@@ -141,6 +141,17 @@ enum Cmd {
         skyrim: PathBuf,
         filter: String,
     },
+    /// List records of a Skyrim plugin (default Skyrim.esm) whose editor ID
+    /// contains FILTER (case-insensitive), optionally of one TYPE (e.g. ALCH).
+    SkyrimForms {
+        #[arg(long)]
+        skyrim: PathBuf,
+        #[arg(long, default_value = "Skyrim.esm")]
+        plugin: String,
+        #[arg(long = "type")]
+        kind: Option<String>,
+        filter: String,
+    },
     /// Parse and validate every .fmdl inside every .fpk.
     FmdlCheck,
     /// Find files inside packages whose path contains PATTERN; prints
@@ -589,6 +600,18 @@ fn run() -> Result<()> {
                 let Ok(bsa) = skyrim_data::Bsa::open(&b) else { continue };
                 for e in bsa.entries.iter().filter(|e| e.path.contains(&filter)) {
                     writeln!(out, "{}  ({})", e.path, b.file_name().unwrap_or_default().to_string_lossy())?;
+                }
+            }
+            Ok(())
+        }
+        Cmd::SkyrimForms { skyrim, plugin, kind, filter } => {
+            let data = std::fs::read(skyrim.join("Data").join(&plugin))?;
+            let want: Option<[u8; 4]> = kind.as_deref().and_then(|k| k.as_bytes().try_into().ok());
+            let types: Vec<&[u8; 4]> = want.iter().collect();
+            let filter = filter.to_ascii_lowercase();
+            for r in skyrim_data::esm::records(&data, &types)? {
+                if r.editor_id.to_ascii_lowercase().contains(&filter) {
+                    writeln!(out, "{} {:08X} {}", String::from_utf8_lossy(&r.kind), r.form_id, r.editor_id)?;
                 }
             }
             Ok(())

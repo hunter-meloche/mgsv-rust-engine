@@ -53,6 +53,8 @@ typedef struct {
     SnakeVec3 origin, direction;
     float speed;   /* m/s, from the game's bullet table */
     float gravity; /* m/s^2 bullet drop */
+    float lethal_damage; /* MGSV damage per hit (MRS-4: 600) */
+    float sleep_damage;  /* tranquilizer damage (WU S.Pistol: 750, no lethal) */
 } SnakeShot;
 
 /* stance: 0 stand, 1 crouch, 2 prone. gait: 0 idle, 1 walk, 2 run, 3 dash.

@@ -25,7 +25,11 @@ Snake's right hand, with MGSV's muzzle speed and drop (MRS-4 450 m/s).
 The bullet is a private in-memory copy of the vanilla Hunting Bow, Iron
 Arrow and arrow projectile records (no pick-up, `BulletDamage` in
 `snake.ini`, default 48: 4x the original 12, since it is a rifle round); the vanilla records are untouched. It still uses
-the arrow model, and hits count as Archery. Verified in game: a 9-round
+the arrow model, and hits count as Archery. Damage follows MGSV's own
+damage table (`DamageParameterTables.lua`): each weapon's lethal damage is
+scaled so the MRS-4's 600 gives `BulletDamage`; the WU S.Pistol has none
+(sleep damage 750 instead), so its darts do no damage and carry Skyrim's
+`Paralyze05` poison: verified in game, one dart drops an NPC. Verified in game: a 9-round
 burst at ~6 m took most of an NPC's health. Needs the Address Library for SKSE Plugins database
 (`versionlib-1-7-104-0.bin`) in `Data/SKSE/Plugins`.
 

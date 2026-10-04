@@ -4,6 +4,7 @@
 
 pub mod bsa;
 pub mod dds;
+pub mod esm;
 pub mod nif;
 pub mod nif_write;
 

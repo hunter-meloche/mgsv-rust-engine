@@ -86,6 +86,9 @@ pub struct Shot {
     pub direction: Vec3,
     pub speed: f32,
     pub gravity: f32,
+    /// MGSV damage per hit (see `WeaponStats`): lethal and sleep.
+    pub lethal_damage: f32,
+    pub sleep_damage: f32,
 }
 
 /// A carried weapon and its runtime state.
@@ -709,6 +712,8 @@ impl Controller {
                 direction,
                 speed: w.stats.bullet_speed,
                 gravity: w.stats.bullet_gravity,
+                lethal_damage: w.stats.lethal_damage,
+                sleep_damage: w.stats.sleep_damage,
             })
             .collect()
     }

@@ -425,6 +425,8 @@ constexpr size_t kProjData = 0x80;         // BGSProjectile BGSProjectileData
 constexpr size_t kSizeProjectile = 0x138, kSizeWeapon = 0x220, kSizeAmmo = 0x128;
 constexpr size_t kCameraRoot = 0x20;       // TESCamera::cameraRoot (NiNode*)
 constexpr uint8_t kTypeWeapon = 0x29, kTypeAmmo = 0x2A, kTypeProjectile = 0x32, kTypeCell = 0x3C;
+constexpr uint8_t kTypeAlchemy = 0x2E;
+constexpr uint32_t kParalysisPoison = 0x00074A3B;  // Skyrim.esm ALCH Paralyze05
 
 struct LaunchData {
     void* vtable;
@@ -478,12 +480,15 @@ struct Firing {
     void* weapon = nullptr;   // bullet copies
     void* ammo = nullptr;
     void* projectile = nullptr;
+    void* tranq = nullptr;    // paralysis poison carried by sleep darts
+    int damage = 48;          // Skyrim damage of 600 MGSV lethal damage (an MRS-4 round)
     size_t cellOffset = 0;
     bool ready = false;
 } g_fire;
 
 struct PendingShot {
     float speed, gravity;  // m/s, m/s^2
+    float lethal, sleep;   // MGSV damage per hit
 };
 
 SKSETaskInterface* g_tasks = nullptr;
@@ -579,8 +584,17 @@ bool SetUpFiring() {
     auto& bullet = At<ProjectileData>(g_fire.projectile, kProjData);
     bullet.flags = (bullet.flags & ~kProjCanPickUp) | kProjSupersonic | kProjNoAimCorrection;
     bullet.range = 100000.0f;  // ~1.4 km
+    // BulletDamage is the MRS-4's damage; other weapons scale by their MGSV
+    // lethal damage (MRS-4: 600). Tranquilizer rounds (no lethal damage,
+    // sleep damage instead, e.g. the WU S.Pistol) do no damage and carry
+    // Skyrim's strongest paralysis poison (Paralyze05), which drops the
+    // target like MGSV's sleep darts.
     int damage = IniInt(L"BulletDamage", 48);
-    At<uint16_t>(g_fire.weapon, kWeapDamage) = static_cast<uint16_t>(std::clamp(damage, 0, 65535));
+    g_fire.damage = std::clamp(damage, 0, 65535);
+    At<uint16_t>(g_fire.weapon, kWeapDamage) = static_cast<uint16_t>(g_fire.damage);
+    void* tranq = lookup(kParalysisPoison);
+    g_fire.tranq = FormType(tranq) == kTypeAlchemy ? tranq : nullptr;
+    Log("firing: paralysis poison %p (type %02X)%s", tranq, FormType(tranq), g_fire.tranq ? "" : " -- sleep darts unavailable");
     At<float>(g_fire.ammo, kAmmoDamage) = 0.0f;
     At<void*>(g_fire.ammo, kAmmoProjectile) = g_fire.projectile;
     Log("firing: bullet records ready (damage %d, no pick-up)", damage);
@@ -669,6 +683,8 @@ bool LaunchOne(void* player, const PendingShot& shot) {
         auto& bullet = At<ProjectileData>(g_fire.projectile, kProjData);
         bullet.speed = shot.speed * 70.0f;     // m/s -> units/s
         bullet.gravity = shot.gravity / 9.81f;  // m/s^2 -> multiple of g
+        float scaled = g_fire.damage * shot.lethal / 600.0f;
+        At<uint16_t>(g_fire.weapon, kWeapDamage) = static_cast<uint16_t>(std::clamp(scaled + 0.5f, 0.0f, 65535.0f));
 
         LaunchData d{};
         d.vtable = g_fire.launchDataVtable;
@@ -677,6 +693,7 @@ bool LaunchOne(void* player, const PendingShot& shot) {
         d.shooter = player;
         d.weaponSource = g_fire.weapon;
         d.ammoSource = g_fire.ammo;
+        if (shot.sleep > 0 && shot.lethal <= 0) d.poison = g_fire.tranq;
         d.angleZ = std::atan2(dir[0], dir[1]);
         d.angleX = -std::asin((std::max)(-1.0f, (std::min)(1.0f, dir[2])));
         d.parentCell = cell;
@@ -727,7 +744,8 @@ void QueueShots(const SnakeShot* shots, uint32_t n) {
     {
         std::lock_guard<std::mutex> lock(g_shotMutex);
         first = g_pendingShots.empty();
-        for (uint32_t i = 0; i < n; ++i) g_pendingShots.push_back({shots[i].speed, shots[i].gravity});
+        for (uint32_t i = 0; i < n; ++i) g_pendingShots.push_back(
+                {shots[i].speed, shots[i].gravity, shots[i].lethal_damage, shots[i].sleep_damage});
     }
     if (first) g_tasks->AddTask(new ShotTask());
 }

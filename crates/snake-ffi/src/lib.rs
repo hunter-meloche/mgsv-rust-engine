@@ -135,6 +135,9 @@ pub struct SnakeShot {
     pub direction: SnakeVec3,
     pub speed: f32,
     pub gravity: f32,
+    /// MGSV damage per hit: lethal (MRS-4: 600) and sleep (WU S.Pistol: 750).
+    pub lethal_damage: f32,
+    pub sleep_damage: f32,
 }
 
 /// Stance: 0 stand, 1 crouch, 2 prone. Gait: 0 idle, 1 walk, 2 run, 3 dash.
@@ -469,6 +472,8 @@ pub unsafe extern "C" fn snake_player_take_shots(
                     direction: s.direction.into(),
                     speed: s.speed,
                     gravity: s.gravity,
+                    lethal_damage: s.lethal_damage,
+                    sleep_damage: s.sleep_damage,
                 }
             };
         }

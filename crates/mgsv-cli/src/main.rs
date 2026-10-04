@@ -697,6 +697,8 @@ fn bone_names(vfs: &Vfs) -> Result<()> {
 
 const HUMAN_RIG: &str =
     "/Assets/tpp/pack/mission2/common/mis_com_chico_gz.fpk:/Assets/tpp/rig/frig/human_finger.frig";
+const SNAKE_ARM: &str = "/Assets/tpp/pack/player/fova/plfova_sna0_arm0_v00.fpk:/Assets/tpp/chara/sna/Scenes/sna0_arm0_cov.fmdl";
+const SNAKE_FACE: &str = "/Assets/tpp/pack/player/fova/plfova_sna0_face0_v00.fpk:/Assets/tpp/chara/sna/Scenes/sna0_face0_cov.fmdl";
 const SNAKE_BODY: &str = "/Assets/tpp/pack/player/parts/plparts_normal.fpk:/Assets/tpp/chara/sna/Scenes/sna0_main0_def.fmdl";
 
 fn snake_rig(vfs: &Vfs) -> Result<(fox_anim::Skeleton, fox_anim::HumanRig)> {
@@ -758,6 +760,48 @@ fn anim_view(vfs: &Vfs, path: &str, filters: &[String], out: Option<PathBuf>) ->
             if i > 0 { "," } else { "" }
         )?;
     }
+    json.push_str("],\"meshes\":[");
+    let mut first_mesh = true;
+    for (tint, part) in [SNAKE_BODY, SNAKE_FACE, SNAKE_ARM].iter().enumerate() {
+        let model = fox_data::Fmdl::parse(&read_any(vfs, part)?)?;
+        let skinned = fox_anim::SkinnedModel::bind(&model, &skel).map_err(anyhow::Error::msg)?;
+        let (mut lo, mut hi) = (
+            fox_anim::Vec3::splat(f32::MAX),
+            fox_anim::Vec3::splat(f32::MIN),
+        );
+        for m in &skinned.meshes {
+            let mut inf = Vec::new();
+            for (v, i) in m.rest_positions.iter().zip(&m.influences) {
+                lo = lo.min(*v);
+                hi = hi.max(*v);
+                inf.push(i.len().to_string());
+                for x in i {
+                    inf.push(format!(
+                        "{},{:.4},{:.4},{:.4},{:.4}",
+                        x.bone, x.weight, x.offset.x, x.offset.y, x.offset.z
+                    ));
+                }
+            }
+            let idx: Vec<String> = m.indices.iter().map(u16::to_string).collect();
+            write!(
+                json,
+                "{}{{\"n\":{},\"tint\":{tint},\"inf\":[{}],\"idx\":[{}]}}",
+                if first_mesh { "" } else { "," },
+                m.rest_positions.len(),
+                inf.join(","),
+                idx.join(",")
+            )?;
+            first_mesh = false;
+        }
+        println!(
+            "  {} meshes, {} bones riding on an ancestor, rest bounds {:.2?}..{:.2?}  {}",
+            skinned.meshes.len(),
+            skinned.unbound_bones,
+            lo.to_array(),
+            hi.to_array(),
+            part.rsplit('/').next().unwrap_or(part)
+        );
+    }
     json.push_str("],\"clips\":[");
     let mut first_clip = true;
     for &i in &picked {
@@ -768,7 +812,8 @@ fn anim_view(vfs: &Vfs, path: &str, filters: &[String], out: Option<PathBuf>) ->
             .next()
             .unwrap_or(&name)
             .trim_end_matches(".gani");
-        let (mut frames, mut roots, mut reach) = (Vec::new(), Vec::new(), Vec::new());
+        let (mut frames, mut rots, mut roots, mut reach) =
+            (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         for f in 0..=c.frame_count {
             let pose = rig.pose(&skel, &c, f as f32).map_err(anyhow::Error::msg)?;
             let p: Vec<String> = pose
@@ -778,6 +823,13 @@ fn anim_view(vfs: &Vfs, path: &str, filters: &[String], out: Option<PathBuf>) ->
                 .map(|x| format!("{x:.3}"))
                 .collect();
             frames.push(format!("[{}]", p.join(",")));
+            let q: Vec<String> = pose
+                .rotations
+                .iter()
+                .flat_map(|q| q.to_array())
+                .map(|x| format!("{x:.4}"))
+                .collect();
+            rots.push(format!("[{}]", q.join(",")));
             let (q, t) = rig.root(&c, f as f32);
             roots.push(format!(
                 "[{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.3}]",
@@ -788,9 +840,10 @@ fn anim_view(vfs: &Vfs, path: &str, filters: &[String], out: Option<PathBuf>) ->
         }
         write!(
             json,
-            "{}{{\"name\":\"{short}\",\"frames\":[{}],\"root\":[{}],\"reach\":[{}]}}",
+            "{}{{\"name\":\"{short}\",\"frames\":[{}],\"rots\":[{}],\"root\":[{}],\"reach\":[{}]}}",
             if first_clip { "" } else { "," },
             frames.join(","),
+            rots.join(","),
             roots.join(","),
             reach.join(",")
         )?;

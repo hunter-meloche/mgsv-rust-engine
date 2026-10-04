@@ -5,11 +5,14 @@
 //! * [`sample`]: evaluate a decoded `.gani` channel at any time.
 //! * [`HumanRig`]: the `human_finger.frig` rig solve that turns the 18 player
 //!   track units into a skeleton pose (FK units plus arm/leg IK).
+//! * [`SkinnedModel`]: linear-blend skinning of `.fmdl` meshes by a pose.
 
 pub mod rig;
 pub mod sample;
 pub mod skeleton;
+pub mod skin;
 
 pub use glam::{Quat, Vec3};
 pub use rig::{HumanRig, Pose};
 pub use skeleton::Skeleton;
+pub use skin::SkinnedModel;

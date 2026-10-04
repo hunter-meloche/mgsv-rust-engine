@@ -34,6 +34,17 @@ pub struct Pose {
     pub ik_reach: Vec<f32>,
 }
 
+impl Pose {
+    /// The skeleton's rest pose.
+    pub fn rest(skel: &Skeleton) -> Self {
+        Self {
+            rotations: vec![Quat::IDENTITY; skel.bones.len()],
+            positions: skel.bones.iter().map(|b| b.rest_model).collect(),
+            ik_reach: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 enum Drive {
     /// Rotation (and optionally position) in character space.

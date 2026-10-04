@@ -19,6 +19,8 @@
   <select id="clip"></select>
   <button id="play">Pause</button>
   <label><input type="checkbox" id="motion" checked> root motion</label>
+  <label><input type="checkbox" id="mesh" checked> mesh</label>
+  <label><input type="checkbox" id="bones"> bones</label>
   <input type="range" id="frame" min="0" value="0">
   <span id="info"></span>
 </header>
@@ -44,51 +46,116 @@ cv.onpointerdown = e => { drag = [e.clientX, e.clientY]; cv.setPointerCapture(e.
 cv.onpointermove = e => { if (!drag) return; yaw += (e.clientX - drag[0]) * 0.01; pitch = Math.max(-1.4, Math.min(1.4, pitch + (e.clientY - drag[1]) * 0.01)); drag = [e.clientX, e.clientY]; };
 cv.onpointerup = () => { drag = null; };
 
-function bonePos(c, f, i) {
-  const p = c.frames[f], x = p[i * 3], y = p[i * 3 + 1], z = p[i * 3 + 2];
-  if (!motion.checked) return [x, y, z];
-  const r = c.root[f]; // [qx, qy, qz, qw, px, py, pz]
-  const [qx, qy, qz, qw] = r;
-  const tx = 2 * (qy * z - qz * y), ty = 2 * (qz * x - qx * z), tz = 2 * (qx * y - qy * x);
-  return [x + qw * tx + (qy * tz - qz * ty) + r[4], y + qw * ty + (qz * tx - qx * tz) + r[5], z + qw * tz + (qx * ty - qy * tx) + r[6]];
+// Quaternion helpers ([x, y, z, w]).
+const qmul = (a, b) => [
+  a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+  a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+  a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+  a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]];
+const qrot = (q, [x, y, z]) => {
+  const tx = 2 * (q[1] * z - q[2] * y), ty = 2 * (q[2] * x - q[0] * z), tz = 2 * (q[0] * y - q[1] * x);
+  return [x + q[3] * tx + (q[1] * tz - q[2] * ty), y + q[3] * ty + (q[2] * tx - q[0] * tz), z + q[3] * tz + (q[0] * ty - q[1] * tx)];
+};
+
+// Bone transforms for a frame, in display space (anchor space with root motion,
+// root space without): column-major 3x3 rotation matrices and positions.
+function boneXf(c, f) {
+  const n = DATA.bones.length, M = new Float32Array(n * 9), P = new Float32Array(n * 3);
+  const r = motion.checked ? c.root[f] : [0, 0, 0, 1, 0, 0, 0], rq = r.slice(0, 4);
+  for (let i = 0; i < n; i++) {
+    const p = qrot(rq, c.frames[f].slice(i * 3, i * 3 + 3));
+    P[i * 3] = p[0] + r[4]; P[i * 3 + 1] = p[1] + r[5]; P[i * 3 + 2] = p[2] + r[6];
+    const [x, y, z, w] = qmul(rq, c.rots[f].slice(i * 4, i * 4 + 4));
+    M.set([1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w),
+           2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w),
+           2 * (x * z + y * w), 2 * (y * z - x * w), 1 - 2 * (x * x + y * y)], i * 9);
+  }
+  return { M, P };
 }
+
+// Linear-blend skinning, the same math as fox_anim::SkinnedModel::skin.
+function skin(mesh, xf) {
+  const out = new Float32Array(mesh.n * 3), inf = mesh.inf, M = xf.M, P = xf.P;
+  for (let v = 0, k = 0; v < mesh.n; v++) {
+    let x = 0, y = 0, z = 0;
+    const cnt = inf[k++];
+    for (let j = 0; j < cnt; j++, k += 5) {
+      const b = inf[k], wt = inf[k + 1], ox = inf[k + 2], oy = inf[k + 3], oz = inf[k + 4], m = b * 9;
+      x += wt * (M[m] * ox + M[m + 3] * oy + M[m + 6] * oz + P[b * 3]);
+      y += wt * (M[m + 1] * ox + M[m + 4] * oy + M[m + 7] * oz + P[b * 3 + 1]);
+      z += wt * (M[m + 2] * ox + M[m + 5] * oy + M[m + 8] * oz + P[b * 3 + 2]);
+    }
+    out[v * 3] = x; out[v * 3 + 1] = y; out[v * 3 + 2] = z;
+  }
+  return out;
+}
+
+const showMesh = document.getElementById('mesh'), showBones = document.getElementById('bones');
+const tints = [[150, 145, 120], [205, 165, 140], [120, 120, 125]];
 
 function draw() {
   const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
   if (cv.width !== w * dpr || cv.height !== h * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg'); g.fillRect(0, 0, w, h);
-  const c = DATA.clips[clip];
+  const css = getComputedStyle(document.documentElement);
+  g.fillStyle = css.getPropertyValue('--bg'); g.fillRect(0, 0, w, h);
+  const c = DATA.clips[clip], xf = boneXf(c, frame);
   const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
   const scale = Math.min(w, h) / 2.0;
   // Camera follows the waist horizontally.
-  const ctr = bonePos(c, frame, 0);
-  const proj = ([x, y, z]) => {
+  const ctr = [xf.P[0], 0, xf.P[2]];
+  const proj = (x, y, z) => {
     x -= ctr[0]; z -= ctr[2];
     const x1 = x * cy - z * sy, z1 = x * sy + z * cy;
     const y2 = y * cp - z1 * sp, z2 = y * sp + z1 * cp;
     const d = 6 / (6 + z2);
-    return [w / 2 - x1 * scale * d, h / 2 - (y2 - 0.9) * scale * d];
+    return [w / 2 - x1 * scale * d, h / 2 - (y2 - 0.9) * scale * d, z2];
   };
   // Ground grid (y = 0).
-  g.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--grid'); g.lineWidth = 1;
+  g.strokeStyle = css.getPropertyValue('--grid'); g.lineWidth = 1;
   const gx = Math.round(ctr[0] * 2) / 2, gz = Math.round(ctr[2] * 2) / 2;
+  const line = (a, b) => { g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); };
   for (let k = -3; k <= 3; k++) {
-    let a = proj([gx + k * 0.5, 0, gz - 1.5]), b = proj([gx + k * 0.5, 0, gz + 1.5]);
-    g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.stroke();
-    a = proj([gx - 1.5, 0, gz + k * 0.5]); b = proj([gx + 1.5, 0, gz + k * 0.5]);
-    g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.stroke();
+    line(proj(gx + k * 0.5, 0, gz - 1.5), proj(gx + k * 0.5, 0, gz + 1.5));
+    line(proj(gx - 1.5, 0, gz + k * 0.5), proj(gx + 1.5, 0, gz + k * 0.5));
   }
-  const css = getComputedStyle(document.documentElement);
-  const col = s => s > 0 ? css.getPropertyValue('--left') : s < 0 ? css.getPropertyValue('--right') : css.getPropertyValue('--fg');
-  DATA.bones.forEach((b, i) => {
-    if (b.parent < 0) return;
-    const a = proj(bonePos(c, frame, b.parent)), e = proj(bonePos(c, frame, i));
-    g.strokeStyle = col(side[i]); g.globalAlpha = body[i] ? 1 : 0.35; g.lineWidth = body[i] ? 3 : 1;
-    g.beginPath(); g.moveTo(...a); g.lineTo(...e); g.stroke();
-  });
-  g.globalAlpha = 1;
-  info.textContent = `frame ${frame} / ${c.frames.length - 1}   reach ${c.reach[frame].map(v => v.toFixed(2)).join(' ')}`;
+  if (showMesh.checked) {
+    // Light from the camera's upper left, turned into world space.
+    const L0 = [0.4, 0.7, -0.6], L = [L0[0] * cy + L0[2] * sy, L0[1], -L0[0] * sy + L0[2] * cy];
+    const tris = [];
+    for (const mesh of DATA.meshes) {
+      const v = skin(mesh, xf), sv = new Float32Array(mesh.n * 3);
+      for (let i = 0; i < mesh.n; i++) sv.set(proj(v[i * 3], v[i * 3 + 1], v[i * 3 + 2]), i * 3);
+      const idx = mesh.idx, tint = tints[mesh.tint];
+      for (let t = 0; t < idx.length; t += 3) {
+        const a = idx[t] * 3, b = idx[t + 1] * 3, d = idx[t + 2] * 3;
+        const ux = v[b] - v[a], uy = v[b + 1] - v[a + 1], uz = v[b + 2] - v[a + 2];
+        const wx = v[d] - v[a], wy = v[d + 1] - v[a + 1], wz = v[d + 2] - v[a + 2];
+        const nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+        const nl = Math.hypot(nx, ny, nz) || 1;
+        const lit = 0.3 + 0.7 * Math.abs((nx * L[0] + ny * L[1] + nz * L[2]) / nl);
+        tris.push([sv[a + 2] + sv[b + 2] + sv[d + 2], sv[a], sv[a + 1], sv[b], sv[b + 1], sv[d], sv[d + 1],
+          'rgb(' + (tint[0] * lit | 0) + ',' + (tint[1] * lit | 0) + ',' + (tint[2] * lit | 0) + ')']);
+      }
+    }
+    tris.sort((p, q) => q[0] - p[0]);
+    g.lineWidth = 0.5;
+    for (const t of tris) {
+      g.fillStyle = t[7]; g.strokeStyle = t[7];
+      g.beginPath(); g.moveTo(t[1], t[2]); g.lineTo(t[3], t[4]); g.lineTo(t[5], t[6]); g.closePath(); g.fill(); g.stroke();
+    }
+  }
+  if (showBones.checked) {
+    const col = s => s > 0 ? css.getPropertyValue('--left') : s < 0 ? css.getPropertyValue('--right') : css.getPropertyValue('--fg');
+    const bp = i => proj(xf.P[i * 3], xf.P[i * 3 + 1], xf.P[i * 3 + 2]);
+    DATA.bones.forEach((b, i) => {
+      if (b.parent < 0) return;
+      g.strokeStyle = col(side[i]); g.globalAlpha = body[i] ? 1 : 0.35; g.lineWidth = body[i] ? 3 : 1;
+      line(bp(b.parent), bp(i));
+    });
+    g.globalAlpha = 1;
+  }
+  info.textContent = 'frame ' + frame + ' / ' + (c.frames.length - 1) + '   reach ' + c.reach[frame].map(v => v.toFixed(2)).join(' ');
 }
 
 function tick(now) {

@@ -9,16 +9,22 @@ Snake's animation drives the player's skeleton (retargeted onto Skyrim's
 bones). Skyrim still moves the character, and Snake follows Skyrim's own
 state: walk / run / sprint from the player's movement flags, **crouch while
 sneaking** (Skyrim's sneak key), **X** toggles prone, the **right mouse
-button** raises the weapon (aim pitch from the player's look pitch).
+button** raises the weapon. While aiming, the player's (empty) hands are
+drawn, so the actor turns with the camera and strafes like Snake's aim walk;
+aim pitch follows the camera. Skyrim's own attack/block input is off in
+Snake mode.
 **F10** cycles debug write modes (2 = full, default; 1 = local only; 0 = off).
 
 Firing: while aiming, the left mouse button fires Snake's weapon. Snake's
 controller decides when shots happen (MRS-4: 720 rpm full auto, 30-round
 magazine, reload, recoil); each shot is launched as a real Skyrim projectile
 on the main thread (SKSE task interface), so Skyrim handles hits, damage and
-reactions. For now the projectile, speed and damage come from the vanilla
-Hunting Bow + Iron Arrow (shots can be picked up as arrows); a dedicated
-bullet record is next. Needs the Address Library for SKSE Plugins database
+reactions. Shots fly along the crosshair ray, starting at the depth of
+Snake's right hand, with MGSV's muzzle speed and drop (MRS-4 450 m/s).
+The bullet is a private in-memory copy of the vanilla Hunting Bow, Iron
+Arrow and arrow projectile records (no pick-up, `BulletDamage` in
+`snake.ini`, default 12); the vanilla records are untouched. It still uses
+the arrow model. Needs the Address Library for SKSE Plugins database
 (`versionlib-1-7-104-0.bin`) in `Data/SKSE/Plugins`.
 
 How it runs: Snake's controller and the retarget run on the plugin's own
@@ -28,7 +34,8 @@ never calls into `snake.dll` (calling Rust from the job threads froze the
 game). If anything faults, Snake mode switches itself off.
 
 Testing hooks: `Data/SKSE/Plugins/snake_control.txt` (`enabled=1`, `mode=2`,
-`stance=prone`, `move=run`, `aim=1`, `fire=1`) drives the plugin without key presses.
+`stance=prone`, `move=run`, `aim=1`, `fire=1`, `draw=0` to keep hands
+sheathed, `dump=1` to log the camera) drives the plugin without key presses.
 Log: `Documents/My Games/Skyrim Special Edition/SKSE/SnakeSKSE.log`.
 
 Bones: 25 of the 61 retargeted bones exist in the third-person skeleton.

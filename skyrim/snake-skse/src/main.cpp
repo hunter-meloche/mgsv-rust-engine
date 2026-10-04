@@ -16,7 +16,9 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <share.h>
+#include <malloc.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdarg>
@@ -382,22 +384,38 @@ void CheckLayout() {
 // ---- firing (Skyrim projectiles) -------------------------------------------------
 //
 // Snake's controller decides when a shot happens (rate of fire, magazine,
-// reload, recoil). Each shot becomes a real Skyrim projectile launched on the
-// main thread through SKSE's task interface, so Skyrim handles hits against
-// the world, damage, kills and NPC reactions. For now the projectile, damage
-// and speed come from a vanilla bow + arrow (Hunting Bow 0x13985, Iron Arrow
-// 0x1397D); a dedicated bullet record comes later.
+// reload) and what the bullet does (muzzle speed, drop). Each shot becomes a
+// real Skyrim projectile launched on the main thread through SKSE's task
+// interface, so Skyrim handles hits against the world, damage, kills and NPC
+// reactions.
 //
-// Addresses: Projectile::Launch and the LaunchData vtable from the Address
-// Library database (versionlib-1-7-104-0.bin: flat u32 offset table indexed
-// by ID after a 0x60-byte header); LookupFormByID from SKSE 2.3.1 (0x1E5860).
+// The bullet is a private in-memory copy of vanilla records (Hunting Bow
+// 0x13985, Iron Arrow 0x1397D and its projectile): the copies get MGSV's
+// muzzle speed and drop per shot, a configurable damage (snake.ini
+// BulletDamage), no pick-up, and are never registered with the game, so the
+// vanilla bow and arrows are untouched.
+//
+// Shots fly along the camera's crosshair ray, starting at the depth of
+// Snake's right hand.
+//
+// Addresses: Projectile::Launch, the LaunchData vtable and the PlayerCamera
+// singleton from the Address Library database (versionlib-1-7-104-0.bin:
+// flat u32 offset table indexed by ID after a 0x60-byte header);
+// LookupFormByID from SKSE 2.3.1 (0x1E5860).
 
 constexpr uint32_t kIdProjectileLaunch = 44108;   // Projectile::Launch (AE id)
 constexpr uint32_t kIdLaunchDataVtable = 187478;  // VTABLE_Projectile__LaunchData (AE id)
+constexpr uint32_t kIdPlayerCamera = 400802;      // PlayerCamera* singleton (AE id)
+constexpr uint32_t kIdAttackBlockVtable = 208719; // VTABLE_AttackBlockHandler (AE id)
 constexpr uintptr_t kLookupFormByID = 0x001E5860;
 constexpr uint32_t kHuntingBow = 0x00013985, kIronArrow = 0x0001397D;
 constexpr size_t kFormType = 0x1A;
 constexpr size_t kAmmoProjectile = 0x110;  // TESAmmo AMMO_DATA.projectile
+constexpr size_t kAmmoDamage = 0x11C;      // TESAmmo AMMO_DATA.damage (float)
+constexpr size_t kWeapDamage = 0xC8;       // TESObjectWEAP TESAttackDamageForm.attackDamage (u16)
+constexpr size_t kProjData = 0x80;         // BGSProjectile BGSProjectileData
+constexpr size_t kSizeProjectile = 0x108, kSizeWeapon = 0x220, kSizeAmmo = 0x128;
+constexpr size_t kCameraRoot = 0x20;       // TESCamera::cameraRoot (NiNode*)
 constexpr uint8_t kTypeWeapon = 0x29, kTypeAmmo = 0x2A, kTypeProjectile = 0x32, kTypeCell = 0x3C;
 
 struct LaunchData {
@@ -429,21 +447,39 @@ struct LaunchData {
 };
 static_assert(sizeof(LaunchData) == 0xA8, "LaunchData layout");
 
+// BGSProjectileData (DATA), the part the bullet changes.
+struct ProjectileData {
+    uint16_t flags;  // 00
+    uint16_t types;  // 02
+    float gravity;   // 04 (multiple of world gravity)
+    float speed;     // 08 (units/s)
+    float range;     // 0C (units)
+};
+constexpr uint16_t kProjCanPickUp = 1 << 6, kProjSupersonic = 1 << 7, kProjNoAimCorrection = 1 << 10;
+constexpr uint16_t kProjTypeArrow = 1 << 6;
+
 using LaunchFn = uint32_t* (*)(uint32_t* handle, LaunchData* data);
 using LookupFn = void* (*)(uint32_t formId);
 
 struct Firing {
     LaunchFn launch = nullptr;
     void* launchDataVtable = nullptr;
-    void* bow = nullptr;
-    void* arrow = nullptr;
+    void** camera = nullptr;  // &PlayerCamera singleton
+    void** attackBlockVtable = nullptr;
+    void* weapon = nullptr;   // bullet copies
+    void* ammo = nullptr;
     void* projectile = nullptr;
     size_t cellOffset = 0;
     bool ready = false;
 } g_fire;
 
+struct PendingShot {
+    float speed, gravity;  // m/s, m/s^2
+};
+
 SKSETaskInterface* g_tasks = nullptr;
-std::atomic<int> g_pendingShots{0};
+std::mutex g_shotMutex;
+std::vector<PendingShot> g_pendingShots;
 std::atomic<int> g_shotsFired{0};
 
 uint8_t FormType(void* form) { return form && Readable(form, 0x20) ? At<uint8_t>(form, kFormType) : 0; }
@@ -471,7 +507,7 @@ bool LoadAddressLibrary() {
         return off;
     };
     uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
-    uintptr_t launch = read(kIdProjectileLaunch), vt = read(kIdLaunchDataVtable);
+    uintptr_t launch = read(kIdProjectileLaunch), vt = read(kIdLaunchDataVtable), cam = read(kIdPlayerCamera), ab = read(kIdAttackBlockVtable);
     fclose(f);
     if (!launch || !vt) {
         Log("firing: ids missing from the database");
@@ -479,23 +515,64 @@ bool LoadAddressLibrary() {
     }
     g_fire.launch = reinterpret_cast<LaunchFn>(base + launch);
     g_fire.launchDataVtable = reinterpret_cast<void*>(base + vt);
-    Log("firing: %u ids; Projectile::Launch +%llX, LaunchData vtable +%llX", count, (unsigned long long)launch,
-        (unsigned long long)vt);
+    g_fire.camera = cam ? reinterpret_cast<void**>(base + cam) : nullptr;
+    g_fire.attackBlockVtable = ab ? reinterpret_cast<void**>(base + ab) : nullptr;
+    Log("firing: %u ids; Projectile::Launch +%llX, LaunchData vtable +%llX, PlayerCamera +%llX", count,
+        (unsigned long long)launch, (unsigned long long)vt, (unsigned long long)cam);
     return true;
 }
 
+// A private copy of a form: same vtable and data, never registered with the
+// game (no form ID lookup finds it, nothing frees it).
+void* CopyForm(void* src, size_t size) {
+    if (!Readable(src, size)) return nullptr;
+    void* p = _aligned_malloc(size, 16);
+    memcpy(p, src, size);
+    return p;
+}
+
+int IniInt(const wchar_t* key, int fallback) {
+    std::wstring ini = PluginDir() + L"\\snake.ini";
+    return GetPrivateProfileIntW(L"Snake", key, fallback, ini.c_str());
+}
+
 bool SetUpFiring() {
-    if (!LoadAddressLibrary()) return false;
     auto lookup = reinterpret_cast<LookupFn>(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)) + kLookupFormByID);
-    g_fire.bow = lookup(kHuntingBow);
-    g_fire.arrow = lookup(kIronArrow);
-    g_fire.projectile = g_fire.arrow && Readable(g_fire.arrow, kAmmoProjectile + 8) ? At<void*>(g_fire.arrow, kAmmoProjectile) : nullptr;
-    Log("firing: bow %p (type %02X), arrow %p (type %02X), projectile %p (type %02X)", g_fire.bow, FormType(g_fire.bow),
-        g_fire.arrow, FormType(g_fire.arrow), g_fire.projectile, FormType(g_fire.projectile));
-    if (FormType(g_fire.bow) != kTypeWeapon || FormType(g_fire.arrow) != kTypeAmmo || FormType(g_fire.projectile) != kTypeProjectile) {
+    void* bow = lookup(kHuntingBow);
+    void* arrow = lookup(kIronArrow);
+    void* proj = arrow && Readable(arrow, kAmmoProjectile + 8) ? At<void*>(arrow, kAmmoProjectile) : nullptr;
+    Log("firing: bow %p (type %02X), arrow %p (type %02X), projectile %p (type %02X)", bow, FormType(bow), arrow,
+        FormType(arrow), proj, FormType(proj));
+    if (FormType(bow) != kTypeWeapon || FormType(arrow) != kTypeAmmo || FormType(proj) != kTypeProjectile) {
         Log("firing: form types do not match; firing disabled");
         return false;
     }
+    auto& pd = At<ProjectileData>(proj, kProjData);
+    uint16_t bowDamage = At<uint16_t>(bow, kWeapDamage);
+    float arrowDamage = At<float>(arrow, kAmmoDamage);
+    Log("firing: vanilla bow damage %u, arrow damage %.1f; projectile flags %04X types %04X gravity %.2f speed %.0f range %.0f",
+        bowDamage, arrowDamage, pd.flags, pd.types, pd.gravity, pd.speed, pd.range);
+    // Expected vanilla values (Hunting Bow 7, Iron Arrow 8, arrow type):
+    // anything else means the layout differs on this runtime.
+    if (bowDamage != 7 || std::fabs(arrowDamage - 8.0f) > 0.01f || pd.types != kProjTypeArrow) {
+        Log("firing: unexpected record layout; firing disabled");
+        return false;
+    }
+    g_fire.projectile = CopyForm(proj, kSizeProjectile);
+    g_fire.weapon = CopyForm(bow, kSizeWeapon);
+    g_fire.ammo = CopyForm(arrow, kSizeAmmo);
+    if (!g_fire.projectile || !g_fire.weapon || !g_fire.ammo) {
+        Log("firing: could not copy the records");
+        return false;
+    }
+    auto& bullet = At<ProjectileData>(g_fire.projectile, kProjData);
+    bullet.flags = (bullet.flags & ~kProjCanPickUp) | kProjSupersonic | kProjNoAimCorrection;
+    bullet.range = 100000.0f;  // ~1.4 km
+    int damage = IniInt(L"BulletDamage", 12);
+    At<uint16_t>(g_fire.weapon, kWeapDamage) = static_cast<uint16_t>(std::clamp(damage, 0, 65535));
+    At<float>(g_fire.ammo, kAmmoDamage) = 0.0f;
+    At<void*>(g_fire.ammo, kAmmoProjectile) = g_fire.projectile;
+    Log("firing: bullet records ready (damage %d, no pick-up)", damage);
     return true;
 }
 
@@ -517,31 +594,80 @@ void* PlayerCell(void* player) {
     return At<void*>(player, g_fire.cellOffset);
 }
 
-bool LaunchOne(void* player) {
+// The camera's position and view direction (unit), from the camera root's
+// world transform: Bethesda's forward axis is local +Y.
+bool CameraAim(float* pos, float* dir) {
+    if (!g_fire.camera) return false;
+    void* cam = *g_fire.camera;
+    if (!cam || !Readable(cam, kCameraRoot + 8)) return false;
+    void* root = At<void*>(cam, kCameraRoot);
+    if (!root || !Readable(root, kWorldScale + 4)) return false;
+    const float* m = &At<float>(root, kWorldRot);
+    memcpy(pos, &At<float>(root, kWorldPos), 3 * sizeof(float));
+    float d[3] = {m[1], m[4], m[7]};
+    float len = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    if (!(len > 0.5f && len < 2.0f)) return false;
+    for (int k = 0; k < 3; ++k) dir[k] = d[k] / len;
+    return true;
+}
+
+// Diagnostics: the camera singleton's pointer fields that look like scene
+// nodes, with their world position and axes, next to the player's.
+void DumpCamera(void* player) {
+    __try {
+        const float* a = &At<float>(player, kRefAngle);
+        const float* p = &At<float>(player, kRefPosition);
+        Log("camera dump: player pos %.0f %.0f %.0f, pitch %.3f heading %.3f", p[0], p[1], p[2], a[0], a[2]);
+        void* cam = g_fire.camera ? *g_fire.camera : nullptr;
+        if (!cam || !Readable(cam, 0x200)) return;
+        for (size_t off = 0x08; off < 0x200; off += 8) {
+            void* q = At<void*>(cam, off);
+            if (!q || !Readable(q, kWorldScale + 4)) continue;
+            void* nameP = At<void*>(q, kName);
+            const char* name = nameP && Readable(nameP, 4) ? static_cast<const char*>(nameP) : nullptr;
+            if (!name || !Readable(name, 32)) continue;
+            const float* m = &At<float>(q, kWorldRot);
+            const float* w = &At<float>(q, kWorldPos);
+            Log("  cam+%03zX %p '%.31s' pos %.0f %.0f %.0f  X %.2f %.2f %.2f  Y %.2f %.2f %.2f  rowY %.2f %.2f %.2f", off, q, name,
+                w[0], w[1], w[2], m[0], m[3], m[6], m[1], m[4], m[7], m[3], m[4], m[5]);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        Log("camera dump faulted");
+    }
+}
+
+bool LaunchOne(void* player, const PendingShot& shot) {
     __try {
         void* cell = PlayerCell(player);
         if (!cell) return false;
+        // Aim: the crosshair ray, else the actor's facing.
+        const float* angle = &At<float>(player, kRefAngle);  // pitch, roll, heading
+        float* pos = &At<float>(player, kRefPosition);
+        float cam[3] = {pos[0], pos[1], pos[2] + 110.0f};
+        float dir[3] = {std::sin(angle[2]) * std::cos(angle[0]), std::cos(angle[2]) * std::cos(angle[0]), -std::sin(angle[0])};
+        CameraAim(cam, dir);
+        // Start on that ray at the depth of the right hand, so the shot goes
+        // where the crosshair points and leaves from beside the gun.
+        float hand[3] = {pos[0], pos[1], pos[2] + 110.0f};
+        for (size_t i = 0; i < g_nodes.size() && i < g_boneNames.size(); ++i) {
+            if (g_boneNames[i] == "NPC R Hand [RHnd]" && g_nodes[i]) memcpy(hand, &At<float>(g_nodes[i], kWorldPos), sizeof hand);
+        }
+        float depth = (hand[0] - cam[0]) * dir[0] + (hand[1] - cam[1]) * dir[1] + (hand[2] - cam[2]) * dir[2];
+        depth = (std::max)(depth, 0.0f) + 30.0f;
+
+        auto& bullet = At<ProjectileData>(g_fire.projectile, kProjData);
+        bullet.speed = shot.speed * 70.0f;     // m/s -> units/s
+        bullet.gravity = shot.gravity / 9.81f;  // m/s^2 -> multiple of g
+
         LaunchData d{};
         d.vtable = g_fire.launchDataVtable;
-        // From the right hand, along the player's aim.
-        const float* angle = &At<float>(player, kRefAngle);  // pitch, roll, heading
-        float pitch = angle[0], heading = angle[2];
-        float dir[3] = {std::sin(heading) * std::cos(pitch), std::cos(heading) * std::cos(pitch), -std::sin(pitch)};
-        float* pos = &At<float>(player, kRefPosition);
-        float origin[3] = {pos[0] + dir[0] * 60.0f, pos[1] + dir[1] * 60.0f, pos[2] + 110.0f};
-        for (size_t i = 0; i < g_nodes.size() && i < g_boneNames.size(); ++i) {
-            if (g_boneNames[i] == "NPC R Hand [RHnd]" && g_nodes[i]) {
-                float* hand = &At<float>(g_nodes[i], kWorldPos);
-                for (int k = 0; k < 3; ++k) origin[k] = hand[k] + dir[k] * 50.0f;
-            }
-        }
-        memcpy(d.origin, origin, sizeof origin);
+        for (int k = 0; k < 3; ++k) d.origin[k] = cam[k] + dir[k] * depth;
         d.projectileBase = g_fire.projectile;
         d.shooter = player;
-        d.weaponSource = g_fire.bow;
-        d.ammoSource = g_fire.arrow;
-        d.angleZ = heading;
-        d.angleX = pitch;
+        d.weaponSource = g_fire.weapon;
+        d.ammoSource = g_fire.ammo;
+        d.angleZ = std::atan2(dir[0], dir[1]);
+        d.angleX = -std::asin((std::max)(-1.0f, (std::min)(1.0f, dir[2])));
         d.parentCell = cell;
         d.castingSource = 2;  // kOther
         d.power = 1.0f;
@@ -559,24 +685,82 @@ bool LaunchOne(void* player) {
 class ShotTask : public TaskDelegate {
 public:
     void Run() override {
+        std::vector<PendingShot> shots;
+        {
+            std::lock_guard<std::mutex> lock(g_shotMutex);
+            shots.swap(g_pendingShots);
+        }
         void* player = ThePlayer();
-        int n = g_pendingShots.exchange(0);
-        for (int i = 0; i < n && player && g_fire.ready; ++i) {
-            if (!LaunchOne(player)) {
+        for (const auto& s : shots) {
+            if (!player || !g_fire.ready) break;
+            if (!LaunchOne(player, s)) {
                 Log("firing: launch faulted; firing disabled");
                 g_fire.ready = false;
                 break;
             }
             int total = ++g_shotsFired;
-            if (total <= 3 || total % 30 == 0) Log("firing: shot %d launched", total);
+            if (total <= 3 || total % 30 == 0) {
+                float cam[3], dir[3];
+                bool ok = CameraAim(cam, dir);
+                Log("firing: shot %d launched (%.0f m/s, drop %.1f m/s2; camera %s dir %.2f %.2f %.2f)", total, s.speed,
+                    s.gravity, ok ? "ok" : "unavailable", ok ? dir[0] : 0, ok ? dir[1] : 0, ok ? dir[2] : 0);
+            }
         }
     }
     void Dispose() override { delete this; }
 };
 
-void QueueShots(int n) {
-    if (n <= 0 || !g_fire.ready || !g_tasks) return;
-    if (g_pendingShots.fetch_add(n) == 0) g_tasks->AddTask(new ShotTask());
+void QueueShots(const SnakeShot* shots, uint32_t n) {
+    if (!n || !g_fire.ready || !g_tasks) return;
+    bool first;
+    {
+        std::lock_guard<std::mutex> lock(g_shotMutex);
+        first = g_pendingShots.empty();
+        for (uint32_t i = 0; i < n; ++i) g_pendingShots.push_back({shots[i].speed, shots[i].gravity});
+    }
+    if (first) g_tasks->AddTask(new ShotTask());
+}
+
+// While Snake aims, the actor has its (empty) hands drawn, as Skyrim does
+// for a drawn bow: the actor turns with the camera and moves in combat
+// strafes, so Snake's gun points at the crosshair. Snake's pose overrides the
+// draw/sheathe animations. Actor::DrawWeaponMagicHands is vtable slot 0xA6;
+// the weapon state is actorState2 (actor + 0xCC) bits 5-7.
+constexpr size_t kVtDrawWeaponMagicHands = 0xA6;
+constexpr size_t kActorState2 = 0xCC;
+enum WeaponState { kSheathed = 0, kWantToDraw, kDrawing, kDrawn, kWantToSheathe, kSheathing };
+
+int WeaponStateOf(void* actor) { return (At<uint32_t>(actor, kActorState2) >> 5) & 7; }
+
+bool DrawHands(void* player, bool draw) {
+    __try {
+        using Fn = void (*)(void*, bool);
+        reinterpret_cast<Fn>(Vtable(player)[kVtDrawWeaponMagicHands])(player, draw);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+class DrawTask : public TaskDelegate {
+public:
+    explicit DrawTask(bool draw) : draw_(draw) {}
+    void Run() override {
+        void* player = ThePlayer();
+        if (!player) return;
+        int state = WeaponStateOf(player);
+        bool drawn = state >= kWantToDraw && state <= kDrawn;
+        if (drawn == draw_) return;
+        if (!DrawHands(player, draw_)) Log("draw hands faulted");
+    }
+    void Dispose() override { delete this; }
+
+private:
+    bool draw_;
+};
+
+void RequestHands(bool draw) {
+    if (g_tasks) g_tasks->AddTask(new DrawTask(draw));
 }
 
 // ---- Snake thread ---------------------------------------------------------------
@@ -595,7 +779,7 @@ std::atomic<float> g_speed{0.0f};  // player speed (m/s), measured by the hook
 // 8 sprinting, 9 sneaking.
 constexpr size_t kActorState1 = 0xC8;
 std::atomic<uint32_t> g_actorFlags{0};
-std::atomic<float> g_pitch{0.0f};  // actor look pitch (radians, positive looks down)
+std::atomic<float> g_pitch{0.0f};  // camera (or actor) look pitch (radians, positive looks down)
 std::atomic<bool> g_running{false};
 std::atomic<uint32_t> g_hookCalls{0};  // player UpdateAnimation calls (for the status log)
 std::thread g_snakeThread;
@@ -636,6 +820,8 @@ struct Control {
     int aim = -1;
     int fire = -1;
     std::string stance;  // requested stance, consumed by the Snake thread
+    int draw = 1;        // draw hands (face the camera) while aiming
+    bool dump = false;   // log the camera once (diagnostics)
 };
 Control g_control;
 
@@ -660,6 +846,8 @@ void PollControl(int curStance) {
         else if (k == "aim") g_control.aim = std::atoi(v.c_str());
         else if (k == "fire") g_control.fire = std::atoi(v.c_str());
         else if (k == "stance") g_control.stance = v;
+        else if (k == "draw") g_control.draw = std::atoi(v.c_str());
+        else if (k == "dump") g_control.dump = v == "1";
     }
     fclose(f);
     Log("control: enabled %d mode %d move %s aim %d stance %s (current %d)", (int)g_enabled, (int)g_mode,
@@ -671,6 +859,8 @@ void SnakeThread() {
     // auto-move, Z its shout key).
     Key f8{VK_F8}, f9{VK_F10}, x{'X'};
     bool proneToggled = false;
+    double sinceAim = 10.0;  // seconds since Snake last aimed
+    bool handsDrawn = false;
     uint32_t lastFlags = 0xFFFFFFFF;
     const double dt = 1.0 / 60.0;
     auto next = std::chrono::steady_clock::now();
@@ -749,7 +939,19 @@ void SnakeThread() {
         {
             SnakeShot shots[16];
             uint32_t k = g_snake.player_take_shots(g_player, shots, 16);
-            if (k) QueueShots(static_cast<int>(k));
+            QueueShots(shots, k);
+            if (g_control.dump) {
+                g_control.dump = false;
+                DumpCamera(ThePlayer());
+            }
+            // Hands drawn while aiming; sheathed again a second after.
+            if (in.aim) sinceAim = 0;
+            else sinceAim += dt;
+            bool wantHands = g_control.draw != 0 && sinceAim < 1.0;
+            if (wantHands != handsDrawn) {
+                handsDrawn = wantHands;
+                RequestHands(wantHands);
+            }
         }
         if (g_snake.retarget_apply(g_retarget, g_player, rot.data(), tr.data(), has.data(), n) != n) {
             Log("snake_retarget_apply failed: %s", g_snake.last_error());
@@ -768,9 +970,10 @@ void SnakeThread() {
             logTimer = 0;
             SnakeStatus st{};
             g_snake.player_status(g_player, &st);
-            Log("snake: speed %.2f m/s stance %d gait %d aiming %d ammo %d/%d%s, shots %d, mode %d, focused %d, hook calls %u",
+            Log("snake: speed %.2f m/s stance %d gait %d aiming %d ammo %d/%d%s, shots %d, mode %d, focused %d, hook calls %u, hands %d, heading %.3f",
                 speed, st.stance, st.gait, st.aiming, st.ammo, st.reserve, st.reloading ? " (reloading)" : "",
-                (int)g_shotsFired, (int)g_mode, (int)focused, g_hookCalls.exchange(0));
+                (int)g_shotsFired, (int)g_mode, (int)focused, g_hookCalls.exchange(0), ThePlayer() ? WeaponStateOf(ThePlayer()) : -1,
+                ThePlayer() ? At<float>(ThePlayer(), kRefAngle + 8) : 0.0f);
         }
     }
 }
@@ -832,7 +1035,10 @@ void ApplySnake(void* player, float delta) {
     }
     {
         g_actorFlags = At<uint32_t>(player, kActorState1);
-        g_pitch = At<float>(player, kRefAngle);
+        // Aim pitch follows the camera (positive looks down), else the actor.
+        float cam[3], dir[3];
+        g_pitch = CameraAim(cam, dir) ? -std::asin((std::max)(-1.0f, (std::min)(1.0f, dir[2])))
+                                      : At<float>(player, kRefAngle);
     }
     memcpy(g_lastPos, pos, sizeof g_lastPos);
     g_havePos = true;
@@ -930,11 +1136,35 @@ bool InstallHook() {
     return true;
 }
 
+// While Snake mode is on, Skyrim's attack/block handler ignores input, so
+// the mouse buttons only aim and fire Snake's gun (slot 1 = CanProcess).
+using CanProcessFn = bool (*)(void* self, void* event);
+CanProcessFn g_originalAttackCanProcess = nullptr;
+
+bool HookedAttackCanProcess(void* self, void* event) {
+    if (g_enabled) return false;
+    return g_originalAttackCanProcess(self, event);
+}
+
+bool InstallInputHook() {
+    void** vt = g_fire.attackBlockVtable;
+    if (!vt) return false;
+    DWORD old;
+    if (!VirtualProtect(&vt[1], sizeof(void*), PAGE_EXECUTE_READWRITE, &old)) return false;
+    g_originalAttackCanProcess = reinterpret_cast<CanProcessFn>(vt[1]);
+    vt[1] = reinterpret_cast<void*>(&HookedAttackCanProcess);
+    VirtualProtect(&vt[1], sizeof(void*), old, &old);
+    Log("hooked AttackBlockHandler::CanProcess (vtable %p): Skyrim attacks/blocks are off in Snake mode", vt);
+    return true;
+}
+
 void OnMessage(SKSEMessagingInterface::Message* msg) {
     if (msg->type == SKSEMessagingInterface::kMessage_DataLoaded) {
         Log("Skyrim data loaded");
         if (LoadSnakeDll() && OpenRuntime() && InstallHook()) {
-            g_fire.ready = SetUpFiring();
+            bool lib = LoadAddressLibrary();
+            if (lib && !InstallInputHook()) Log("could not hook the attack/block handler");
+            g_fire.ready = lib && SetUpFiring();
             Log("firing %s", g_fire.ready ? "ready" : "unavailable");
             g_running = true;
             g_snakeThread = std::thread(SnakeThread);

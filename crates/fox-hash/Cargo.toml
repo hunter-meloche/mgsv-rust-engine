@@ -4,3 +4,4 @@ description = "Fox Engine hash functions (CityHash64 v1.0.x, PathCode64, StrCode
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true

@@ -4,6 +4,7 @@ description = "Readers for Fox Engine archives (QAR .dat, FPK/FPKD) and a virtua
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [dependencies]
 fox-hash.workspace = true

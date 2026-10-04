@@ -1,0 +1,2443 @@
+{
+ "functions": {
+  "AssetConfiguration": {
+   "GetDefaultCategory": "140171720",
+   "SetDefaultCategory": "140171720",
+   "SetDefaultTargetDirectory": "140171720"
+  },
+  "AvatarPreloadTextureDaemon": {
+   "PreloadRequestForLocalPlayer": "140ac82d0"
+  },
+  "Chunk": {
+   "GetChunkInstallationEta": "140ad9680",
+   "GetChunkInstallationRate": "140ad96e0",
+   "GetChunkState": "140ad9740",
+   "PrefetchChunk": "140ad9780",
+   "SetChunkInstallSpeed": "140ad97b0"
+  },
+  "CyprusMissionController": {
+   "SendCommand": "1405d2c40"
+  },
+  "DemoDaemon": {
+   "FindDemoBody": "141ae1470",
+   "SkipAll": "141ae1470",
+   "StopAll": "141ae1470"
+  },
+  "DemoxUi": {
+   "SetDemoUiTriggerInvalid": "14041d570"
+  },
+  "FadeFunction": {
+   "CallFadeOut": "1405c8330",
+   "InitFadeSetting": "1405c8330",
+   "SetFadeCallEnable": "1405c8330"
+  },
+  "FoxGameFrame": {
+   "SetGameFrameWaitType": "140080ea0"
+  },
+  "Gimmick": {
+   "BreakGimmick": "14065a210",
+   "InvincibleGimmickData": "14065a210",
+   "InvisibleGimmick": "14065a210",
+   "IsBrokenGimmick": "14065a210"
+  },
+  "Installer": {
+   "GetCheckInstallationResult": "140ad8c90",
+   "GetCurrentDisc": "140ad8cc0",
+   "GetInstallResult": "140ad8cf0",
+   "GetInstallationSize": "140ad8d20",
+   "GetInstalledSize": "140ad8d60",
+   "IsChangingDisc": "140ad8da0",
+   "IsCheckingInstallation": "140ad8dd0",
+   "IsDownloadDeployment": "140ad8e00",
+   "IsInstalled": "140ad8e30",
+   "IsInstalling": "140ad8e60",
+   "StartChangingDisc": "140ad8e90",
+   "StartCheckingInstallation": "140ad8ec0",
+   "StartInstalling": "140ad8ee0"
+  },
+  "InvitationManager": {
+   "EnableMessage": "1407dcb90",
+   "IsAccepted": "1407dcc40",
+   "IsCurrentUserInvited": "1407dcc40",
+   "ResetAccept": "1407dccb0"
+  },
+  "LanguageBlock": {
+   "Create": "1404b5b90"
+  },
+  "NavTactical": {
+   "SetTacticalActionSystemScript": "141c658e0"
+  },
+  "PatchDlc": {
+   "DoesExistPatchDlc": "1409ad350",
+   "GetRequestDownloadingResult": "1409ad470",
+   "IsCheckingPatchDlc": "1409ad4e0",
+   "IsRequestingDownloadingPatchDlc": "1409ad560",
+   "RequestDownloadingPatchDlc": "1409ad740",
+   "StartCheckingPatchDlc": "1409ad7d0"
+  },
+  "PlatformConfiguration": {
+   "SetShareScreenEnabled": "141c658e0"
+  },
+  "PlayerVars": {
+   "cameraZoomRate": "1409aabf0",
+   "leftStickXDirect": "1409aabf0",
+   "leftStickYDirect": "1409aabf0",
+   "rightStickX": "1409aabf0",
+   "rightStickXDirect": "1409aabf0",
+   "rightStickY": "1409aabf0",
+   "rightStickYDirect": "1409aabf0",
+   "scannedButtonsDirect": "1409aab80"
+  },
+  "QuarkSystem": {
+   "GetCompilerState": "140bf2530",
+   "PostRequestToLoad": "140bf2680"
+  },
+  "ScriptBlock": {
+   "Activate": "140183910",
+   "Deactivate": "140183960",
+   "GetCurrentScriptBlockId": "1401839c0",
+   "GetScriptBlockState": "140183a80",
+   "UpdateScriptsInScriptBlocks": "140184070"
+  },
+  "ScriptUpdater": {
+   "Create": "140ad9ea0"
+  },
+  "SignIn": {
+   "ClearPresetUserId": "1409ac290",
+   "GetPresetUserId": "1409ac2f0",
+   "GetSignInState": "1409ac330",
+   "GetStorageSelectionState": "1409ac360",
+   "IsOnlineSignedIn": "1409ac380",
+   "IsSignedIn": "1409ac3e0",
+   "IsStartupProcessCompleted": "1409ac3e0",
+   "IsStorageSelected": "1409ac3e0",
+   "PresetUserIdExists": "1409ac440",
+   "SetStartupProcessCompleted": "1409ac480",
+   "StartSelectGameSaveStorage": "1409ac4c0",
+   "StartSignIn": "1409ac500",
+   "StartSignInWithUserId": "1409ac550"
+  },
+  "SoundCoreDaemon": {
+   "Create": "140329c40",
+   "SetAssetPath": "140329c40",
+   "SetInterferenceRTPCName": "140329c40"
+  },
+  "SplashScreen": {
+   "Create": "14090e690",
+   "Delete": "14090eb00",
+   "GetSplashScreenWithName": "14090ec00",
+   "SetStateCallback": "14090ece0"
+  },
+  "StageBlock": {
+   "AddLargeBlockNameForMessage": "140177bd0",
+   "AddSmallBlockIndexForMessage": "140177d00",
+   "GetCurrentMinimumSmallBlockIndex": "140177f10",
+   "GetLoadedLargeBlocks": "140177f70",
+   "LargeAndSmallBlocksAreEmpty": "140178060"
+  },
+  "StageBlockCurrentPositionSetter": {
+   "DisablePosition": "140177980",
+   "SetEnable": "1401779c0",
+   "SetPosition": "1401779f0"
+  },
+  "StringId": {
+   "IsEqual": "141a45430"
+  },
+  "SubtitlesCommand": {
+   "DisplayText": "1404b0570"
+  },
+  "SyncRouteManager": {
+   "Create": "140acde00",
+   "SetScriptStep": "140ace590"
+  },
+  "TppBuddy2BlockController": {
+   "CreateBlock": "140a48510",
+   "DeleteBlock": "140a48510",
+   "IsBlockActive": "140a48510"
+  },
+  "TppBuddyService": {
+   "BuddyMissionInit": "140a547c0",
+   "ResetDogLeakedInformation": "140a547c0",
+   "SetMissionGroundStartPositions": "140a547c0"
+  },
+  "TppBullet": {
+   "ClearBulletMark": "140a43000"
+  },
+  "TppCassetteTapeInfo": {
+   "Setup": "14057d030"
+  },
+  "TppColoringSystem": {
+   "GetAdditionalColoringPackFilePaths": "1405ceda0"
+  },
+  "TppCombatLocatorProvider": {
+   "RegisterCombatLocatorSetToCpforLua": "1405b00a0"
+  },
+  "TppCommandPost2": {
+   "GetDominatedCpCount": "140a239a0",
+   "SetCpDominated": "140a23d40",
+   "SetDominationTargetCpList": "140a23eb0",
+   "SetSVarsKeyNames": "140a24040"
+  },
+  "TppDataUtility": {
+   "CreateEffectFromGroupId": "14057a720",
+   "CreateEffectFromId": "14057a720",
+   "SetEnableDataFromIdentifier": "14057a720",
+   "SetVisibleDataFromIdentifier": "14057a720",
+   "SetVisibleEffectFromGroupId": "14057a720"
+  },
+  "TppDemoUtility": {
+   "AddSubjectMapping": "1405be5e0"
+  },
+  "TppEquip": {
+   "CreateEquipPreviewSystem": "140a06c60",
+   "CreateResidentBlockGroups": "140a02fe0",
+   "LoadCommonBlock": "140a02fe0"
+  },
+  "TppGameMode": {
+   "GetUserMode": "140547350"
+  },
+  "TppGameSequence": {
+   "GetGameTitleName": "14053a2e0",
+   "GetPatchVersion": "14053a300",
+   "GetShortTargetArea": "14053a340",
+   "GetShortTargetAreaList": "14053a360",
+   "GetSpecialVersionName": "14053a3e0",
+   "GetTargetArea": "14053a400",
+   "GetTargetPlatform": "14053a420",
+   "IsMaster": "14053a440",
+   "IsMgoEnabled": "14053a460",
+   "LoadResidentBlock": "14053a490",
+   "SetSystemBlockSize": "14053a7a0"
+  },
+  "TppHeliPhotoFova": {
+   "ClearGroupSetting": "14057e4f0",
+   "SetGroupUnit": "14057e4f0"
+  },
+  "TppMarker2System": {
+   "CreateMarker2System": "1405c4280",
+   "DisableMarker": "1405c4400",
+   "EnableMarker": "1405c4500",
+   "SetMarkerGoalType": "1405c6440",
+   "SetMarkerImportant": "1405c66f0",
+   "SetMarkerInterrogation": "1405c68c0",
+   "SetMarkerNew": "1405c6a10"
+  },
+  "TppMotherBaseManagement": {
+   "AddBonusPopupFromBonusPopupFlagStaffs": "140a87ce0",
+   "AddCassetteTapeTrack": "140a87d10",
+   "AddCassetteTapeTrackByIndex": "140a87db0",
+   "AddGmp": "140a87e10",
+   "AddHeroicPoint": "140a87eb0",
+   "AddHeroicPointAndGmpByCageAnimal": "140a87f40",
+   "AddMinimumSecurityStaffs": "140a87fe0",
+   "AddOgrePoint": "140a88010",
+   "AddOgreUserVolunteerStaffs": "140a88080",
+   "AddPoolRewardsFob": "140a88180",
+   "AddStaffsFromTempStaffBuffer": "140a88540",
+   "AddTempBuddy": "140a88570",
+   "AddTempClashedPlacementCount": "140a885b0",
+   "AddTempCorpse": "140a88630",
+   "AddTempDataBase": "140a88670",
+   "AddTempDataBaseAnimal": "140a88780",
+   "AddTempGimmickResource": "140a88810",
+   "AddTempLifesavingLog": "140a889e0",
+   "AddTempLostMyPlayerStaff": "140a88ad0",
+   "AddTempPuppy": "140a88b50",
+   "AddTempResource": "140a88c00",
+   "AddTempStaffFulton": "140a88f30",
+   "AddTempStaffRecover": "140a89010",
+   "AddTempStaffReward": "140a89140",
+   "AddVolunteerStaffs": "140a89260",
+   "ApplyFreePositionSecurityItemParamsForSvars": "140a89380",
+   "AwardedHonorMedalToPlayerStaff": "140a893b0",
+   "AwardedMeritMedalPointToPlayerStaff": "140a89440",
+   "BaseFobToMbsParam": "140a89600",
+   "BaseSvarsToMbsParam": "140a89640",
+   "CanOpenS10081": "140a897d0",
+   "CanOpenS10091": "140a89830",
+   "CanOpenS10115": "140a89890",
+   "CanOpenS10130": "140a89910",
+   "CanOpenS10240": "140a89970",
+   "ChangeStaffEnmityAndSection": "140a899d0",
+   "CheckMisogi": "140a89b00",
+   "ClearAllStaffBonusPopupFlag": "140a89b30",
+   "ClearAllStaffNew": "140a89b60",
+   "ClearEquipDeveloped": "140a89be0",
+   "ClearTempBuffer": "140a89c20",
+   "CompletedClusterBuild": "140a89c50",
+   "CorrectGmp": "140a89d50",
+   "DataBaseIdToAnimalGroup": "140a89f50",
+   "DirectAddDataBase": "140a8a310",
+   "DirectAddDataBaseAnimal": "140a8a390",
+   "DirectAddResource": "140a8a4d0",
+   "DirectAddStaff": "140a8a5c0",
+   "DirectRemoveDataBase": "140a8a710",
+   "DisableKikongoFirst": "140a8a760",
+   "EnableStaffInitLangKikongo": "140a8a790",
+   "EndPandemicEventMode": "140a8a7c0",
+   "GenerateStaffParameter": "140a8a960",
+   "GetAmountOfSecurityDamage": "140a8ab90",
+   "GetAnimalHeroicPointAndGmp": "140a8b500",
+   "GetClearedDeployRevengeMissionFlag": "140a8be30",
+   "GetClusterBuildStatus": "140a8bf10",
+   "GetClusterGrade": "140a8c330",
+   "GetDevelopableEquipCount": "140a8cc80",
+   "GetDevelopedEquipCount": "140a8ccf0",
+   "GetEquipDevelopRank": "140a8df90",
+   "GetGmp": "140a8e3d0",
+   "GetHeroicPoint": "140a8e550",
+   "GetMbsActivedecoyLevel": "140a8edc0",
+   "GetMbsClusterBuildStatus": "140a8f180",
+   "GetMbsClusterGrade": "140a8f2f0",
+   "GetMbsClusterSecurityIsEquipSwimSuit": "140a8f3d0",
+   "GetMbsClusterSecurityIsNoKillMode": "140a8f420",
+   "GetMbsClusterSecurityRank": "140a8f470",
+   "GetMbsClusterSecuritySoldierEquipGrade": "140a8f4c0",
+   "GetMbsClusterSecuritySoldierEquipRange": "140a8f510",
+   "GetMbsClusterSecuritySwimSuitGrade": "140a8f5b0",
+   "GetMbsClusterSecuritySwimSuitInfo": "140a8f600",
+   "GetMbsCombatSectionRank": "140a8f6e0",
+   "GetMbsDMineLevel": "140a8f130",
+   "GetMbsDecoyLevel": "140a8f820",
+   "GetMbsDevelopedEquipGradeTable": "140a8f870",
+   "GetMbsFirstCluster": "140a8f950",
+   "GetMbsGunCameraLevel": "140a8f9a0",
+   "GetMbsIrSensorLevel": "140a8f9f0",
+   "GetMbsNuclearWeaponCount": "140a8fa40",
+   "GetMbsNvgBattleLevel": "140a8fa90",
+   "GetMbsNvgSneakingLevel": "140a8fae0",
+   "GetMbsOceanAreaId": "140a8fb30",
+   "GetMbsPlatformSecurityCameraNum": "140a8fb80",
+   "GetMbsPlatformSecurityDecoyNum": "140a8fe40",
+   "GetMbsPlatformSecurityImportantCautionArea": "140a90100",
+   "GetMbsPlatformSecurityMineNum": "140a904a0",
+   "GetMbsPlatformSecuritySoldierNum": "140a90760",
+   "GetMbsPlatformSecurityUavNum": "140a90a20",
+   "GetMbsSecurityCameraLevel": "140a90ce0",
+   "GetMbsSecuritySectionRank": "140a90d30",
+   "GetMbsShockdecoyLevel": "140a90ed0",
+   "GetMbsSleepingGasMineLevel": "140a90f20",
+   "GetMbsStaffCombatRank": "140a90fc0",
+   "GetMbsStolenAlarmLevel": "140a910c0",
+   "GetMbsTopologyType": "140a91110",
+   "GetMbsUavLevel": "140a91160",
+   "GetMbsUavSleepingGusGrenadeLevel": "140a911b0",
+   "GetMbsUavSmokeGrenadeLevel": "140a91200",
+   "GetOgrePoint": "140a914b0",
+   "GetOutOnMotherBaseStaffs": "140a91610",
+   "GetPandemicBingoCount": "140a91890",
+   "GetRecoverStaffCount": "140a91be0",
+   "GetResourceUsableCount": "140a927e0",
+   "GetRewardLeagueRank": "140a92910",
+   "GetSectionFuncRank": "140a92bf0",
+   "GetSectionLv": "140a92ed0",
+   "GetSectionStaffCountLimit": "140a930d0",
+   "GetStaffCount": "140a93c40",
+   "GetStaffIdFromGameObject": "140a93c90",
+   "GetStaffS10081": "140a940b0",
+   "GetStaffsFob": "140a94540",
+   "GetStaffsS10091": "140a94700",
+   "GetStaffsS10115": "140a947e0",
+   "GetStaffsS10240": "140a94900",
+   "GetTempResourceBufferVehicleIncrementCount": "140a94b40",
+   "GetTempStaffStatusFromGameObject": "140a94c30",
+   "IncrementAllStaffMorale": "140a95390",
+   "IsActiveSectionFunc": "140a954e0",
+   "IsAnimalType": "140a955c0",
+   "IsBuiltFirstFob": "140a95670",
+   "IsBuiltMbMedicalClusterSpecialPlatform": "140a95720",
+   "IsCompletedAnimal": "140a95790",
+   "IsDevelopTypeDeveloped": "140a95800",
+   "IsEndedSyncControl": "140a958d0",
+   "IsEquipDevelopableWithDevelopID": "140a95a20",
+   "IsEquipDeveloped": "140a95b00",
+   "IsEquipDevelopedFromDevelopID": "140a95bf0",
+   "IsExistStaff": "140a95d90",
+   "IsExistTempStaff": "140a95ed0",
+   "IsGotCassetteTapeTrack": "140a961c0",
+   "IsGotDataBase": "140a963a0",
+   "IsGotResource": "140a964c0",
+   "IsMbsOwner": "140a965b0",
+   "IsNewCassetteTapeTrack": "140a96620",
+   "IsNuclearDeveloped": "140a967a0",
+   "IsNuclearDiscarded": "140a96810",
+   "IsOpenedSection": "140a968d0",
+   "IsOpenedSectionFunc": "140a969e0",
+   "IsOpponentSupporter": "140a96a70",
+   "IsPandemicEventMode": "140a96b60",
+   "IsResultSuccessedSyncControl": "140a96c90",
+   "IsSynchronizeBusy": "140a96cf0",
+   "IsWormholeOther": "140a96d50",
+   "KillTempStaffFob": "140a973c0",
+   "LockedStaffS10081": "140a974a0",
+   "LockedStaffsS10091": "140a974d0",
+   "LockedStaffsS10115": "140a97500",
+   "LockedStaffsS10130": "140a97560",
+   "LockedStaffsS10240": "140a97590",
+   "OnTitleLoaded": "140a975d0",
+   "OpenedSection": "140a97660",
+   "OpenedSectionFunc": "140a978a0",
+   "ProcessBeforeSync": "140a979c0",
+   "RefreshQuietStatus": "140a97b40",
+   "RegCstDev": "140a97b80",
+   "RegFlwDev": "140a983e0",
+   "RegenerateGameObjectQuestStaffParameter": "140a98fa0",
+   "RegenerateGameObjectStaffParameter": "140a990c0",
+   "RegistPartsInclusionInfo_BarrelBase": "140a997d0",
+   "RegistPartsInclusionInfo_ReceiverBase": "140a99a20",
+   "RegistPartsInclusionInfo_ReceiverWithUnderBarrellBase": "140a99ca0",
+   "RegistWeaponPartsInfo": "140a99ef0",
+   "RegistWeaponSpecInfo": "140a9a290",
+   "RegisterAnimalParam": "140a9a300",
+   "RegisterAutoResourceParam": "140a9a490",
+   "RegisterBaseDevSectionFuncPlatformExtentionParam": "140a9a990",
+   "RegisterBaseInitEnmityParam": "140a9ad30",
+   "RegisterCombatSectionFuncAutoGmp": "140a9b040",
+   "RegisterCommandClusterBuildParam": "140a9e6b0",
+   "RegisterCommonVolunteerStaffHeroicParam": "140a9ec50",
+   "RegisterCommonVolunteerStaffOgreParam": "140a9eda0",
+   "RegisterContainerParam": "140a9eef0",
+   "RegisterContainerProcessingBasicParam": "140a9f970",
+   "RegisterContainerProcessingParam": "140a9fcd0",
+   "RegisterDataBaseAnimalHabitat": "140a9ffc0",
+   "RegisterDeployBasicParam": "140aa04c0",
+   "RegisterDeployMissionParam": "140aa0cf0",
+   "RegisterFobDefensePenaltyGmpParam": "140aa17a0",
+   "RegisterFobSecurityCostParam": "140aa1a10",
+   "RegisterInitEnmityOffset": "140aa1ea0",
+   "RegisterLanguageParam": "140aa2090",
+   "RegisterMedalParam": "140aa2600",
+   "RegisterMedicalSectionFuncTreatmentParam": "140aa2710",
+   "RegisterMissionBaseStaffTypes": "140aa3360",
+   "RegisterMissionGettableDesign": "140aa3610",
+   "RegisterMoraleParam": "140aa3730",
+   "RegisterOgreUserVolunteerStaffTypes": "140aa4160",
+   "RegisterPandemicParam": "140aa4260",
+   "RegisterPfRatingPointParam": "141c658e0",
+   "RegisterPoolRewardParam": "140aa4840",
+   "RegisterQuestSkillDrawingParam": "140aa5da0",
+   "RegisterRandomRange": "140aa6060",
+   "RegisterResourceParam": "140aa62e0",
+   "RegisterS10240LockStaffParam": "140aa63b0",
+   "RegisterSectionClusterBuildParam": "140aa6920",
+   "RegisterSectionFuncRankLines": "140aa6b50",
+   "RegisterSectionLvLine": "140aa6fd0",
+   "RegisterSecurityCostPerUnit": "140aa8a30",
+   "RegisterSkillDrawingParam": "140aa9a70",
+   "RegisterStaffBaseRankRange": "140aa9c70",
+   "RegisterStaffInitLangParam": "140aaa1f0",
+   "RegisterStaffRankBonusTable": "141c658e0",
+   "RegisterStaffTypePeaks": "140aaa910",
+   "RegisterStageGimmickParam": "140aaae10",
+   "RegisterUniqueStaff": "140aab030",
+   "RemoveAllStaff": "140aabde0",
+   "RemoveStaffS10081": "140aabe10",
+   "RemoveStaffsS10115": "140aabe70",
+   "RemoveStaffsS10130": "140aabef0",
+   "RemoveStaffsS10240": "140aabf20",
+   "RemovedPlayerStaffForFob": "140aabf50",
+   "RequestAddDeployRevengeMission": "140aabfc0",
+   "RequestDeleteDeployRevengeMission": "140aac0e0",
+   "ResetBaseSvars": "140aac7f0",
+   "ResetDeploySvars": "140aac820",
+   "SetActiveSync": "140aacad0",
+   "SetCassetteTapeTrackNewFlag": "140aacc00",
+   "SetClusterSvars": "140aacce0",
+   "SetDeployableBattleGear": "140aacdf0",
+   "SetEquipDeveloped": "140aaceb0",
+   "SetFobSvars": "140aacf90",
+   "SetFollowerFobEmergency": "140aad0c0",
+   "SetGmp": "140aad180",
+   "SetLockedTanFlag": "140aad3e0",
+   "SetMbsClusterParam": "140aad4a0",
+   "SetMbsClusterSecurityParam": "140aad5c0",
+   "SetMbsContainerParam": "140aad810",
+   "SetMbsPlatformSecurityParam": "140aae590",
+   "SetMyFobEmergency": "140aaf7b0",
+   "SetRemoverReason": "140aaf8d0",
+   "SetRequestSaveResultFailure": "140aaf9c0",
+   "SetRequestSaveResultSuccess": "140aaf9f0",
+   "SetResourceSvars": "140aafa20",
+   "SetSequentialMissionIdLimit": "140ab07e0",
+   "SetSmallDiamondGmp": "140ab08c0",
+   "SetStaffInitEnmityLv": "140ab0b90",
+   "SetUpMbsParamFor10030": "140ab0ca0",
+   "SetupAfterRestoreFromSVars": "140ab0db0",
+   "SetupFreePositionSecurityItems": "140ab0de0",
+   "SkipNextMissionStartTempBufferClear": "140ab0e10",
+   "SortSkillDrawingParamTable": "140ab0e70",
+   "StaffIdToFaceId": "140ab0ea0",
+   "StartPandemicEventMode": "140ab0fc0",
+   "StartSyncControl": "140ab0ff0",
+   "SubGmp": "140ab12f0",
+   "SubHeroicPoint": "140ab1390",
+   "SubOgrePoint": "140ab1450",
+   "SyncNuclearLocalToServer": "140ab1580",
+   "UnRegisterDataBaseAnimalHabitat": "140ab15b0",
+   "UnlockedStaffS10081": "140ab1600",
+   "UnlockedStaffsS10091": "140ab1650",
+   "UnlockedStaffsS10115": "140ab16a0",
+   "UnsetClearedDeployRevengeMissionFlag": "140ab16f0",
+   "UpdatePandemicEventLimit": "140ab17b0",
+   "UpdateSections": "140ab17e0"
+  },
+  "TppNetworkUtil": {
+   "CloseSession": "141c658e0",
+   "IsHost": "141c658e0",
+   "IsSessionConnect": "141c658e0"
+  },
+  "TppPause": {
+   "RegisterPause": "140545b00",
+   "UnregisterPause": "140545bf0"
+  },
+  "TppPickable": {
+   "ClearAllDroppedInstance": "140a08910",
+   "DropItem": "140a08ad0",
+   "OnAllocate": "140a08dd0",
+   "PutBuddyItems": "140a08e30",
+   "PutOn": "140a08e90",
+   "SetDisablePhysicalMove": "140a093d0",
+   "SetEnableByLocatorName": "140a09430",
+   "StartToCreateFromLocators": "140a094f0"
+  },
+  "TppRadioCommand": {
+   "CreateSoundControl": "140ab78b0",
+   "RegisterEspionageRadioTable": "140ab78b0",
+   "RegisterTppCommonConditionCheckFunc": "140ab78b0",
+   "SetEnableIgnoreGamePause": "140ab78b0"
+  },
+  "TppScriptVars": {
+   "CopySlot": "140a21950",
+   "CreateSaveSlot": "140a21b80",
+   "DeclareGVars": "140ae1c10",
+   "DeclareSVars": "140ae1c70",
+   "DeleteFile": "140a21da0",
+   "FileExists": "140a21e60",
+   "GetElapsedTimeSinceLastPlay": "1409ab870",
+   "GetFreeStorageSpaceSize": "140a21f20",
+   "GetLastResult": "140a21f60",
+   "GetNecessaryStorageSpaceSize": "140a22040",
+   "GetProgramVersionTable": "1409aa780",
+   "GetTotalPlayTime": "1409ab950",
+   "GetVarValueInSlot": "140a221d0",
+   "InitForNewGame": "1409ab9d0",
+   "InitForNewMission": "1409abb70",
+   "IsSavingOrLoading": "140a22460",
+   "IsShowingNoSpaceDialog": "1409fa3b0",
+   "LoadVarsFromSlot": "140a224b0",
+   "ReadSlotFromFile": "140a225b0",
+   "RequestNecessaryStorageSpace": "140a227a0",
+   "SVarsIsSynchronized": "140ae27c0",
+   "SaveVarsToSlot": "140a227c0",
+   "SetFileSizeList": "140a228d0",
+   "SetSVarsNotificationEnabled": "140ae2870",
+   "SetUpSlotAsCompositSlot": "140a22b10",
+   "SetVarValueInSlot": "140a22e20",
+   "ShowNoSpaceDialog": "141c658e0",
+   "StoreUtcTimeToScriptVars": "1409abc90",
+   "WriteSlotToFile": "140a23050"
+  },
+  "TppSoldier2": {
+   "ReloadSoldier2ParameterTables": "141c658e0",
+   "SetDefaultPartsPath": "141c658e0",
+   "SetDefaultSoldierWeapon": "141c658e0"
+  },
+  "TppSoldier2CommonBlockController": {
+   "CreateCommonMotionBlockGroup": "141c658e0",
+   "SetPackagePathWithPrerequisites": "141c658e0"
+  },
+  "TppUiCommand": {
+   "GetPopupSelect": "1408dff40",
+   "IsShowPopup": "1408dff40",
+   "SetErrorPopupParam": "1408dff40",
+   "SetPopupSelectNegative": "1408dff40",
+   "ShowErrorPopup": "1408dff40",
+   "ShowPopup": "1408dff40"
+  },
+  "Vehicle": {
+   "LoadCarry": "140a27fa0",
+   "SaveCarry": "140a28c10",
+   "SetIgnoreDisableNpc": "140a29290"
+  },
+  "WeatherManager": {
+   "CancelRequestWeather": "140534680",
+   "GetCurrentClock": "140535260",
+   "InitializeWeather": "140535620",
+   "IsNight": "1405356a0",
+   "PauseNewWeatherChangeRandom": "140535c90",
+   "RequestTag": "140536090",
+   "RequestWeather": "1405361d0",
+   "RestoreFromSVars": "140536450",
+   "SetDefaultReflectionTexture": "140536710",
+   "SetExtraWeatherProbabilities": "140536830",
+   "SetNewWeatherProbabilities": "1405371d0",
+   "SetReflectionTexture": "140537440",
+   "SetWeatherDurations": "140537620",
+   "StoreToSVars": "1405377b0"
+  }
+ },
+ "constants": {
+  "AmmoStockIndex": {
+   "ITEM_END": 22
+  },
+  "AvatarEdit": {
+   "AVATAR_IN_DEMO": 1,
+   "AVATAR_IN_HELI": 0
+  },
+  "BuddyCommand": {
+   "DOG_BARKING": 10,
+   "HORSE_SHIT": 19,
+   "QUIET_AIM_TARGET": 3,
+   "QUIET_COMBAT_START": 4,
+   "QUIET_SHOOT_THIS": 6
+  },
+  "BuddyCommonFlag": {
+   "BOSS_QUIET_KILL": 0,
+   "BUDDY_FORCE_HOSPITALIZE": 7,
+   "BUDDY_QUIET_DYING": 1,
+   "BUDDY_QUIET_HOSPITALIZE": 2,
+   "BUDDY_QUIET_LOST": 3,
+   "BUDDY_RIDE_HELI": 5
+  },
+  "BuddyFriendlyType": {
+   "HORSE": 2,
+   "QUIET": 0
+  },
+  "BuddyInitStatus": {
+   "NORMAL": 0
+  },
+  "BuddyType": {
+   "BATTLE_GEAR": 5,
+   "HORSE": 1,
+   "QUIET": 3,
+   "WALKER_GEAR": 4
+  },
+  "BulletGuardArmorMessageFlag": {
+   "BROKEN_HELMET": 2,
+   "IS_HIT_ARMOR": 1
+  },
+  "CallMenuEventCategoryType": {
+   "RescueBoy": 2
+  },
+  "CaptureCageMaterial": {
+   "MTR_GRAV_A": 57,
+   "MTR_LEAF": 61,
+   "MTR_ROCK_B": 74,
+   "MTR_SAND_C": 60,
+   "MTR_SOIL_A": 47,
+   "MTR_SOIL_B": 48,
+   "MTR_SOIL_C": 49,
+   "MTR_SOIL_D": 50,
+   "MTR_SOIL_E": 51,
+   "MTR_SOIL_F": 52,
+   "MTR_SOIL_G": 53,
+   "MTR_SOIL_H": 54,
+   "MTR_SOIL_R": 55,
+   "MTR_SOIL_W": 56,
+   "MTR_TURF_A": 77
+  },
+  "Chunk": {
+   "INDEX_AFGH": 1,
+   "INDEX_CYPR": 0,
+   "INDEX_MAFR": 2,
+   "INDEX_MGO": 4,
+   "INDEX_MTBS": 3,
+   "INSTALL_SPEED_FAST": 1,
+   "INSTALL_SPEED_NORMAL": 0,
+   "STATE_INSTALLED": 2
+  },
+  "CommandAi": {
+   "ESCORT": 8,
+   "FORCE_SHOOT": 1,
+   "FORCE_WAIT": 2,
+   "GIVE_WARNING": 3,
+   "INFANTRY": 7,
+   "LIQUID_ASSIST": 5,
+   "SHOOT_PRACTICE": 4,
+   "SHOOT_ROCKET": 6
+  },
+  "CpType": {
+   "TYPE_AFRIKAANS": 2,
+   "TYPE_AMERICA": 1,
+   "TYPE_SOVIET": 0
+  },
+  "DeadMessageFlag": {
+   "FIRE_OR_DYING": 3,
+   "FROM_PLAYER_ORDER": 16,
+   "INDIRECTLY_TARGET": 8,
+   "NOT_DAMAGE_DEAD": 4
+  },
+  "DlcError": {
+   "E_NETWORK": 1
+  },
+  "EnemyFova": {
+   "INVALID_FOVA_VALUE": 32767,
+   "MAX_REALIZED_COUNT": 255,
+   "NOT_USED_FOVA_VALUE": 32766
+  },
+  "EnemyStance": {
+   "STANCE_STAND": 1,
+   "STANCE_SUPINE": 4
+  },
+  "EnemyState": {
+   "CARRIED": 4,
+   "NORMAL": 1,
+   "STAND_HOLDUP": 2
+  },
+  "EnemyType": {
+   "TYPE_CHILD": 3,
+   "TYPE_DD": 4,
+   "TYPE_PF": 1,
+   "TYPE_SKULL": 2,
+   "TYPE_SOVIET": 0
+  },
+  "EntryBuddyType": {
+   "BUDDY": 0,
+   "VEHICLE": 1
+  },
+  "EventLog": {
+   "EVENT_ALERT": 15,
+   "EVENT_MISSION_ABORT": 14,
+   "EVENT_PLAYER_ESCAPE": 7,
+   "EVENT_PLAYER_GOAL": 6,
+   "EVENT_PLAYER_START": 5,
+   "EVENT_RESTART": 12
+  },
+  "FobIsEvent": {
+   "NOT_EVENT": 0
+  },
+  "FobMode": {
+   "MODE_ACTUAL": 0,
+   "MODE_NONE": 255,
+   "MODE_SHAM": 1,
+   "MODE_VISIT": 2
+  },
+  "FobResult": {
+   "RESULT_ABORT": 5,
+   "RESULT_DEAD": 2,
+   "RESULT_ERROR": 6,
+   "RESULT_FULTON": 3,
+   "RESULT_GOAL": 0,
+   "RESULT_NONE": 255,
+   "RESULT_TIMEOUT": 4,
+   "RESULT_WORMHOLE": 1
+  },
+  "GameOverMenu": {
+   "GAME_OVER_ABORT": 4,
+   "GAME_OVER_ABORT_RETURN_TO_ACC": 5,
+   "GAME_OVER_CONTINUE": 0,
+   "GAME_OVER_RESTART": 1,
+   "GAME_OVER_RESTART_HELI": 2,
+   "GAME_OVER_RETURN_TO_MISSION": 6,
+   "GAME_OVER_TITLE": 3,
+   "NO_POPUP": 0,
+   "PERFECT_STEALTH_POPUP": 2,
+   "POPUP_RESULT_YES": 1,
+   "STEALTH_ASSIST_POPUP": 1
+  },
+  "GamePauseMenu": {
+   "ABORT_MISSION": 6,
+   "ABORT_MISSION_PLACEMENT_MODE": 8,
+   "ABORT_MISSION_RETURN_TO_ACC": 7,
+   "CONTROLS_AND_TIPS_ITEM": 20,
+   "GOTO_MGO": 41,
+   "ONLINE_NEWS": 10,
+   "OPEN_OPTION_MENU": 0,
+   "RECORDS_ITEM": 29,
+   "RESTART_FROM_CHECK_POINT": 1,
+   "RESTART_FROM_HELICOPTER": 3,
+   "RESTART_FROM_MISSION_START": 2,
+   "RETURN_TO_MISSION_FROM_EMERGENCY_MISSION": 5,
+   "RETURN_TO_TITLE": 4,
+   "SIGN_IN": 9,
+   "STORE_ITEM": 38,
+   "TERMS_OF_USE_MENU_ITEM": 25
+  },
+  "HeadshotMessageFlag": {
+   "IS_JUST_UNCONSCIOUS": 2,
+   "IS_TRANQ_HANDGUN": 1,
+   "NEUTRALIZE_DONE": 4
+  },
+  "IgnoreDamageActionFlag": {
+   "BULLET": 1,
+   "FLASH_LIGHT": 256
+  },
+  "Installer": {
+   "CHECK_INSTALLATION_RESULT_BROKEN": 2,
+   "CHECK_INSTALLATION_RESULT_NO_HDD": 3,
+   "DISC_GAME": 0,
+   "DISC_INSTALL": 0,
+   "INSTALL_RESULT_CANCEL": 5,
+   "INSTALL_RESULT_NOHDD": 3,
+   "INSTALL_RESULT_NOSPACE": 2,
+   "INSTALL_RESULT_NOT_SIGN_IN": 6,
+   "INSTALL_RESULT_OK": 0
+  },
+  "MbInterrogate": {
+   "ARMOR": 2048,
+   "CAMERA": 8,
+   "DECOY": 16,
+   "FLASH": 4096,
+   "FULUTON": 1,
+   "MACHINEGUN": 256,
+   "MISSILE": 16384,
+   "NIGHT": 64,
+   "SHIELD": 1024,
+   "SHOTGUN": 128,
+   "SNIPER": 8192
+  },
+  "MbPauseHelp": {
+   "HELP_ID_BASE_OPERATION_SECURITY": 16,
+   "HELP_ID_BASE_OPERATION_SECURITY_CHANGE": 18,
+   "HELP_ID_BASE_OPERATION_SECURITY_CHANGE_DIFFICULT": 20,
+   "HELP_ID_BASE_OPERATION_SECURITY_CHANGE_EASY": 19,
+   "HELP_ID_BASE_OPERATION_SECURITY_ZONE": 17,
+   "HELP_ID_BASE_OPERATION_TOP": 15,
+   "HELP_ID_CALL_BUDDY_DOG": 68,
+   "HELP_ID_CALL_BUDDY_HORSE": 69,
+   "HELP_ID_CALL_BUDDY_QUIET": 66,
+   "HELP_ID_CALL_BUDDY_QUIET_ATTACK": 67,
+   "HELP_ID_CALL_BUDDY_WALKER": 70,
+   "HELP_ID_CASSETTE_TAPES_TOP": 27,
+   "HELP_ID_CHALLENGE_TASK": 100,
+   "HELP_ID_CHANGE_EQUIPMENT": 45,
+   "HELP_ID_CHANGE_LOCATION": 85,
+   "HELP_ID_COMBAT_DEPLOYMENT_TOP": 22,
+   "HELP_ID_COMBAT_DEPLOYMENT_UNIT": 23,
+   "HELP_ID_CUSTOMIZE_AVATAR": 42,
+   "HELP_ID_CUSTOMIZE_EMBLEM": 41,
+   "HELP_ID_CUSTOMIZE_OBJ_PARTS": 37,
+   "HELP_ID_CUSTOMIZE_OBJ_PARTS_TOP": 36,
+   "HELP_ID_CUSTOMIZE_OBJ_SLOT": 35,
+   "HELP_ID_CUSTOMIZE_VEHICLE_ORG": 38,
+   "HELP_ID_CUSTOMIZE_WEAPON": 29,
+   "HELP_ID_CUSTOMIZE_WEAPON_PARTS": 34,
+   "HELP_ID_CUSTOMIZE_WEAPON_PARTS_TOP": 33,
+   "HELP_ID_CUSTOMIZE_WEAPON_SLOT": 32,
+   "HELP_ID_DEFAULT": 0,
+   "HELP_ID_DEVELOP_TOP": 13,
+   "HELP_ID_DEVELOP_TOP_NOT_WEAPON": 14,
+   "HELP_ID_EMERGENCIES": 59,
+   "HELP_ID_ENCYCLOPEDIA_TOP": 25,
+   "HELP_ID_EVENT_POINT": 99,
+   "HELP_ID_FOB_MISSIONS": 77,
+   "HELP_ID_FOB_MISSIONS_DEFENSE": 90,
+   "HELP_ID_FOB_MISSIONS_DEFENSE_EM": 91,
+   "HELP_ID_FOB_MISSIONS_DMG": 92,
+   "HELP_ID_FOB_MISSIONS_DMG_EM": 93,
+   "HELP_ID_FOB_MISSIONS_EM": 81,
+   "HELP_ID_FOB_MISSIONS_EM_NON_ENEMY": 94,
+   "HELP_ID_FOB_MISSIONS_EM_SEL_FOB": 82,
+   "HELP_ID_FOB_MISSIONS_EM_SEL_LZ": 84,
+   "HELP_ID_FOB_MISSIONS_EM_SEL_PF": 83,
+   "HELP_ID_FOB_MISSIONS_EVENT": 95,
+   "HELP_ID_FOB_MISSIONS_EVENT_EM": 96,
+   "HELP_ID_FOB_MISSIONS_NON_ENEMY": 97,
+   "HELP_ID_FOB_MISSIONS_SEL_FOB": 78,
+   "HELP_ID_FOB_MISSIONS_SEL_LZ": 80,
+   "HELP_ID_FOB_MISSIONS_SEL_PF": 79,
+   "HELP_ID_FRIENDS_RIVALS": 86,
+   "HELP_ID_FRIENDS_RIVALS_ENEMY": 87,
+   "HELP_ID_ITEMS_TOP": 26,
+   "HELP_ID_LOG_TOP": 28,
+   "HELP_ID_MAP_NAVI": 47,
+   "HELP_ID_MAP_TOP": 46,
+   "HELP_ID_MB_MENU": 48,
+   "HELP_ID_MB_MENU_CYOHO": 53,
+   "HELP_ID_MB_MENU_IRYO": 54,
+   "HELP_ID_MB_MENU_KENKYU": 50,
+   "HELP_ID_MB_MENU_KYOTEN": 51,
+   "HELP_ID_MB_MENU_SENTO_KEIBI": 49,
+   "HELP_ID_MB_MENU_SIEN": 52,
+   "HELP_ID_MB_MISSIONS": 55,
+   "HELP_ID_MISSION_LIST_TOP": 56,
+   "HELP_ID_NAMEPLATE": 98,
+   "HELP_ID_PF_RATING": 89,
+   "HELP_ID_RESCUE_KAZ_MISSION": 1,
+   "HELP_ID_RESOURCES": 24,
+   "HELP_ID_REWARDS": 60,
+   "HELP_ID_SIDEOPS_LIST_FIELD": 58,
+   "HELP_ID_SIDEOPS_LIST_HELI": 57,
+   "HELP_ID_SORTIE_PREP": 43,
+   "HELP_ID_SORTIE_PREP_SUB": 44,
+   "HELP_ID_STAFF_MANAGER_MOVE_STAFF": 3,
+   "HELP_ID_STAFF_MANAGER_SECTION": 5,
+   "HELP_ID_STAFF_MANAGER_SECTION_CYOHO": 11,
+   "HELP_ID_STAFF_MANAGER_SECTION_IRYO": 12,
+   "HELP_ID_STAFF_MANAGER_SECTION_KEIBI": 7,
+   "HELP_ID_STAFF_MANAGER_SECTION_KENKYU": 8,
+   "HELP_ID_STAFF_MANAGER_SECTION_KYOTEN": 9,
+   "HELP_ID_STAFF_MANAGER_SECTION_SENTO": 6,
+   "HELP_ID_STAFF_MANAGER_SECTION_SIEN": 10,
+   "HELP_ID_STAFF_MANAGER_STAFF_DETAIL": 4,
+   "HELP_ID_STAFF_MANAGER_TOP": 2,
+   "HELP_ID_SUPPLY_LOADOUT": 64,
+   "HELP_ID_SUPPLY_VEHICLE": 65,
+   "HELP_ID_SUPPLY_WEAPON": 61,
+   "HELP_ID_SUPPORT_ARTILLERY": 71,
+   "HELP_ID_SUPPORT_CHAFF": 74,
+   "HELP_ID_SUPPORT_GAS": 73,
+   "HELP_ID_SUPPORT_HELI": 75,
+   "HELP_ID_SUPPORT_HELI_ATTACK": 76,
+   "HELP_ID_SUPPORT_HELI_RETURN": 88,
+   "HELP_ID_SUPPORT_SMOKE": 72
+  },
+  "NeutralizeCause": {
+   "ASSAULT_RIFLE": 2,
+   "ASSIST": 12,
+   "CQC_KNIFE": 10,
+   "D_DOG": 14,
+   "D_HORSE": 15,
+   "D_WALKER_GEAR": 16,
+   "GRENADE": 7,
+   "HANDGUN": 0,
+   "MACHINE_GUN": 4,
+   "MISSILE": 6,
+   "NO_KILL": 19,
+   "NO_KILL_BULLET": 20,
+   "QUIET": 13,
+   "ROCKET_ARM": 11,
+   "SHOTGUN": 3,
+   "SNIPER_RIFLE": 5,
+   "SUBMACHINE_GUN": 1,
+   "SUPPORT_HELI": 18,
+   "VEHICLE": 17
+  },
+  "NeutralizeFobCause": {
+   "ANTIMATERIAL_RIFLE": 8,
+   "ANTI_AIR": 23,
+   "ASSAULT_RIFLE": 2,
+   "ASSIST": 14,
+   "CQC_KNIFE": 12,
+   "D_DOG": 16,
+   "D_HORSE": 17,
+   "D_WALKER_GEAR": 20,
+   "GRENADER": 4,
+   "HANDGUN": 0,
+   "MACHINE_GUN": 6,
+   "MISSILE": 7,
+   "MORTAR": 24,
+   "PLACED": 10,
+   "QUIET": 15,
+   "SHOTGUN": 3,
+   "SNIPER_RIFLE": 5,
+   "SUBMACHINE_GUN": 1,
+   "THROWING": 9,
+   "TURRET": 22,
+   "VEHICLE": 18
+  },
+  "NeutralizeType": {
+   "DYING": 3,
+   "FAINT": 1,
+   "FULTON": 5,
+   "HOLDUP": 4,
+   "INVALID": 6,
+   "SLEEP": 2
+  },
+  "PatchDlc": {
+   "PATCH_DLC_TYPE_MGO_DATA": 0,
+   "PATCH_DLC_TYPE_TPP_COMPATIBILITY_DATA": 1,
+   "REQUEST_DOWNLOADING_RESULT_OK": 0
+  },
+  "PlayerCamera": {
+   "Around": 5
+  },
+  "PlayerCamoType": {
+   "ARBANBLUE": 9,
+   "ARBANGRAY": 8,
+   "AVATAR_EDIT_MAN": 27,
+   "BATTLEDRESS": 16,
+   "BLACK": 13,
+   "BOSS_OPEN": 35,
+   "EVA_OPEN": 33,
+   "FOXTROT": 5,
+   "GOLDTIGER": 4,
+   "HOSPITAL": 23,
+   "MGS3_NAKED": 29,
+   "OLIVEDRAB": 0,
+   "PANTHER": 26,
+   "SANDSTORM": 10,
+   "SILVER": 25,
+   "SPLITTER": 1,
+   "SQUARE": 2,
+   "SWIMWEAR_C00": 79,
+   "SWIMWEAR_C01": 80,
+   "SWIMWEAR_C02": 81,
+   "SWIMWEAR_C03": 82,
+   "SWIMWEAR_C05": 83,
+   "SWIMWEAR_C06": 84,
+   "SWIMWEAR_C38": 85,
+   "SWIMWEAR_C39": 86,
+   "SWIMWEAR_C44": 87,
+   "SWIMWEAR_C46": 88,
+   "SWIMWEAR_C48": 89,
+   "SWIMWEAR_C53": 90,
+   "SWIMWEAR_G_C00": 91,
+   "SWIMWEAR_G_C01": 92,
+   "SWIMWEAR_G_C02": 93,
+   "SWIMWEAR_G_C03": 94,
+   "SWIMWEAR_G_C05": 95,
+   "SWIMWEAR_G_C06": 96,
+   "SWIMWEAR_G_C38": 97,
+   "SWIMWEAR_G_C39": 98,
+   "SWIMWEAR_G_C44": 99,
+   "SWIMWEAR_G_C46": 100,
+   "SWIMWEAR_G_C48": 101,
+   "SWIMWEAR_G_C53": 102,
+   "SWIMWEAR_H_C00": 103,
+   "SWIMWEAR_H_C01": 104,
+   "SWIMWEAR_H_C02": 105,
+   "SWIMWEAR_H_C03": 106,
+   "SWIMWEAR_H_C05": 107,
+   "SWIMWEAR_H_C06": 108,
+   "SWIMWEAR_H_C38": 109,
+   "SWIMWEAR_H_C39": 110,
+   "SWIMWEAR_H_C44": 111,
+   "SWIMWEAR_H_C46": 112,
+   "SWIMWEAR_H_C48": 113,
+   "SWIMWEAR_H_C53": 114,
+   "TIGERSTRIPE": 3,
+   "WETWORK": 7,
+   "WOODLAND": 6
+  },
+  "PlayerConstants": {
+   "ITEM_COUNT": 8
+  },
+  "PlayerDisableAction": {
+   "BEHIND": 8192,
+   "BINOCLE": 1048576,
+   "BLOOD_EFFECT": 4194304,
+   "CARRY": 65536,
+   "CHANGE_STANCE_FROM_CRAWL": 128,
+   "CQC_INTERROGATE": 2,
+   "CQC_KNIFE_KILL": 1,
+   "FULTON": 8,
+   "HELISPACE_CASSETTE": 2097152,
+   "INFECTED_GOGGLES": 8388608,
+   "KILLING_WEAPON": 524288,
+   "LOOK_CAMERA_DIR": 32768,
+   "MARKING": 16384,
+   "OPEN_CALL_MENU": 2048,
+   "OPEN_EQUIP_MENU": 64,
+   "REFLEXMODE": 262144,
+   "RIDE_HELI": 16,
+   "RIDE_VEHICLE": 4096,
+   "STAND": 256,
+   "STEALTHASSIST": 131072,
+   "SUBJECTIVE_CAMERA": 512,
+   "TIME_CIGARETTE": 32
+  },
+  "PlayerFlag": {
+   "USE_VARS_FOR_INITIAL_POS": 1
+  },
+  "PlayerHandType": {
+   "NORMAL": 1
+  },
+  "PlayerInitialAction": {
+   "CRAWL": 2,
+   "FROM_HELI_SPACE": 5,
+   "HELI_SPACE": 4,
+   "SQUAT": 1
+  },
+  "PlayerMissionPrepareAction": {
+   "READY": 2
+  },
+  "PlayerPad": {
+   "ACTION": 32,
+   "BUTTON_PLACE_MARKER": 4194304,
+   "EVADE": 262144,
+   "LIGHT_SWITCH": 131072,
+   "MB_DEVICE": 256,
+   "PLACE_MARKER": 4194304,
+   "RELOAD": 64,
+   "RIGHT": 16384,
+   "SIDE_ROLL": 65536,
+   "STANCE": 2,
+   "STICK_L": 1,
+   "STICK_R": 2,
+   "STOCK": 128,
+   "SUBJECT": 1024,
+   "TRIGGER_L": 1,
+   "TRIGGER_R": 2,
+   "VEHICLE_CALL": 1048576,
+   "VEHICLE_DASH": 2097152,
+   "VEHICLE_FIRE": 524288,
+   "ZOOM_CHANGE": 128
+  },
+  "PlayerPartsType": {
+   "AVATAR_EDIT_MAN": 14,
+   "HOSPITAL": 3,
+   "NAKED": 7,
+   "NORMAL": 0,
+   "NORMAL_SCARF": 1
+  },
+  "PlayerPlayFlag": {
+   "FAILED_NO_TRACE_PLAY": 256,
+   "USE_CHICKEN_CAP": 1,
+   "USE_CHICK_CAP": 2,
+   "USE_FULTON_MISSILE": 16,
+   "USE_HIGHGRADE_EQUIP": 512,
+   "USE_INSTANT_STEALTH": 8,
+   "USE_MUGEN_BANDANA": 128,
+   "USE_PARASITE_CAMO": 32,
+   "USE_STEALTH": 4
+  },
+  "PlayerRetryFlag": {
+   "RETRY": 1,
+   "RETRY_WITH_CHICK_CAP": 2
+  },
+  "PlayerSlotType": {
+   "PRIMARY_1": 0,
+   "PRIMARY_2": 1,
+   "SECONDARY": 2,
+   "SUPPORT": 3
+  },
+  "PlayerStance": {
+   "CRAWL": 3,
+   "SQUAT": 2,
+   "STAND": 1
+  },
+  "PlayerStatus": {
+   "BINOCLE": 58,
+   "CARRY": 134,
+   "CRAWL": 6,
+   "CURTAIN": 140,
+   "NORMAL_ACTION": 7,
+   "PARTS_ACTIVE": 145,
+   "SQUAT": 5,
+   "STAND": 4
+  },
+  "PlayerTrap": {
+   "BEHIND": 2,
+   "CARRY": 4,
+   "NORMAL": 1,
+   "SQUAT": 2,
+   "STAND": 1
+  },
+  "PlayerType": {
+   "AVATAR": 3,
+   "DD_FEMALE": 2,
+   "DD_MALE": 1,
+   "OCELOT": 5,
+   "QUIET": 6,
+   "SNAKE": 0
+  },
+  "Popup": {
+   "SELECT_OK": 1,
+   "TYPE_ONE_BUTTON": 1,
+   "TYPE_ONE_CANCEL_BUTTON": 3,
+   "TYPE_TWO_BUTTON": 2
+  },
+  "QuarkSystem": {
+   "COMPILER_STATE_WAITING_TO_LOAD": 3
+  },
+  "ScriptBlock": {
+   "SCRIPT_BLOCK_STATE_ACTIVE": 3,
+   "SCRIPT_BLOCK_STATE_EMPTY": 0,
+   "SCRIPT_BLOCK_STATE_INACTIVE": 2,
+   "SCRIPT_BLOCK_STATE_PROCESSING": 1,
+   "TRANSITION_ACTIVATED": 1,
+   "TRANSITION_DEACTIVATED": 2
+  },
+  "SignIn": {
+   "SIGN_IN_STATE_BUSY": 1,
+   "STORAGE_SELECTION_STATE_BUSY": 1
+  },
+  "SoldierSlotType": {
+   "SECONDARY": 1
+  },
+  "SplashScreen": {
+   "STATE_DELETE": 5
+  },
+  "StageBlock": {
+   "ACTIVE": 1,
+   "INACTIVE": 0
+  },
+  "StateFlag": {
+   "DYING_LIFE": 1,
+   "ZOMBIE": 4
+  },
+  "TppAnimalFova": {
+   "TYPE_COLOR_2": 2
+  },
+  "TppAnimalId": {
+   "COUNT": 72
+  },
+  "TppCommand": {
+   "Weather": 0
+  },
+  "TppEquip": {
+   "AXIS_X_ROT": 10,
+   "AXIS_Z_ROT": 10,
+   "AXIS_Z_TRANS": 12,
+   "MOVE_ONEWAY": 11,
+   "MOVE_ROUND": 10
+  },
+  "TppGameMode": {
+   "U_KONAMI_LOGIN": 4,
+   "U_SIGN_OUT": 1
+  },
+  "TppGameObject": {
+   "FULTON_FAILED_TYPE_ON_FINISHED_RISE": 1,
+   "FULTON_FAILED_TYPE_WRONG_POSITION": 3,
+   "GAME_OBJECT_TYPE_BATTLEGEAR": 46,
+   "GAME_OBJECT_TYPE_BEAR": 37,
+   "GAME_OBJECT_TYPE_BOSSQUIET2": 25,
+   "GAME_OBJECT_TYPE_BRIDGE": 89,
+   "GAME_OBJECT_TYPE_BUDDYDOG2": 19,
+   "GAME_OBJECT_TYPE_BUDDYPUPPY": 20,
+   "GAME_OBJECT_TYPE_BUDDYQUIET2": 18,
+   "GAME_OBJECT_TYPE_COMMAND_POST2": 1,
+   "GAME_OBJECT_TYPE_COMMON_WALKERGEAR2": 45,
+   "GAME_OBJECT_TYPE_CRITTER_BIRD": 30,
+   "GAME_OBJECT_TYPE_DOOR": 83,
+   "GAME_OBJECT_TYPE_EAGLE": 32,
+   "GAME_OBJECT_TYPE_ENEMY_HELI": 15,
+   "GAME_OBJECT_TYPE_EVENT_ANIMATION": 88,
+   "GAME_OBJECT_TYPE_FULTONABLE_CONTAINER": 77,
+   "GAME_OBJECT_TYPE_GATLINGGUN": 80,
+   "GAME_OBJECT_TYPE_GOAT": 28,
+   "GAME_OBJECT_TYPE_HELI2": 14,
+   "GAME_OBJECT_TYPE_HORSE2": 13,
+   "GAME_OBJECT_TYPE_HOSTAGE2": 3,
+   "GAME_OBJECT_TYPE_HOSTAGE_UNIQUE": 4,
+   "GAME_OBJECT_TYPE_HOSTAGE_UNIQUE2": 5,
+   "GAME_OBJECT_TYPE_IMPORTANT_BREAKABLE": 79,
+   "GAME_OBJECT_TYPE_IR_SENSOR": 87,
+   "GAME_OBJECT_TYPE_JACKAL": 36,
+   "GAME_OBJECT_TYPE_MACHINEGUN": 82,
+   "GAME_OBJECT_TYPE_MARKER2_LOCATOR": 71,
+   "GAME_OBJECT_TYPE_MORTAR": 81,
+   "GAME_OBJECT_TYPE_NUBIAN": 29,
+   "GAME_OBJECT_TYPE_PARASITE2": 22,
+   "GAME_OBJECT_TYPE_PLAYER2": 0,
+   "GAME_OBJECT_TYPE_RADIO_CASSETTE": 91,
+   "GAME_OBJECT_TYPE_RAT": 33,
+   "GAME_OBJECT_TYPE_SEARCHLIGHT": 76,
+   "GAME_OBJECT_TYPE_SECURITYCAMERA2": 27,
+   "GAME_OBJECT_TYPE_SOLDIER2": 2,
+   "GAME_OBJECT_TYPE_STORK": 31,
+   "GAME_OBJECT_TYPE_UAV": 26,
+   "GAME_OBJECT_TYPE_VEHICLE": 50,
+   "GAME_OBJECT_TYPE_VOLGIN2": 24,
+   "GAME_OBJECT_TYPE_WALKERGEAR2": 44,
+   "GAME_OBJECT_TYPE_WATCH_TOWER": 84,
+   "GAME_OBJECT_TYPE_WATER_TOWER": 90,
+   "GAME_OBJECT_TYPE_WOLF": 35,
+   "GAME_OBJECT_TYPE_ZEBRA": 34,
+   "NPC_LIFE_STATE_DEAD": 1,
+   "NPC_LIFE_STATE_DYING": 2,
+   "NPC_LIFE_STATE_FAINT": 4,
+   "NPC_LIFE_STATE_NORMAL": 0,
+   "NPC_LIFE_STATE_SLEEP": 3,
+   "NPC_STATE_CARRIED": 4,
+   "NPC_STATE_DISABLE": 0,
+   "NPC_STATE_NORMAL": 1,
+   "PHASE_ALERT": 3,
+   "PHASE_CAUTION": 1,
+   "PHASE_EVASION": 2,
+   "PHASE_SNEAK": 0,
+   "ROUTE_EVENT_FAILED_TYPE_LOST_HOSTAGE_PUT_IN_VEHICLE": 4,
+   "ROUTE_EVENT_FAILED_TYPE_LOST_HOSTAGE_TAKE_OUT_OF_VEHICLE": 5,
+   "ROUTE_EVENT_FAILED_TYPE_LOST_VEHICLE_HOSTAGE_PUT_IN": 6,
+   "ROUTE_EVENT_FAILED_TYPE_LOST_VEHICLE_HOSTAGE_TAKE_OUT_OF": 7,
+   "ROUTE_EVENT_FAILED_TYPE_PICK_UP_HONEY_BEE": 3,
+   "ROUTE_EVENT_FAILED_TYPE_VEHICLE_GET_IN": 1,
+   "SIREN_TYPE_CITA": 1,
+   "SIREN_TYPE_ENEB": 2,
+   "SIREN_TYPE_FLOS": 3,
+   "SIREN_TYPE_LAB": 4,
+   "SIREN_TYPE_PFCA": 5,
+   "SIREN_TYPE_POWP": 6,
+   "SIREN_TYPE_SOVB": 7,
+   "SIREN_TYPE_TENT": 8,
+   "VEHICLE_ACTION_TYPE_FELL_OFF_VEHICLE": 2,
+   "VEHICLE_ACTION_TYPE_GOT_IN_VEHICLE": 0,
+   "VEHICLE_ACTION_TYPE_GOT_OUT_VEHICLE": 1
+  },
+  "TppMbDev": {
+   "EQP_DEV_GROUP_BUDDY_010": 99,
+   "EQP_DEV_GROUP_BUDDY_020": 100,
+   "EQP_DEV_GROUP_BUDDY_030": 101,
+   "EQP_DEV_GROUP_BUDDY_040": 102,
+   "EQP_DEV_GROUP_BUDDY_050": 103,
+   "EQP_DEV_GROUP_BUDDY_060": 104,
+   "EQP_DEV_GROUP_BUDDY_070": 105,
+   "EQP_DEV_GROUP_BUDDY_080": 106,
+   "EQP_DEV_GROUP_BUDDY_090": 107,
+   "EQP_DEV_GROUP_BUDDY_100": 108,
+   "EQP_DEV_GROUP_BUDDY_110": 109,
+   "EQP_DEV_GROUP_BUDDY_120": 110,
+   "EQP_DEV_GROUP_BUDDY_130": 111,
+   "EQP_DEV_GROUP_BUDDY_140": 112,
+   "EQP_DEV_GROUP_BUDDY_150": 113,
+   "EQP_DEV_GROUP_BUDDY_160": 114,
+   "EQP_DEV_GROUP_BUDDY_170": 115,
+   "EQP_DEV_GROUP_BUDDY_180": 116,
+   "EQP_DEV_GROUP_BUDDY_190": 117,
+   "EQP_DEV_GROUP_BUDDY_200": 118,
+   "EQP_DEV_GROUP_BUDDY_210": 119,
+   "EQP_DEV_GROUP_BUDDY_220": 120,
+   "EQP_DEV_GROUP_BUDDY_230": 121,
+   "EQP_DEV_GROUP_BUDDY_240": 122,
+   "EQP_DEV_GROUP_BUDDY_250": 123,
+   "EQP_DEV_GROUP_BUDDY_260": 124,
+   "EQP_DEV_GROUP_BUDDY_270": 125,
+   "EQP_DEV_GROUP_BUDDY_280": 126,
+   "EQP_DEV_GROUP_BUDDY_300": 128,
+   "EQP_DEV_GROUP_BUDDY_310": 129,
+   "EQP_DEV_GROUP_BUDDY_320": 130,
+   "EQP_DEV_GROUP_None": 0,
+   "EQP_DEV_GROUP_OTHER_010": 137,
+   "EQP_DEV_GROUP_OTHER_020": 138,
+   "EQP_DEV_GROUP_OTHER_030": 139,
+   "EQP_DEV_GROUP_OTHER_050": 141,
+   "EQP_DEV_GROUP_OTHER_060": 142,
+   "EQP_DEV_GROUP_OTHER_070": 143,
+   "EQP_DEV_GROUP_OTHER_080": 144,
+   "EQP_DEV_GROUP_OTHER_100": 146,
+   "EQP_DEV_GROUP_OTHER_110": 147,
+   "EQP_DEV_GROUP_OTHER_122": 149,
+   "EQP_DEV_GROUP_OTHER_124": 150,
+   "EQP_DEV_GROUP_OTHER_130": 151,
+   "EQP_DEV_GROUP_OTHER_140": 152,
+   "EQP_DEV_GROUP_OTHER_150": 153,
+   "EQP_DEV_GROUP_OTHER_160": 154,
+   "EQP_DEV_GROUP_OTHER_170": 155,
+   "EQP_DEV_GROUP_OTHER_180": 156,
+   "EQP_DEV_GROUP_OTHER_190": 157,
+   "EQP_DEV_GROUP_OTHER_200": 158,
+   "EQP_DEV_GROUP_SUPPORT_010": 37,
+   "EQP_DEV_GROUP_SUPPORT_030": 39,
+   "EQP_DEV_GROUP_SUPPORT_040": 40,
+   "EQP_DEV_GROUP_SUPPORT_050": 41,
+   "EQP_DEV_GROUP_SUPPORT_060": 42,
+   "EQP_DEV_GROUP_SUPPORT_070": 43,
+   "EQP_DEV_GROUP_SUPPORT_080": 44,
+   "EQP_DEV_GROUP_SUPPORT_090": 45,
+   "EQP_DEV_GROUP_SUPPORT_100": 46,
+   "EQP_DEV_GROUP_SUPPORT_110": 47,
+   "EQP_DEV_GROUP_SUPPORT_120": 48,
+   "EQP_DEV_GROUP_SUPPORT_140": 50,
+   "EQP_DEV_GROUP_SUPPORT_150": 51,
+   "EQP_DEV_GROUP_SUPPORT_160": 52,
+   "EQP_DEV_GROUP_SUPPORT_170": 53,
+   "EQP_DEV_GROUP_SUPPORT_180": 54,
+   "EQP_DEV_GROUP_TOOL_010": 55,
+   "EQP_DEV_GROUP_TOOL_020": 56,
+   "EQP_DEV_GROUP_TOOL_030": 57,
+   "EQP_DEV_GROUP_TOOL_040": 58,
+   "EQP_DEV_GROUP_TOOL_050": 59,
+   "EQP_DEV_GROUP_TOOL_070": 61,
+   "EQP_DEV_GROUP_TOOL_080": 62,
+   "EQP_DEV_GROUP_TOOL_090": 63,
+   "EQP_DEV_GROUP_TOOL_100": 64,
+   "EQP_DEV_GROUP_TOOL_110": 65,
+   "EQP_DEV_GROUP_TOOL_120": 66,
+   "EQP_DEV_GROUP_TOOL_130": 67,
+   "EQP_DEV_GROUP_TOOL_140": 68,
+   "EQP_DEV_GROUP_TOOL_150": 69,
+   "EQP_DEV_GROUP_TOOL_160": 70,
+   "EQP_DEV_GROUP_TOOL_170": 71,
+   "EQP_DEV_GROUP_TOOL_180": 72,
+   "EQP_DEV_GROUP_TOOL_190": 73,
+   "EQP_DEV_GROUP_TOOL_200": 74,
+   "EQP_DEV_GROUP_TOOL_210": 75,
+   "EQP_DEV_GROUP_TOOL_220": 76,
+   "EQP_DEV_GROUP_TOOL_230": 77,
+   "EQP_DEV_GROUP_TOOL_240": 78,
+   "EQP_DEV_GROUP_TOOL_250": 79,
+   "EQP_DEV_GROUP_TOOL_260": 80,
+   "EQP_DEV_GROUP_TOOL_270": 81,
+   "EQP_DEV_GROUP_TOOL_280": 82,
+   "EQP_DEV_GROUP_TOOL_290": 83,
+   "EQP_DEV_GROUP_TOOL_300": 84,
+   "EQP_DEV_GROUP_TOOL_310": 85,
+   "EQP_DEV_GROUP_TOOL_320": 86,
+   "EQP_DEV_GROUP_TOOL_330": 87,
+   "EQP_DEV_GROUP_TOOL_340": 88,
+   "EQP_DEV_GROUP_TOOL_350": 89,
+   "EQP_DEV_GROUP_TOOL_360": 90,
+   "EQP_DEV_GROUP_TOOL_370": 91,
+   "EQP_DEV_GROUP_TOOL_380": 92,
+   "EQP_DEV_GROUP_TOOL_390": 93,
+   "EQP_DEV_GROUP_TOOL_400": 94,
+   "EQP_DEV_GROUP_TOOL_410": 95,
+   "EQP_DEV_GROUP_TOOL_420": 96,
+   "EQP_DEV_GROUP_TOOL_430": 97,
+   "EQP_DEV_GROUP_TOOL_440": 98,
+   "EQP_DEV_GROUP_WEAPON_010": 1,
+   "EQP_DEV_GROUP_WEAPON_020": 2,
+   "EQP_DEV_GROUP_WEAPON_030": 3,
+   "EQP_DEV_GROUP_WEAPON_040": 4,
+   "EQP_DEV_GROUP_WEAPON_050": 5,
+   "EQP_DEV_GROUP_WEAPON_060": 6,
+   "EQP_DEV_GROUP_WEAPON_070": 7,
+   "EQP_DEV_GROUP_WEAPON_080": 8,
+   "EQP_DEV_GROUP_WEAPON_090": 9,
+   "EQP_DEV_GROUP_WEAPON_100": 10,
+   "EQP_DEV_GROUP_WEAPON_110": 11,
+   "EQP_DEV_GROUP_WEAPON_120": 12,
+   "EQP_DEV_GROUP_WEAPON_130": 13,
+   "EQP_DEV_GROUP_WEAPON_140": 14,
+   "EQP_DEV_GROUP_WEAPON_150": 15,
+   "EQP_DEV_GROUP_WEAPON_160": 16,
+   "EQP_DEV_GROUP_WEAPON_170": 17,
+   "EQP_DEV_GROUP_WEAPON_180": 18,
+   "EQP_DEV_GROUP_WEAPON_190": 19,
+   "EQP_DEV_GROUP_WEAPON_200": 20,
+   "EQP_DEV_GROUP_WEAPON_210": 21,
+   "EQP_DEV_GROUP_WEAPON_220": 22,
+   "EQP_DEV_GROUP_WEAPON_230": 23,
+   "EQP_DEV_GROUP_WEAPON_240": 24,
+   "EQP_DEV_GROUP_WEAPON_250": 25,
+   "EQP_DEV_GROUP_WEAPON_260": 26,
+   "EQP_DEV_GROUP_WEAPON_270": 27,
+   "EQP_DEV_GROUP_WEAPON_280": 28,
+   "EQP_DEV_GROUP_WEAPON_290": 29,
+   "EQP_DEV_GROUP_WEAPON_300": 30,
+   "EQP_DEV_GROUP_WEAPON_310": 31,
+   "EQP_DEV_GROUP_WEAPON_320": 32,
+   "EQP_DEV_GROUP_WEAPON_330": 33,
+   "EQP_DEV_GROUP_WEAPON_340": 34,
+   "EQP_DEV_GROUP_WEAPON_350": 35,
+   "EQP_DEV_GROUP_WEAPON_360": 36,
+   "EQP_DEV_TYPE_ArtificialArm": 19,
+   "EQP_DEV_TYPE_Assault": 1,
+   "EQP_DEV_TYPE_BattleGear": 28,
+   "EQP_DEV_TYPE_DDog": 24,
+   "EQP_DEV_TYPE_Equip": 18,
+   "EQP_DEV_TYPE_GrenadeLauncher": 7,
+   "EQP_DEV_TYPE_Handgun": 2,
+   "EQP_DEV_TYPE_Heli": 31,
+   "EQP_DEV_TYPE_Horse": 25,
+   "EQP_DEV_TYPE_Machinegun": 6,
+   "EQP_DEV_TYPE_Missile": 8,
+   "EQP_DEV_TYPE_Placed": 13,
+   "EQP_DEV_TYPE_Quiet": 23,
+   "EQP_DEV_TYPE_SecurityGadgets": 37,
+   "EQP_DEV_TYPE_Shield": 17,
+   "EQP_DEV_TYPE_Shotgun": 5,
+   "EQP_DEV_TYPE_Sniper": 4,
+   "EQP_DEV_TYPE_Submachinegun": 3,
+   "EQP_DEV_TYPE_Suit": 20,
+   "EQP_DEV_TYPE_Throwing": 12,
+   "EQP_DEV_TYPE_Tool": 22,
+   "EQP_DEV_TYPE_WalkerGear": 26
+  },
+  "TppMotherBaseManagementConst": {
+   "ANIMAL_100": 84,
+   "ANIMAL_1000": 106,
+   "ANIMAL_110": 85,
+   "ANIMAL_1100": 107,
+   "ANIMAL_120": 86,
+   "ANIMAL_1200": 108,
+   "ANIMAL_1210": 109,
+   "ANIMAL_1220": 110,
+   "ANIMAL_130": 87,
+   "ANIMAL_1300": 111,
+   "ANIMAL_1310": 112,
+   "ANIMAL_1400": 113,
+   "ANIMAL_1401": 114,
+   "ANIMAL_1402": 115,
+   "ANIMAL_1403": 116,
+   "ANIMAL_1410": 117,
+   "ANIMAL_1420": 118,
+   "ANIMAL_1430": 119,
+   "ANIMAL_1500": 120,
+   "ANIMAL_1700": 122,
+   "ANIMAL_1710": 123,
+   "ANIMAL_1800": 124,
+   "ANIMAL_1900": 125,
+   "ANIMAL_1901": 126,
+   "ANIMAL_1903": 128,
+   "ANIMAL_1910": 129,
+   "ANIMAL_1912": 131,
+   "ANIMAL_1913": 132,
+   "ANIMAL_1920": 133,
+   "ANIMAL_1921": 134,
+   "ANIMAL_1922": 135,
+   "ANIMAL_1923": 136,
+   "ANIMAL_1930": 137,
+   "ANIMAL_1931": 138,
+   "ANIMAL_1932": 139,
+   "ANIMAL_1933": 140,
+   "ANIMAL_1940": 141,
+   "ANIMAL_1941": 142,
+   "ANIMAL_1942": 143,
+   "ANIMAL_1943": 144,
+   "ANIMAL_1944": 145,
+   "ANIMAL_1945": 146,
+   "ANIMAL_1946": 147,
+   "ANIMAL_1947": 148,
+   "ANIMAL_1950": 149,
+   "ANIMAL_1951": 150,
+   "ANIMAL_1952": 151,
+   "ANIMAL_1953": 152,
+   "ANIMAL_1954": 153,
+   "ANIMAL_1955": 154,
+   "ANIMAL_1956": 155,
+   "ANIMAL_1957": 156,
+   "ANIMAL_1960": 157,
+   "ANIMAL_1961": 158,
+   "ANIMAL_1962": 159,
+   "ANIMAL_1963": 160,
+   "ANIMAL_1964": 161,
+   "ANIMAL_1965": 162,
+   "ANIMAL_1966": 163,
+   "ANIMAL_1967": 164,
+   "ANIMAL_1970": 165,
+   "ANIMAL_1971": 166,
+   "ANIMAL_1972": 167,
+   "ANIMAL_1973": 168,
+   "ANIMAL_1974": 169,
+   "ANIMAL_1975": 170,
+   "ANIMAL_1976": 171,
+   "ANIMAL_1977": 172,
+   "ANIMAL_200": 89,
+   "ANIMAL_2000": 173,
+   "ANIMAL_2010": 174,
+   "ANIMAL_210": 90,
+   "ANIMAL_2100": 175,
+   "ANIMAL_220": 91,
+   "ANIMAL_2200": 176,
+   "ANIMAL_2210": 177,
+   "ANIMAL_2240": 180,
+   "ANIMAL_2241": 181,
+   "ANIMAL_2250": 182,
+   "ANIMAL_300": 92,
+   "ANIMAL_400": 93,
+   "ANIMAL_410": 94,
+   "ANIMAL_500": 95,
+   "ANIMAL_510": 96,
+   "ANIMAL_600": 97,
+   "ANIMAL_610": 98,
+   "ANIMAL_700": 100,
+   "ANIMAL_720": 101,
+   "ANIMAL_730": 102,
+   "ANIMAL_800": 103,
+   "ANIMAL_810": 104,
+   "ANIMAL_900": 105,
+   "ANIMAL_RARE_N": 0,
+   "ANIMAL_RARE_NR": 1,
+   "ANIMAL_RARE_R": 2,
+   "ANIMAL_RARE_SR": 3,
+   "ANIMAL_RARE_SSR": 4,
+   "ANIMAL_TYPE_BEAR": 6,
+   "ANIMAL_TYPE_DOG": 1,
+   "ANIMAL_TYPE_GOAT": 18,
+   "ANIMAL_TYPE_HORSE": 2,
+   "BIRTHPLACE_AFGHAN": 1,
+   "BIRTHPLACE_AFRICA": 2,
+   "BIRTHPLACE_NONE": 0,
+   "CLUSTER_CATEGORY_BASE_DEV": 3,
+   "CLUSTER_CATEGORY_COMBAT": 1,
+   "CLUSTER_CATEGORY_COMMAND": 0,
+   "CLUSTER_CATEGORY_DEVELOP": 2,
+   "CLUSTER_CATEGORY_MEDICAL": 6,
+   "CLUSTER_CATEGORY_SPY": 5,
+   "CLUSTER_CATEGORY_SUPPORT": 4,
+   "CONTAINER_VISUAL_RED": 1,
+   "CONTAINER_VISUAL_WHITE": 0,
+   "DEPLOY_MISSION_CATEGORY_BASE_DEV1_INSHORE_DEVELOP": 6,
+   "DEPLOY_MISSION_CATEGORY_BASE_DEV2_PELAGIC_DEVELOP": 7,
+   "DEPLOY_MISSION_CATEGORY_COMBAT1_PERSON_GUARD": 0,
+   "DEPLOY_MISSION_CATEGORY_COMBAT2_BASE_DEFENSE": 1,
+   "DEPLOY_MISSION_CATEGORY_COMBAT3_UNIT_EXCLUSION": 2,
+   "DEPLOY_MISSION_CATEGORY_COMBAT4_BASE_CONTROL": 3,
+   "DEPLOY_MISSION_CATEGORY_DEVELOP1_TECHNICAL_GRANT": 4,
+   "DEPLOY_MISSION_CATEGORY_DEVELOP2_JOINT_DEVELOP": 5,
+   "DEPLOY_MISSION_CATEGORY_MEDICAL1_MEDICAL_SUPPORT": 12,
+   "DEPLOY_MISSION_CATEGORY_MEDICAL2_PLANT_COLLECTION": 13,
+   "DEPLOY_MISSION_CATEGORY_SPY1_RECRUIT": 10,
+   "DEPLOY_MISSION_CATEGORY_SPY2_SCOUT": 11,
+   "DEPLOY_MISSION_CATEGORY_SUPPORT1_RECONSTRUCTION_AID": 8,
+   "DEPLOY_MISSION_CATEGORY_SUPPORT2_TRANSPORTATION": 9,
+   "DEPLOY_MISSION_ID_RANDOM_10000": 21,
+   "DEPLOY_MISSION_ID_RANDOM_10001": 22,
+   "DEPLOY_MISSION_ID_RANDOM_10002": 23,
+   "DEPLOY_MISSION_ID_RANDOM_10003": 24,
+   "DEPLOY_MISSION_ID_RANDOM_10004": 25,
+   "DEPLOY_MISSION_ID_RANDOM_10005": 26,
+   "DEPLOY_MISSION_ID_RANDOM_10006": 27,
+   "DEPLOY_MISSION_ID_RANDOM_10007": 28,
+   "DEPLOY_MISSION_ID_RANDOM_10100": 29,
+   "DEPLOY_MISSION_ID_RANDOM_10101": 30,
+   "DEPLOY_MISSION_ID_RANDOM_11000": 31,
+   "DEPLOY_MISSION_ID_RANDOM_11001": 32,
+   "DEPLOY_MISSION_ID_RANDOM_11100": 33,
+   "DEPLOY_MISSION_ID_RANDOM_11101": 34,
+   "DEPLOY_MISSION_ID_RANDOM_12000": 35,
+   "DEPLOY_MISSION_ID_RANDOM_12001": 36,
+   "DEPLOY_MISSION_ID_RANDOM_12002": 37,
+   "DEPLOY_MISSION_ID_RANDOM_12003": 38,
+   "DEPLOY_MISSION_ID_RANDOM_12004": 39,
+   "DEPLOY_MISSION_ID_RANDOM_12100": 40,
+   "DEPLOY_MISSION_ID_RANDOM_12101": 41,
+   "DEPLOY_MISSION_ID_RANDOM_12102": 42,
+   "DEPLOY_MISSION_ID_RANDOM_13000": 43,
+   "DEPLOY_MISSION_ID_RANDOM_13001": 44,
+   "DEPLOY_MISSION_ID_RANDOM_13002": 45,
+   "DEPLOY_MISSION_ID_RANDOM_13100": 46,
+   "DEPLOY_MISSION_ID_RANDOM_13101": 47,
+   "DEPLOY_MISSION_ID_RANDOM_13102": 48,
+   "DEPLOY_MISSION_ID_RANDOM_13103": 49,
+   "DEPLOY_MISSION_ID_RANDOM_13104": 50,
+   "DEPLOY_MISSION_ID_RANDOM_13105": 51,
+   "DEPLOY_MISSION_ID_RANDOM_13106": 52,
+   "DEPLOY_MISSION_ID_RANDOM_13107": 53,
+   "DEPLOY_MISSION_ID_RANDOM_13200": 54,
+   "DEPLOY_MISSION_ID_RANDOM_13201": 55,
+   "DEPLOY_MISSION_ID_RANDOM_13202": 56,
+   "DEPLOY_MISSION_ID_RANDOM_13203": 57,
+   "DEPLOY_MISSION_ID_RANDOM_13204": 58,
+   "DEPLOY_MISSION_ID_RANDOM_13205": 59,
+   "DEPLOY_MISSION_ID_RANDOM_13206": 60,
+   "DEPLOY_MISSION_ID_RANDOM_13207": 61,
+   "DEPLOY_MISSION_ID_RANDOM_13208": 62,
+   "DEPLOY_MISSION_ID_RANDOM_13209": 63,
+   "DEPLOY_MISSION_ID_RANDOM_14000": 64,
+   "DEPLOY_MISSION_ID_RANDOM_14001": 65,
+   "DEPLOY_MISSION_ID_RANDOM_14002": 66,
+   "DEPLOY_MISSION_ID_RANDOM_14003": 67,
+   "DEPLOY_MISSION_ID_RANDOM_14004": 68,
+   "DEPLOY_MISSION_ID_RANDOM_14100": 69,
+   "DEPLOY_MISSION_ID_RANDOM_14101": 70,
+   "DEPLOY_MISSION_ID_RANDOM_15000": 71,
+   "DEPLOY_MISSION_ID_RANDOM_15001": 72,
+   "DEPLOY_MISSION_ID_RANDOM_15002": 73,
+   "DEPLOY_MISSION_ID_RANDOM_15003": 74,
+   "DEPLOY_MISSION_ID_RANDOM_15004": 75,
+   "DEPLOY_MISSION_ID_RANDOM_15005": 76,
+   "DEPLOY_MISSION_ID_RANDOM_15006": 77,
+   "DEPLOY_MISSION_ID_RANDOM_15007": 78,
+   "DEPLOY_MISSION_ID_RANDOM_15008": 79,
+   "DEPLOY_MISSION_ID_RANDOM_15009": 80,
+   "DEPLOY_MISSION_ID_RANDOM_15010": 81,
+   "DEPLOY_MISSION_ID_RANDOM_15011": 82,
+   "DEPLOY_MISSION_ID_RANDOM_15100": 83,
+   "DEPLOY_MISSION_ID_RANDOM_15101": 84,
+   "DEPLOY_MISSION_ID_RANDOM_15102": 85,
+   "DEPLOY_MISSION_ID_RANDOM_15103": 86,
+   "DEPLOY_MISSION_ID_RANDOM_15104": 87,
+   "DEPLOY_MISSION_ID_RANDOM_15105": 88,
+   "DEPLOY_MISSION_ID_RANDOM_15106": 89,
+   "DEPLOY_MISSION_ID_RANDOM_15107": 90,
+   "DEPLOY_MISSION_ID_RANDOM_15108": 91,
+   "DEPLOY_MISSION_ID_RANDOM_15109": 92,
+   "DEPLOY_MISSION_ID_RANDOM_15110": 93,
+   "DEPLOY_MISSION_ID_RANDOM_16000": 94,
+   "DEPLOY_MISSION_ID_RANDOM_16001": 95,
+   "DEPLOY_MISSION_ID_RANDOM_16002": 96,
+   "DEPLOY_MISSION_ID_RANDOM_16003": 97,
+   "DEPLOY_MISSION_ID_RANDOM_16004": 98,
+   "DEPLOY_MISSION_ID_RANDOM_16005": 99,
+   "DEPLOY_MISSION_ID_RANDOM_16006": 100,
+   "DEPLOY_MISSION_ID_RANDOM_16007": 101,
+   "DEPLOY_MISSION_ID_RANDOM_16100": 102,
+   "DEPLOY_MISSION_ID_RANDOM_16101": 103,
+   "DEPLOY_MISSION_ID_RANDOM_16200": 104,
+   "DEPLOY_MISSION_ID_RANDOM_16201": 105,
+   "DEPLOY_MISSION_ID_RANDOM_16202": 106,
+   "DEPLOY_MISSION_ID_RANDOM_16203": 107,
+   "DEPLOY_MISSION_ID_RANDOM_16204": 108,
+   "DEPLOY_MISSION_ID_RANDOM_16205": 109,
+   "DEPLOY_MISSION_ID_RANDOM_16206": 110,
+   "DEPLOY_MISSION_ID_RANDOM_16207": 111,
+   "DEPLOY_MISSION_ID_RANDOM_16208": 112,
+   "DEPLOY_MISSION_ID_RANDOM_16209": 113,
+   "DEPLOY_MISSION_ID_RANDOM_16210": 114,
+   "DEPLOY_MISSION_ID_RANDOM_16211": 115,
+   "DEPLOY_MISSION_ID_RANDOM_16212": 116,
+   "DEPLOY_MISSION_ID_RANDOM_16213": 117,
+   "DEPLOY_MISSION_ID_RANDOM_16214": 118,
+   "DEPLOY_MISSION_ID_RANDOM_16215": 119,
+   "DEPLOY_MISSION_ID_REVENGE_COMBAT1": 126,
+   "DEPLOY_MISSION_ID_REVENGE_COMBAT2": 127,
+   "DEPLOY_MISSION_ID_REVENGE_COMBAT3": 128,
+   "DEPLOY_MISSION_ID_REVENGE_COMBAT4": 129,
+   "DEPLOY_MISSION_ID_REVENGE_COMBAT5": 130,
+   "DEPLOY_MISSION_ID_REVENGE_HEAD_SHOT": 121,
+   "DEPLOY_MISSION_ID_REVENGE_LONG_RANGE": 132,
+   "DEPLOY_MISSION_ID_REVENGE_NIGHT_COMBAT": 131,
+   "DEPLOY_MISSION_ID_REVENGE_NIGHT_STEALTH": 125,
+   "DEPLOY_MISSION_ID_REVENGE_SMOKE": 120,
+   "DEPLOY_MISSION_ID_REVENGE_STEALTH1": 122,
+   "DEPLOY_MISSION_ID_REVENGE_STEALTH2": 123,
+   "DEPLOY_MISSION_ID_REVENGE_STEALTH3": 124,
+   "DEPLOY_MISSION_ID_REVENGE_VEHICLE": 133,
+   "DEPLOY_MISSION_ID_SEQ_1001": 1,
+   "DEPLOY_MISSION_ID_SEQ_1002": 2,
+   "DEPLOY_MISSION_ID_SEQ_1003": 3,
+   "DEPLOY_MISSION_ID_SEQ_1004": 4,
+   "DEPLOY_MISSION_ID_SEQ_1005": 5,
+   "DEPLOY_MISSION_ID_SEQ_1006": 6,
+   "DEPLOY_MISSION_ID_SEQ_1007": 7,
+   "DEPLOY_MISSION_ID_SEQ_1008": 8,
+   "DEPLOY_MISSION_ID_SEQ_1009": 9,
+   "DEPLOY_MISSION_ID_SEQ_1010": 10,
+   "DEPLOY_MISSION_ID_SEQ_1011": 11,
+   "DEPLOY_MISSION_ID_SEQ_1012": 12,
+   "DEPLOY_MISSION_ID_SEQ_1013": 13,
+   "DEPLOY_MISSION_ID_SEQ_1014": 14,
+   "DEPLOY_MISSION_ID_SEQ_1015": 15,
+   "DEPLOY_MISSION_ID_SEQ_1016": 16,
+   "DEPLOY_MISSION_ID_SEQ_1017": 17,
+   "DEPLOY_MISSION_ID_SEQ_1018": 18,
+   "DEPLOY_MISSION_ID_SEQ_1019": 19,
+   "DEPLOY_MISSION_ID_SEQ_1020": 20,
+   "DEPLOY_MISSION_RARITY_N": 1,
+   "DEPLOY_MISSION_RARITY_NONE": 0,
+   "DEPLOY_MISSION_RARITY_R": 2,
+   "DEPLOY_MISSION_RARITY_SR": 3,
+   "DESIGN_2000": 19,
+   "DESIGN_2001": 20,
+   "DESIGN_2002": 21,
+   "DESIGN_2003": 22,
+   "DESIGN_2005": 23,
+   "DESIGN_2006": 24,
+   "DESIGN_2007": 25,
+   "DESIGN_2008": 26,
+   "DESIGN_2009": 27,
+   "DESIGN_2010": 28,
+   "DESIGN_2011": 29,
+   "DESIGN_2012": 30,
+   "DESIGN_2013": 31,
+   "DESIGN_2014": 32,
+   "DESIGN_2015": 33,
+   "DESIGN_2016": 34,
+   "DESIGN_2017": 35,
+   "DESIGN_2018": 36,
+   "DESIGN_2019": 38,
+   "DESIGN_2020": 39,
+   "DESIGN_2021": 41,
+   "DESIGN_2022": 42,
+   "DESIGN_2023": 43,
+   "DESIGN_2024": 44,
+   "DESIGN_2025": 37,
+   "DESIGN_2026": 40,
+   "DESIGN_2027": 439,
+   "DESIGN_3000": 51,
+   "DESIGN_3001": 46,
+   "DESIGN_3002": 54,
+   "DESIGN_3003": 52,
+   "DESIGN_3005": 50,
+   "DESIGN_3006": 49,
+   "DESIGN_3007": 55,
+   "DESIGN_3008": 56,
+   "DESIGN_3009": 53,
+   "DESIGN_3010": 57,
+   "DESIGN_3011": 47,
+   "DESIGN_3012": 48,
+   "DESIGN_3013": 45,
+   "DESIGN_3014": 441,
+   "DESIGN_3015": 442,
+   "DESIGN_3016": 443,
+   "DESIGN_3017": 444,
+   "DESIGN_3018": 445,
+   "DESIGN_3019": 446,
+   "DESIGN_3020": 440,
+   "EXTRA_4000": 58,
+   "EXTRA_4001": 59,
+   "EXTRA_4002": 60,
+   "EXTRA_4003": 61,
+   "EXTRA_4004": 62,
+   "EXTRA_4005": 63,
+   "EXTRA_4006": 64,
+   "EXTRA_4007": 65,
+   "EXTRA_4008": 66,
+   "EXTRA_4009": 67,
+   "EXTRA_4010": 68,
+   "EXTRA_4011": 69,
+   "EXTRA_4012": 70,
+   "EXTRA_4015": 73,
+   "EXTRA_4016": 74,
+   "EXTRA_4017": 75,
+   "EXTRA_4018": 76,
+   "EXTRA_4019": 77,
+   "EXTRA_4020": 78,
+   "EXTRA_4021": 79,
+   "EXTRA_4022": 80,
+   "EXTRA_4023": 81,
+   "EXTRA_4024": 82,
+   "EXTRA_4025": 83,
+   "EXTRA_4026": 447,
+   "EXTRA_4027": 448,
+   "EXTRA_4028": 449,
+   "EXTRA_5000": 450,
+   "EXTRA_5001": 451,
+   "EXTRA_5002": 452,
+   "EXTRA_6000": 453,
+   "LANG_AFR": 5,
+   "LANG_ARA": 32,
+   "LANG_DER": 15,
+   "LANG_DEU": 22,
+   "LANG_ENG": 1,
+   "LANG_EST": 11,
+   "LANG_FRA": 23,
+   "LANG_ITA": 28,
+   "LANG_JPN": 31,
+   "LANG_KAZ": 14,
+   "LANG_KIR": 7,
+   "LANG_KON": 4,
+   "LANG_KOR": 29,
+   "LANG_LAV": 12,
+   "LANG_LIN": 25,
+   "LANG_LIT": 13,
+   "LANG_LUA": 26,
+   "LANG_NBL": 27,
+   "LANG_NONE": 0,
+   "LANG_POR": 24,
+   "LANG_PUS": 3,
+   "LANG_RUS": 2,
+   "LANG_SNNA": 17,
+   "LANG_SOT": 20,
+   "LANG_SPA": 19,
+   "LANG_TGK": 10,
+   "LANG_TSN": 21,
+   "LANG_TUK": 8,
+   "LANG_UKR": 9,
+   "LANG_UZB": 6,
+   "LANG_XHO": 16,
+   "LANG_ZHO": 30,
+   "LANG_ZUL": 18,
+   "MAIN_REWARD_TYPE_AFRICAN_PEACH": 18,
+   "MAIN_REWARD_TYPE_BIOTIC_RESOURCE": 16,
+   "MAIN_REWARD_TYPE_BLACK_CARROT": 21,
+   "MAIN_REWARD_TYPE_COMMON_METAL": 12,
+   "MAIN_REWARD_TYPE_DIGITALIS_L": 20,
+   "MAIN_REWARD_TYPE_DIGITALIS_P": 19,
+   "MAIN_REWARD_TYPE_FUEL_RESOURCE": 15,
+   "MAIN_REWARD_TYPE_GMP": 1,
+   "MAIN_REWARD_TYPE_GOLDEN_CRESCENT": 17,
+   "MAIN_REWARD_TYPE_HAOMA": 24,
+   "MAIN_REWARD_TYPE_MINOR_METAL": 13,
+   "MAIN_REWARD_TYPE_PRECIOUS_METAL": 14,
+   "MAIN_REWARD_TYPE_STAFF": 2,
+   "MAIN_REWARD_TYPE_TARRAGON": 23,
+   "MAIN_REWARD_TYPE_WORM_WOOD": 22,
+   "PHOTO_1000": 9,
+   "PHOTO_1001": 16,
+   "PHOTO_1002": 11,
+   "PHOTO_1003": 12,
+   "PHOTO_1004": 13,
+   "PHOTO_1005": 14,
+   "PHOTO_1006": 15,
+   "PHOTO_1007": 10,
+   "PHOTO_1008": 17,
+   "PHOTO_1009": 18,
+   "PHOTO_1010": 438,
+   "RACE_BLACK": 2,
+   "RACE_BLOWN": 1,
+   "RACE_WHITE": 0,
+   "RACE_YELLOW": 3,
+   "REMOVER_REASON_BURN": 7,
+   "REMOVER_REASON_GUNDOWN": 9,
+   "REMOVER_REASON_SUICIDE": 8,
+   "RESOURCE_ID_ANTI_AIR_GATLING_GUN_EAST": 37,
+   "RESOURCE_ID_ANTI_AIR_GATLING_GUN_WEST": 38,
+   "RESOURCE_ID_EMPLACEMENT_GUN_EAST": 34,
+   "RESOURCE_ID_EMPLACEMENT_GUN_WEST": 35,
+   "RESOURCE_ID_MORTAR_NORMAL": 36,
+   "RESOURCE_ID_PARASITE_CAMOFLA": 31,
+   "RESOURCE_ID_PARASITE_CURING": 32,
+   "RESOURCE_ID_PARASITE_FOG": 30,
+   "SECTION_BASE_DEV": 3,
+   "SECTION_COMBAT": 1,
+   "SECTION_DEVELOP": 2,
+   "SECTION_FUNC_ID_BASE_DEV_FOB_CONSTRUCT": 16,
+   "SECTION_FUNC_ID_BASE_DEV_NUCLEAR_DEVELOP": 17,
+   "SECTION_FUNC_ID_BASE_DEV_PLATFORM_EXTENTION": 15,
+   "SECTION_FUNC_ID_BASE_DEV_RESOURCE_MINING": 13,
+   "SECTION_FUNC_ID_BASE_DEV_RESOURCE_PROCESSING": 14,
+   "SECTION_FUNC_ID_COMBAT_DEFENCE": 1,
+   "SECTION_FUNC_ID_COMBAT_DEPLOY": 0,
+   "SECTION_FUNC_ID_DEVELOP_BATTLE_GEAR": 11,
+   "SECTION_FUNC_ID_DEVELOP_D_DOG": 8,
+   "SECTION_FUNC_ID_DEVELOP_D_HORSE": 9,
+   "SECTION_FUNC_ID_DEVELOP_D_WALKER": 10,
+   "SECTION_FUNC_ID_DEVELOP_HELI": 6,
+   "SECTION_FUNC_ID_DEVELOP_ITEM": 5,
+   "SECTION_FUNC_ID_DEVELOP_QUIET": 7,
+   "SECTION_FUNC_ID_DEVELOP_SECURITY_DEVICE": 12,
+   "SECTION_FUNC_ID_DEVELOP_WEAPON": 5,
+   "SECTION_FUNC_ID_MEDICAL_ANTI_REFLEX": 37,
+   "SECTION_FUNC_ID_MEDICAL_STAFF_EMERGENCY": 34,
+   "SECTION_FUNC_ID_MEDICAL_STAFF_TREATMENT": 35,
+   "SECTION_FUNC_ID_SECURITY_BASE_BLOCKADE": 4,
+   "SECTION_FUNC_ID_SECURITY_BASE_DEFENCE_MACHINE": 3,
+   "SECTION_FUNC_ID_SECURITY_BASE_DEFENCE_STAFF": 2,
+   "SECTION_FUNC_ID_SPY_ENEMY_SEARCH": 31,
+   "SECTION_FUNC_ID_SPY_MISSION_INFO_COLLECTING": 30,
+   "SECTION_FUNC_ID_SPY_RESOURCE_SEARCH": 32,
+   "SECTION_FUNC_ID_SPY_SECURITY_INFO": 36,
+   "SECTION_FUNC_ID_SPY_WEATHER_INFO": 33,
+   "SECTION_FUNC_ID_SUPPORT_AFRIKAANS_TRANSLATE": 28,
+   "SECTION_FUNC_ID_SUPPORT_BATTLE": 20,
+   "SECTION_FUNC_ID_SUPPORT_CHAFF": 24,
+   "SECTION_FUNC_ID_SUPPORT_FULTON": 18,
+   "SECTION_FUNC_ID_SUPPORT_KIKONGO_TRANSLATE": 29,
+   "SECTION_FUNC_ID_SUPPORT_PASHTO_TRANSLATE": 27,
+   "SECTION_FUNC_ID_SUPPORT_RUSSIAN_TRANSLATE": 26,
+   "SECTION_FUNC_ID_SUPPORT_SLEEP_GAS": 23,
+   "SECTION_FUNC_ID_SUPPORT_SMOKE": 22,
+   "SECTION_FUNC_ID_SUPPORT_STRIKE": 21,
+   "SECTION_FUNC_ID_SUPPORT_SUPPLY": 19,
+   "SECTION_FUNC_ID_SUPPORT_WEATHER": 25,
+   "SECTION_FUNC_RANK_A": 6,
+   "SECTION_FUNC_RANK_B": 5,
+   "SECTION_FUNC_RANK_C": 4,
+   "SECTION_FUNC_RANK_D": 3,
+   "SECTION_FUNC_RANK_E": 2,
+   "SECTION_FUNC_RANK_F": 1,
+   "SECTION_FUNC_RANK_NONE": 0,
+   "SECTION_FUNC_RANK_S": 7,
+   "SECTION_HOSPITAL": 8,
+   "SECTION_MEDICAL": 6,
+   "SECTION_SECURITY": 7,
+   "SECTION_SEPARATION": 10,
+   "SECTION_SPY": 5,
+   "SECTION_SUPPORT": 4,
+   "SECTION_WAIT": 0,
+   "STAFF_INIT_ENMITY_LV_10": 1,
+   "STAFF_INIT_ENMITY_LV_100": 10,
+   "STAFF_INIT_ENMITY_LV_20": 2,
+   "STAFF_INIT_ENMITY_LV_30": 3,
+   "STAFF_INIT_ENMITY_LV_40": 4,
+   "STAFF_INIT_ENMITY_LV_50": 5,
+   "STAFF_INIT_ENMITY_LV_60": 6,
+   "STAFF_INIT_ENMITY_LV_70": 7,
+   "STAFF_INIT_ENMITY_LV_80": 8,
+   "STAFF_INIT_ENMITY_LV_90": 9,
+   "STAFF_INIT_ENMITY_LV_NONE": 0,
+   "STAFF_SECTION_RANK_A": 6,
+   "STAFF_SECTION_RANK_B": 5,
+   "STAFF_SECTION_RANK_C": 4,
+   "STAFF_SECTION_RANK_COUNT_MAX": 10,
+   "STAFF_SECTION_RANK_D": 3,
+   "STAFF_SECTION_RANK_E": 2,
+   "STAFF_SECTION_RANK_F": 1,
+   "STAFF_SECTION_RANK_G": 0,
+   "STAFF_SECTION_RANK_S": 7,
+   "STAFF_SECTION_RANK_SP": 8,
+   "STAFF_SECTION_RANK_SPP": 9,
+   "STAFF_UNIQUE_TYPE_ID_QUIET": 251,
+   "SWIM_SUIT_TYPE_1": 0,
+   "SWIM_SUIT_TYPE_2": 1,
+   "SWIM_SUIT_TYPE_3": 2
+  },
+  "TppSahelan2": {
+   "SAHELAN2_PHASE_1ST": 4,
+   "SAHELAN2_PHASE_2ND": 5,
+   "SAHELAN2_PHASE_7TH": 10,
+   "SAHELAN2_PHASE_8TH": 11,
+   "SAHELAN2_PHASE_ALERT": 2,
+   "SAHELAN2_PHASE_CAUTION": 1,
+   "SAHELAN2_PHASE_SNEAK": 0
+  },
+  "TppScriptVars": {
+   "CATEGORY_CONFIG": 1,
+   "CATEGORY_GAME_GLOBAL": 4,
+   "CATEGORY_MB_MANAGEMENT": 32,
+   "CATEGORY_MISSION": 8,
+   "CATEGORY_MISSION_RESTARTABLE": 2,
+   "CATEGORY_PERSONAL": 128,
+   "CATEGORY_QUEST": 64,
+   "CATEGORY_RETRY": 16,
+   "GROUP_BIT_ALL": 15,
+   "GROUP_BIT_GVARS": 4,
+   "GROUP_BIT_VARS": 1,
+   "PLAYER_AMMO_STOCK_TYPE_COUNT": 23,
+   "READ_FAILED": 1,
+   "RESULT_ERROR_FILE_CORRUPT": 7,
+   "RESULT_ERROR_INVALID_STORAGE": 6,
+   "RESULT_ERROR_LOAD_BACKUP": 8,
+   "RESULT_ERROR_NOSPACE": 3,
+   "RESULT_ERROR_OWNER": 4,
+   "RESULT_OK": 0,
+   "STATE_LOADING": 2,
+   "STATE_PROCESSING": 3,
+   "STATE_SAVING": 1,
+   "TYPE_BOOL": 0,
+   "TYPE_FLOAT": 3,
+   "TYPE_INT32": 1,
+   "TYPE_INT8": 4,
+   "TYPE_UINT16": 7,
+   "TYPE_UINT32": 2,
+   "TYPE_UINT8": 5,
+   "WRITE_FAILED": 1
+  },
+  "TppUav": {
+   "DEVELOP_LEVEL_LMG_0": 0,
+   "DEVELOP_LEVEL_LMG_1": 1,
+   "DEVELOP_LEVEL_LMG_2": 2,
+   "DEVELOP_LEVEL_SLEEP_0": 6,
+   "DEVELOP_LEVEL_SMOKE_0": 3,
+   "DEVELOP_LEVEL_SMOKE_1": 4,
+   "DEVELOP_LEVEL_SMOKE_2": 5
+  },
+  "TppVolgin2": {
+   "VOLGIN_ATTACK_CHARGE_RELEASE": 1,
+   "VOLGIN_ATTACK_CHARGE_START": 0,
+   "VOLGIN_DAMAGED_TYPE_BLAST_ABSORB": 3,
+   "VOLGIN_DAMAGED_TYPE_BLOW": 2,
+   "VOLGIN_DAMAGED_TYPE_BULLET_NORMAL": 0,
+   "VOLGIN_DAMAGED_TYPE_FAINT": 9,
+   "VOLGIN_DAMAGED_TYPE_LAKE": 16,
+   "VOLGIN_DAMAGED_TYPE_LIGHTNING": 6,
+   "VOLGIN_DAMAGED_TYPE_MANTIS_DAMAGED": 19,
+   "VOLGIN_DAMAGED_TYPE_MANTIS_DODGED": 18,
+   "VOLGIN_DAMAGED_TYPE_PUDDLE": 15,
+   "VOLGIN_DAMAGED_TYPE_RAIN": 14,
+   "VOLGIN_DAMAGED_TYPE_SHOCK": 5,
+   "VOLGIN_DAMAGED_TYPE_SLEEP": 8,
+   "VOLGIN_DAMAGED_TYPE_SMOKE": 7,
+   "VOLGIN_DAMAGED_TYPE_STAGGER": 1,
+   "VOLGIN_DAMAGED_TYPE_STEEL_FRAME": 17,
+   "VOLGIN_DAMAGED_TYPE_VEHICLE": 4,
+   "VOLGIN_DAMAGED_TYPE_WATER": 10,
+   "VOLGIN_DAMAGED_TYPE_WATER_GUN_1": 11,
+   "VOLGIN_DAMAGED_TYPE_WATER_GUN_2": 12,
+   "VOLGIN_DAMAGED_TYPE_WATER_GUN_3": 13,
+   "VOLGIN_LIFE_STATUS_NORMAL": 0,
+   "VOLGIN_LIFE_STATUS_VANISHED": 1,
+   "VOLGIN_LIFE_STATUS_VANISHED_FOREVER": 2,
+   "VOLGIN_PHASE_ALERT": 1,
+   "VOLGIN_PHASE_SNEAK": 0
+  },
+  "TppVolgin2forVr": {
+   "ATTACK_MESSAGE_TYPE_CHARGE_RELEASE": 1,
+   "ATTACK_MESSAGE_TYPE_CHARGE_START": 0,
+   "ATTACK_MESSAGE_TYPE_GAME_OVER_1": 5
+  },
+  "Vehicle": {
+   "class": 0,
+   "instanceCountMax": 60,
+   "observation": 0,
+   "paintType": 0,
+   "speed": 0,
+   "state": 0,
+   "subType": 0
+  },
+  "WearEquip": {
+   "GAS_MASK": 2,
+   "HELMET": 1,
+   "SOFT_ARMOR": 8
+  },
+  "WeatherManager": {
+   "FOG_TYPE_EERIE": 2,
+   "REQUEST_PRIORITY_EXTRA": 1,
+   "REQUEST_PRIORITY_FORCE": 3,
+   "REQUEST_PRIORITY_NORMAL": 0
+  }
+ },
+ "registrars": {
+  "AmmoStockIndex": [
+   "1409d3630"
+  ],
+  "AssetConfiguration": [
+   "1401711c0"
+  ],
+  "AvatarEdit": [
+   "1408d8070"
+  ],
+  "AvatarPreloadTextureDaemon": [
+   "140ac81d0"
+  ],
+  "BuddyCommand": [
+   "140a518f0"
+  ],
+  "BuddyCommonFlag": [
+   "140a518f0"
+  ],
+  "BuddyFriendlyType": [
+   "140a518f0"
+  ],
+  "BuddyInitStatus": [
+   "140a46dc0"
+  ],
+  "BuddyType": [
+   "140a46dc0"
+  ],
+  "BulletGuardArmorMessageFlag": [
+   "1409f6d40"
+  ],
+  "CallMenuEventCategoryType": [
+   "1409d3630"
+  ],
+  "CaptureCageMaterial": [
+   "140a16250"
+  ],
+  "Chunk": [
+   "140ad9360"
+  ],
+  "CommandAi": [
+   "1409f6d40"
+  ],
+  "CpType": [
+   "1409f6d40"
+  ],
+  "CyprusMissionController": [
+   "1405d27e0"
+  ],
+  "DeadMessageFlag": [
+   "140ac96e0"
+  ],
+  "DemoDaemon": [
+   "141ae1d20"
+  ],
+  "DemoxUi": [
+   "14041d270"
+  ],
+  "DlcError": [
+   "1409ac6a0"
+  ],
+  "EnemyFova": [
+   "1409f6d40"
+  ],
+  "EnemyStance": [
+   "1409f6d40"
+  ],
+  "EnemyState": [
+   "1409f6d40"
+  ],
+  "EnemyType": [
+   "1409f6d40"
+  ],
+  "EntryBuddyType": [
+   "140a518f0"
+  ],
+  "EventLog": [
+   "140546880"
+  ],
+  "FadeFunction": [
+   "1405c8460"
+  ],
+  "FobIsEvent": [
+   "1407d6c10"
+  ],
+  "FobMode": [
+   "1407d6c10"
+  ],
+  "FobResult": [
+   "1407d6c10"
+  ],
+  "FoxGameFrame": [
+   "14007fd20"
+  ],
+  "GameMessage": [
+   "140994ba0"
+  ],
+  "GameOverMenu": [
+   "14090d5a0"
+  ],
+  "GamePauseMenu": [
+   "14085dc10"
+  ],
+  "Gimmick": [
+   "14065cc80"
+  ],
+  "GsRoute": [
+   "1405139e0"
+  ],
+  "HeadshotMessageFlag": [
+   "1409f6d40"
+  ],
+  "IgnoreDamageActionFlag": [
+   "1409f6d40"
+  ],
+  "Installer": [
+   "140ad8330"
+  ],
+  "InvitationManager": [
+   "1407dca20"
+  ],
+  "LanguageBlock": [
+   "1404b5680"
+  ],
+  "LipSyncDaemon": [
+   "140492b40"
+  ],
+  "MbInterrogate": [
+   "1409f6d40"
+  ],
+  "MbPauseHelp": [
+   "1408e8f10"
+  ],
+  "NavTactical": [
+   "141c78f70"
+  ],
+  "NeutralizeCause": [
+   "140a857a0"
+  ],
+  "NeutralizeFobCause": [
+   "140a857a0"
+  ],
+  "NeutralizeType": [
+   "140a857a0"
+  ],
+  "NtDaemon": [
+   "141ceeca0"
+  ],
+  "PatchDlc": [
+   "1409ad120"
+  ],
+  "PlatformConfiguration": [
+   "140172550"
+  ],
+  "PlayRecord": [
+   "1405427e0"
+  ],
+  "PlayerCamera": [
+   "1409d3630"
+  ],
+  "PlayerCamoType": [
+   "1409d3630"
+  ],
+  "PlayerConstants": [
+   "1409d3630"
+  ],
+  "PlayerDisableAction": [
+   "1409d3630"
+  ],
+  "PlayerFlag": [
+   "1409d3630"
+  ],
+  "PlayerHandType": [
+   "1409d3630"
+  ],
+  "PlayerInitialAction": [
+   "1409d3630"
+  ],
+  "PlayerMissionPrepareAction": [
+   "1409d3630"
+  ],
+  "PlayerPad": [
+   "1409d3630"
+  ],
+  "PlayerPartsType": [
+   "1409d3630"
+  ],
+  "PlayerPlayFlag": [
+   "1409d3630"
+  ],
+  "PlayerRetryFlag": [
+   "1409d3630"
+  ],
+  "PlayerSlotType": [
+   "1409d3630"
+  ],
+  "PlayerStance": [
+   "1409d3630"
+  ],
+  "PlayerStatus": [
+   "140554650"
+  ],
+  "PlayerTrap": [
+   "1409d3630"
+  ],
+  "PlayerType": [
+   "1409d3630"
+  ],
+  "PlayerVars": [
+   "1409d3630"
+  ],
+  "Popup": [
+   "1408d8070"
+  ],
+  "QuarkSystem": [
+   "140bf2350"
+  ],
+  "ScriptBlock": [
+   "140181f10"
+  ],
+  "ScriptUpdater": [
+   "140ad9de0"
+  ],
+  "SignIn": [
+   "1409abf60"
+  ],
+  "SoldierSlotType": [
+   "1409f6d40"
+  ],
+  "SoundCoreDaemon": [
+   "140329930"
+  ],
+  "SoundDaemon": [
+   "141d76fd0"
+  ],
+  "SplashScreen": [
+   "14090ef60"
+  ],
+  "StageBlock": [
+   "140177550"
+  ],
+  "StageBlockCurrentPositionSetter": [
+   "140177550"
+  ],
+  "StateFlag": [
+   "1409f6d40"
+  ],
+  "StringId": [
+   "141a452e0"
+  ],
+  "SubtitlesCommand": [
+   "1404b0ce0"
+  ],
+  "SyncRouteManager": [
+   "140ace460"
+  ],
+  "TppAnimalFova": [
+   "140a72480"
+  ],
+  "TppAnimalId": [
+   "140a72480"
+  ],
+  "TppBuddy2BlockController": [
+   "140a45be0"
+  ],
+  "TppBuddyService": [
+   "140a50180"
+  ],
+  "TppBullet": [
+   "140a16c20",
+   "140a42ef0"
+  ],
+  "TppCassetteTapeInfo": [
+   "14057cca0"
+  ],
+  "TppChallengeTask": [
+   "140b65a40"
+  ],
+  "TppColoringSystem": [
+   "1405cefa0"
+  ],
+  "TppCombatLocatorProvider": [
+   "1405aff80"
+  ],
+  "TppCommand": [
+   "1405369f0"
+  ],
+  "TppCommandPost2": [
+   "140a237e0"
+  ],
+  "TppDamage": [
+   "1405cab30",
+   "1405cd9c0",
+   "1405cdca0",
+   "1405cde10"
+  ],
+  "TppDataUtility": [
+   "1405798c0"
+  ],
+  "TppDemoUtility": [
+   "1405bef00"
+  ],
+  "TppEquip": [
+   "140a009a0",
+   "140a03910",
+   "140a076a0",
+   "140a2b4a0",
+   "140a2c020",
+   "140a2c180",
+   "140a2c6d0",
+   "140a2d230",
+   "140a2d6d0",
+   "140a2d830",
+   "140a32ea0",
+   "140a33120",
+   "140a360d0",
+   "140a37380",
+   "140a376f0",
+   "140a37b60",
+   "140a37d40",
+   "140a37ed0",
+   "140a39770",
+   "140a398d0",
+   "140a39a30",
+   "140a39d40",
+   "140a3a200",
+   "140a3adf0",
+   "140a3af60",
+   "140a419f0"
+  ],
+  "TppGameMode": [
+   "140547230"
+  ],
+  "TppGameObject": [
+   "140ac96e0"
+  ],
+  "TppGameSequence": [
+   "14053a040"
+  ],
+  "TppHeliPhotoFova": [
+   "14057e320"
+  ],
+  "TppHostage2": [
+   "1409ff090"
+  ],
+  "TppMarker2System": [
+   "1405c3510"
+  ],
+  "TppMbDev": [
+   "140ab18a0"
+  ],
+  "TppMotherBaseManagement": [
+   "140a9b3e0"
+  ],
+  "TppMotherBaseManagementConst": [
+   "140ab2cb0"
+  ],
+  "TppNetworkUtil": [
+   "140a1b2e0"
+  ],
+  "TppPause": [
+   "140545800"
+  ],
+  "TppPickable": [
+   "140a09190"
+  ],
+  "TppRadioCommand": [
+   "140aba1b0"
+  ],
+  "TppSahelan2": [
+   "140a64340"
+  ],
+  "TppScriptVars": [
+   "140996b70"
+  ],
+  "TppSoldier2": [
+   "1409eba60"
+  ],
+  "TppSoldier2CommonBlockController": [
+   "1409fa040"
+  ],
+  "TppSoldierFace": [
+   "1409f3b80"
+  ],
+  "TppSupportRequest": [
+   "140b65170"
+  ],
+  "TppUav": [
+   "140a5c980"
+  ],
+  "TppUiCommand": [
+   "1408d81f0"
+  ],
+  "TppVolgin2": [
+   "140a6f370"
+  ],
+  "TppVolgin2forVr": [
+   "140a68bb0"
+  ],
+  "Vehicle": [
+   "140a266a0"
+  ],
+  "WearEquip": [
+   "1409f6d40"
+  ],
+  "WeatherManager": [
+   "1405369f0"
+  ]
+ }
+}

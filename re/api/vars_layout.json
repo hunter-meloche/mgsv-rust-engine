@@ -1,0 +1,2669 @@
+{
+ "declared_by": "140996b70",
+ "vars": [
+  {
+   "name": "totalPlayTime",
+   "offset": 8,
+   "type": "UINT8",
+   "array_size": 8,
+   "flags": 16,
+   "str_code32": 4210264634
+  },
+  {
+   "name": "locationCode",
+   "offset": 16,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2249099393
+  },
+  {
+   "name": "missionCode",
+   "offset": 18,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1369801973
+  },
+  {
+   "name": "prevLocationCode",
+   "offset": 20,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1308773035
+  },
+  {
+   "name": "prevMissionCode",
+   "offset": 22,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2183033917
+  },
+  {
+   "name": "rulesetDynamicPackIndices",
+   "offset": 28,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 693106636
+  },
+  {
+   "name": "mbLayoutCode",
+   "offset": 32,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1121967158
+  },
+  {
+   "name": "mbClusterId",
+   "offset": 34,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1444287330
+  },
+  {
+   "name": "fobSneakMode",
+   "offset": 35,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 0,
+   "str_code32": 3862466411
+  },
+  {
+   "name": "fobIsSneak",
+   "offset": 36,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 0,
+   "str_code32": 3649054875
+  },
+  {
+   "name": "fobIsEvent",
+   "offset": 37,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 0,
+   "str_code32": 3843773739
+  },
+  {
+   "name": "fobIsSecurity",
+   "offset": 38,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 0,
+   "str_code32": 4051026931
+  },
+  {
+   "name": "fobIsPlaceMode",
+   "offset": 39,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 0,
+   "str_code32": 1929350948
+  },
+  {
+   "name": "fobIsInitializedFreePositionItem",
+   "offset": 40,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 0,
+   "str_code32": 1499078642
+  },
+  {
+   "name": "returnStaffHeader",
+   "offset": 44,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 0,
+   "str_code32": 677524375
+  },
+  {
+   "name": "returnStaffSeeds",
+   "offset": 48,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 0,
+   "str_code32": 3767785429
+  },
+  {
+   "name": "eulaVersion",
+   "offset": 52,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2302824971
+  },
+  {
+   "name": "eulaVersion2",
+   "offset": 56,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 1293734485
+  },
+  {
+   "name": "eulaVersion3",
+   "offset": 60,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 4153521968
+  },
+  {
+   "name": "countryIndex",
+   "offset": 64,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 0,
+   "str_code32": 1040600875
+  },
+  {
+   "name": "countryStateIndex",
+   "offset": 68,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 0,
+   "str_code32": 2466144496
+  },
+  {
+   "name": "infoId",
+   "offset": 72,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 609874232
+  },
+  {
+   "name": "infoIdForMGO",
+   "offset": 76,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2594768746
+  },
+  {
+   "name": "inquiryId",
+   "offset": 80,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 819056471
+  },
+  {
+   "name": "fobPickup",
+   "offset": 84,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 292170886
+  },
+  {
+   "name": "padType",
+   "offset": 88,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 1,
+   "str_code32": 3501811873
+  },
+  {
+   "name": "clock",
+   "offset": 92,
+   "type": "INT32",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 30571102
+  },
+  {
+   "name": "passageSecondsSinceOutMB",
+   "offset": 100,
+   "type": "INT32",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 3879960760
+  },
+  {
+   "name": "weather",
+   "offset": 104,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 4016321033
+  },
+  {
+   "name": "weatherNextTime",
+   "offset": 108,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1832797882
+  },
+  {
+   "name": "extraWeatherInterval",
+   "offset": 112,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2046158958
+  },
+  {
+   "name": "weatherAddDensity",
+   "offset": 116,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2719828931
+  },
+  {
+   "name": "requestWeatherType",
+   "offset": 120,
+   "type": "UINT8",
+   "array_size": 5,
+   "flags": 8,
+   "str_code32": 205212991
+  },
+  {
+   "name": "requestWeatherUserId",
+   "offset": 128,
+   "type": "UINT32",
+   "array_size": 5,
+   "flags": 8,
+   "str_code32": 1548983912
+  },
+  {
+   "name": "requestWeatherInterp",
+   "offset": 148,
+   "type": "FLOAT",
+   "array_size": 5,
+   "flags": 8,
+   "str_code32": 1203973644
+  },
+  {
+   "name": "requestWeatherParam",
+   "offset": 168,
+   "type": "FLOAT",
+   "array_size": 5,
+   "flags": 8,
+   "str_code32": 1222820533
+  },
+  {
+   "name": "dominatedCpFlagsAfgh",
+   "offset": 188,
+   "type": "UINT8",
+   "array_size": 16,
+   "flags": 4,
+   "str_code32": 2427299836
+  },
+  {
+   "name": "dominatedCpFlagsMafr",
+   "offset": 204,
+   "type": "UINT8",
+   "array_size": 16,
+   "flags": 4,
+   "str_code32": 116292995
+  },
+  {
+   "name": "totalAlertCount",
+   "offset": 220,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 4039219931
+  },
+  {
+   "name": "playerPartsType",
+   "offset": 248,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 2670298477
+  },
+  {
+   "name": "playerCamoType",
+   "offset": 249,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 1714213552
+  },
+  {
+   "name": "playerHandType",
+   "offset": 250,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 1072103099
+  },
+  {
+   "name": "playerType",
+   "offset": 251,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 1147532888
+  },
+  {
+   "name": "playerFaceId",
+   "offset": 252,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 3816250648
+  },
+  {
+   "name": "playerFaceEquipId",
+   "offset": 254,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 4137057372
+  },
+  {
+   "name": "playerSkillId",
+   "offset": 256,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 4095695208
+  },
+  {
+   "name": "playerInjuryCount",
+   "offset": 257,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 2562127680
+  },
+  {
+   "name": "playerBodyInjuryCount",
+   "offset": 258,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 1645510575
+  },
+  {
+   "name": "playerLifeMax",
+   "offset": 260,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 879749775
+  },
+  {
+   "name": "initialPlayerPosX",
+   "offset": 224,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2549532902
+  },
+  {
+   "name": "initialPlayerPosY",
+   "offset": 228,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 785849160
+  },
+  {
+   "name": "initialPlayerPosZ",
+   "offset": 232,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3260192937
+  },
+  {
+   "name": "playerPosX",
+   "offset": 236,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1054837552
+  },
+  {
+   "name": "playerPosY",
+   "offset": 240,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 791762572
+  },
+  {
+   "name": "playerPosZ",
+   "offset": 244,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3308028842
+  },
+  {
+   "name": "initialPlayerRotY",
+   "offset": 262,
+   "type": "INT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1647349112
+  },
+  {
+   "name": "playerRotY",
+   "offset": 264,
+   "type": "INT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1579224401
+  },
+  {
+   "name": "initialPlayerFlag",
+   "offset": 266,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2072443630
+  },
+  {
+   "name": "initialPlayerAction",
+   "offset": 268,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3067481467
+  },
+  {
+   "name": "playerRetryFlag",
+   "offset": 269,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 16,
+   "str_code32": 3978692764
+  },
+  {
+   "name": "initialPlayerPairGameObjectId",
+   "offset": 270,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3632968107
+  },
+  {
+   "name": "playerVehicleGameObjectId",
+   "offset": 272,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 4041025329
+  },
+  {
+   "name": "initialPlayerVehicleGameObjectId",
+   "offset": 274,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 4079931460
+  },
+  {
+   "name": "vehicleGameObjectIdOnPlayerOnCargo",
+   "offset": 276,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2047439671
+  },
+  {
+   "name": "playerDisableActionFlag",
+   "offset": 280,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 981767354
+  },
+  {
+   "name": "playerLife",
+   "offset": 284,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 4099149249
+  },
+  {
+   "name": "playerStamina",
+   "offset": 286,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2335005604
+  },
+  {
+   "name": "playerCameraPosition",
+   "offset": 288,
+   "type": "FLOAT",
+   "array_size": 3,
+   "flags": 8,
+   "str_code32": 3488320680
+  },
+  {
+   "name": "playerCameraRotation",
+   "offset": 300,
+   "type": "FLOAT",
+   "array_size": 2,
+   "flags": 2,
+   "str_code32": 541323529
+  },
+  {
+   "name": "playerStaffHeader",
+   "offset": 308,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 1289994322
+  },
+  {
+   "name": "playerStaffSeed",
+   "offset": 312,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 3354484269
+  },
+  {
+   "name": "playerPlayFlag",
+   "offset": 316,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 637657774
+  },
+  {
+   "name": "playerMarkingCountInMission",
+   "offset": 320,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1359635038
+  },
+  {
+   "name": "playerShootCountInMission",
+   "offset": 324,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1486292550
+  },
+  {
+   "name": "shootHitCountInMission",
+   "offset": 328,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 4177231102
+  },
+  {
+   "name": "shootHitCountEliminatedInMission",
+   "offset": 332,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1793343379
+  },
+  {
+   "name": "playerOgrePointOnStartMission",
+   "offset": 336,
+   "type": "INT32",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 181895632
+  },
+  {
+   "name": "playerRecoveryCountFromOgre",
+   "offset": 340,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 1365637680
+  },
+  {
+   "name": "totalChickenCapTime",
+   "offset": 344,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 2167046995
+  },
+  {
+   "name": "totalChickCapTime",
+   "offset": 348,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 4125015871
+  },
+  {
+   "name": "totalDiscoveredCount",
+   "offset": 352,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 4220992063
+  },
+  {
+   "name": "totalTakeHitCount",
+   "offset": 356,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 3062877926
+  },
+  {
+   "name": "totalMovingDistanceAtStand",
+   "offset": 360,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 242057468
+  },
+  {
+   "name": "totalMovingDistanceAtSquat",
+   "offset": 364,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 4093341452
+  },
+  {
+   "name": "totalMovingDistanceAtCrawl",
+   "offset": 368,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 2885506417
+  },
+  {
+   "name": "totalMovingDistanceOnHorse",
+   "offset": 372,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 11214497
+  },
+  {
+   "name": "totalMovingDistanceOnVehicle",
+   "offset": 376,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 557041265
+  },
+  {
+   "name": "totalMovingDistanceOnWalkerGear",
+   "offset": 380,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 2918344348
+  },
+  {
+   "name": "totalMovingDistanceOnBattleGear",
+   "offset": 384,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 3329321403
+  },
+  {
+   "name": "totalMarkingCount",
+   "offset": 388,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 3499395719
+  },
+  {
+   "name": "totalReflexCount",
+   "offset": 392,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 2802197713
+  },
+  {
+   "name": "useBlackDiamondEmblem",
+   "offset": 396,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 35803719
+  },
+  {
+   "name": "isAvatarPlayerEnable",
+   "offset": 397,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 1765407890
+  },
+  {
+   "name": "avatarFaceRaceIndex",
+   "offset": 398,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2204684982
+  },
+  {
+   "name": "avatarFaceTypeIndex",
+   "offset": 399,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2158638772
+  },
+  {
+   "name": "avatarFaceVariationIndex",
+   "offset": 400,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 3383856585
+  },
+  {
+   "name": "avatarFaceColorIndex",
+   "offset": 401,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 900233327
+  },
+  {
+   "name": "avatarHairStyleIndex",
+   "offset": 402,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 418808762
+  },
+  {
+   "name": "avatarRightEyeColorIndex",
+   "offset": 403,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 1093735395
+  },
+  {
+   "name": "avatarRightEyeBrightnessIndex",
+   "offset": 404,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 3453474978
+  },
+  {
+   "name": "avatarLeftEyeColorIndex",
+   "offset": 405,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 1716474869
+  },
+  {
+   "name": "avatarLeftEyeBrightnessIndex",
+   "offset": 406,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2563151505
+  },
+  {
+   "name": "avatarHairColor",
+   "offset": 407,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 3630942075
+  },
+  {
+   "name": "avatarBerdStyle",
+   "offset": 408,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2068388359
+  },
+  {
+   "name": "avatarBerdLength",
+   "offset": 409,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 3911408942
+  },
+  {
+   "name": "avatarEbrwStyle",
+   "offset": 410,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 1146918789
+  },
+  {
+   "name": "avatarEbrwWide",
+   "offset": 411,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2716656148
+  },
+  {
+   "name": "avatarGashOrTatoVariationIndex",
+   "offset": 412,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2182175152
+  },
+  {
+   "name": "avatarTatoColorIndex",
+   "offset": 413,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 3409690965
+  },
+  {
+   "name": "avatarAcceFlag",
+   "offset": 414,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2226237677
+  },
+  {
+   "name": "avatarMotionFrame",
+   "offset": 415,
+   "type": "UINT8",
+   "array_size": 60,
+   "flags": 128,
+   "str_code32": 3829458485
+  },
+  {
+   "name": "avatarSaveIsValid",
+   "offset": 475,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 1494231215
+  },
+  {
+   "name": "avatarEyePresetID",
+   "offset": 476,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2996474670
+  },
+  {
+   "name": "avatarNosePresetID",
+   "offset": 477,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2152474355
+  },
+  {
+   "name": "avatarMouthPresetID",
+   "offset": 478,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 1390800239
+  },
+  {
+   "name": "avatarChinPresetID",
+   "offset": 479,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 164590445
+  },
+  {
+   "name": "avatarCheekPresetID",
+   "offset": 480,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 1034424198
+  },
+  {
+   "name": "avatarEyebrowPresetID",
+   "offset": 481,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 3726210748
+  },
+  {
+   "name": "avatarHeadPresetID",
+   "offset": 482,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2158578816
+  },
+  {
+   "name": "avatarHairPresetID",
+   "offset": 483,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2126050911
+  },
+  {
+   "name": "avatarHairColorPresetID",
+   "offset": 484,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 1475375228
+  },
+  {
+   "name": "avatarSkinColorPresetID",
+   "offset": 485,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2610659210
+  },
+  {
+   "name": "avatarBeardPresetID",
+   "offset": 486,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 3644999530
+  },
+  {
+   "name": "avatarAccessoryPresetID",
+   "offset": 487,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 3714608788
+  },
+  {
+   "name": "avatarAllPartsPresetID",
+   "offset": 488,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 228382598
+  },
+  {
+   "name": "avatarReserve0",
+   "offset": 489,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 3046578462
+  },
+  {
+   "name": "avatarReserve1",
+   "offset": 490,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 756125620
+  },
+  {
+   "name": "avatarReserve2",
+   "offset": 491,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 161481122
+  },
+  {
+   "name": "personalName",
+   "offset": 492,
+   "type": "UINT8",
+   "array_size": 64,
+   "flags": 128,
+   "str_code32": 3796357824
+  },
+  {
+   "name": "personalBirthdayMonth",
+   "offset": 556,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 1100867626
+  },
+  {
+   "name": "personalBirthdayDay",
+   "offset": 557,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2010272108
+  },
+  {
+   "name": "emblemTextureTag",
+   "offset": 560,
+   "type": "UINT32",
+   "array_size": 4,
+   "flags": 128,
+   "str_code32": 245010224
+  },
+  {
+   "name": "emblemColorL",
+   "offset": 576,
+   "type": "UINT32",
+   "array_size": 4,
+   "flags": 128,
+   "str_code32": 3639161034
+  },
+  {
+   "name": "emblemColorH",
+   "offset": 592,
+   "type": "UINT32",
+   "array_size": 4,
+   "flags": 128,
+   "str_code32": 2831808073
+  },
+  {
+   "name": "emblemX",
+   "offset": 608,
+   "type": "INT8",
+   "array_size": 4,
+   "flags": 128,
+   "str_code32": 3025407340
+  },
+  {
+   "name": "emblemY",
+   "offset": 612,
+   "type": "INT8",
+   "array_size": 4,
+   "flags": 128,
+   "str_code32": 1907786060
+  },
+  {
+   "name": "emblemScale",
+   "offset": 616,
+   "type": "INT8",
+   "array_size": 4,
+   "flags": 128,
+   "str_code32": 992732853
+  },
+  {
+   "name": "emblemRotate",
+   "offset": 620,
+   "type": "INT8",
+   "array_size": 4,
+   "flags": 128,
+   "str_code32": 1219637365
+  },
+  {
+   "name": "emblemFlag",
+   "offset": 624,
+   "type": "UINT8",
+   "array_size": 680,
+   "flags": 128,
+   "str_code32": 375247940
+  },
+  {
+   "name": "emblemVersion",
+   "offset": 1304,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 3172665970
+  },
+  {
+   "name": "emblemSyncFailed",
+   "offset": 1305,
+   "type": "INT8",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 1503957786
+  },
+  {
+   "name": "emblemSyncFailed2",
+   "offset": 1306,
+   "type": "INT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 3386945870
+  },
+  {
+   "name": "isServerDataCleared",
+   "offset": 1307,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 2001345401
+  },
+  {
+   "name": "isDefaultDisconnected",
+   "offset": 1308,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 698382265
+  },
+  {
+   "name": "didCancelPatchDlcDownloadRequest",
+   "offset": 1309,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 4079602145
+  },
+  {
+   "name": "didCancelFobPatchDlcDownloadRequest",
+   "offset": 1310,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 128,
+   "str_code32": 1942078947
+  },
+  {
+   "name": "isPersonalDirty",
+   "offset": 1311,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 2152043963
+  },
+  {
+   "name": "initWeapons",
+   "offset": 1312,
+   "type": "UINT16",
+   "array_size": 3,
+   "flags": 8,
+   "str_code32": 1788530693
+  },
+  {
+   "name": "initSupportWeapons",
+   "offset": 1318,
+   "type": "UINT16",
+   "array_size": 8,
+   "flags": 8,
+   "str_code32": 4294890508
+  },
+  {
+   "name": "initItems",
+   "offset": 1334,
+   "type": "UINT16",
+   "array_size": 8,
+   "flags": 8,
+   "str_code32": 180254898
+  },
+  {
+   "name": "initHandEquip",
+   "offset": 1350,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 39677481
+  },
+  {
+   "name": "weapons",
+   "offset": 1352,
+   "type": "UINT16",
+   "array_size": 6,
+   "flags": 8,
+   "str_code32": 3873248474
+  },
+  {
+   "name": "ammoInWeapons",
+   "offset": 1364,
+   "type": "UINT16",
+   "array_size": 6,
+   "flags": 8,
+   "str_code32": 2411977188
+  },
+  {
+   "name": "ammoSubInWeapons",
+   "offset": 1376,
+   "type": "UINT16",
+   "array_size": 6,
+   "flags": 8,
+   "str_code32": 445710451
+  },
+  {
+   "name": "suppressorLives",
+   "offset": 1388,
+   "type": "UINT8",
+   "array_size": 6,
+   "flags": 8,
+   "str_code32": 2549585275
+  },
+  {
+   "name": "isUseSuppressor",
+   "offset": 1394,
+   "type": "UINT8",
+   "array_size": 6,
+   "flags": 8,
+   "str_code32": 1193927143
+  },
+  {
+   "name": "isUseFlashLight",
+   "offset": 1400,
+   "type": "UINT8",
+   "array_size": 6,
+   "flags": 8,
+   "str_code32": 921691528
+  },
+  {
+   "name": "isInitialWeapon",
+   "offset": 1406,
+   "type": "UINT8",
+   "array_size": 6,
+   "flags": 8,
+   "str_code32": 446081793
+  },
+  {
+   "name": "supportWeapons",
+   "offset": 1412,
+   "type": "UINT16",
+   "array_size": 16,
+   "flags": 8,
+   "str_code32": 2539888881
+  },
+  {
+   "name": "items",
+   "offset": 1444,
+   "type": "UINT16",
+   "array_size": 16,
+   "flags": 8,
+   "str_code32": 2228673807
+  },
+  {
+   "name": "cboxPosterIndices",
+   "offset": 1476,
+   "type": "UINT8",
+   "array_size": 16,
+   "flags": 8,
+   "str_code32": 290387347
+  },
+  {
+   "name": "handEquip",
+   "offset": 1492,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 992570275
+  },
+  {
+   "name": "upgrades",
+   "offset": 1494,
+   "type": "UINT8",
+   "array_size": 16,
+   "flags": 8,
+   "str_code32": 3227672488
+  },
+  {
+   "name": "ammoStockIds",
+   "offset": 1510,
+   "type": "UINT8",
+   "array_size": 46,
+   "flags": 8,
+   "str_code32": 4229817330
+  },
+  {
+   "name": "ammoStockCounts",
+   "offset": 1556,
+   "type": "UINT16",
+   "array_size": 46,
+   "flags": 8,
+   "str_code32": 3784993666
+  },
+  {
+   "name": "totalBatteryPowerAsGmp",
+   "offset": 1648,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 3718745164
+  },
+  {
+   "name": "currentInventorySlot",
+   "offset": 1652,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 1186050073
+  },
+  {
+   "name": "currentSupportWeaponIndex",
+   "offset": 1656,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 405062015
+  },
+  {
+   "name": "currentItemIndex",
+   "offset": 1660,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 979372696
+  },
+  {
+   "name": "fpsAttackMode",
+   "offset": 1664,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 1293362229
+  },
+  {
+   "name": "currentZoomStep",
+   "offset": 1668,
+   "type": "UINT8",
+   "array_size": 5,
+   "flags": 2,
+   "str_code32": 1845512236
+  },
+  {
+   "name": "requestFlagsAboutEquip",
+   "offset": 1673,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 1256883321
+  },
+  {
+   "name": "weaponOriginalOwners",
+   "offset": 1674,
+   "type": "UINT16",
+   "array_size": 3,
+   "flags": 2,
+   "str_code32": 2881883281
+  },
+  {
+   "name": "partsType2",
+   "offset": 1680,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 0,
+   "str_code32": 3353075688
+  },
+  {
+   "name": "camoType2",
+   "offset": 1681,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 0,
+   "str_code32": 70992206
+  },
+  {
+   "name": "faceEquipId2",
+   "offset": 1682,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 0,
+   "str_code32": 3048475465
+  },
+  {
+   "name": "weapons2",
+   "offset": 1684,
+   "type": "UINT16",
+   "array_size": 3,
+   "flags": 0,
+   "str_code32": 2043759242
+  },
+  {
+   "name": "supportWeapons2",
+   "offset": 1690,
+   "type": "UINT16",
+   "array_size": 8,
+   "flags": 0,
+   "str_code32": 334709992
+  },
+  {
+   "name": "items2",
+   "offset": 1706,
+   "type": "UINT16",
+   "array_size": 8,
+   "flags": 0,
+   "str_code32": 840373718
+  },
+  {
+   "name": "handEquip2",
+   "offset": 1722,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 0,
+   "str_code32": 31081193
+  },
+  {
+   "name": "dirtyEffectCount",
+   "offset": 1724,
+   "type": "UINT8",
+   "array_size": 2,
+   "flags": 2,
+   "str_code32": 3841560336
+  },
+  {
+   "name": "dirtyEffectBoneIndex",
+   "offset": 1726,
+   "type": "UINT8",
+   "array_size": 64,
+   "flags": 2,
+   "str_code32": 2679955802
+  },
+  {
+   "name": "dirtyEffectPosition",
+   "offset": 1792,
+   "type": "FLOAT",
+   "array_size": 192,
+   "flags": 2,
+   "str_code32": 2271088767
+  },
+  {
+   "name": "dirtyEffectRadius",
+   "offset": 2560,
+   "type": "FLOAT",
+   "array_size": 64,
+   "flags": 2,
+   "str_code32": 34573174
+  },
+  {
+   "name": "initCustomizedWeapon",
+   "offset": 2816,
+   "type": "UINT16",
+   "array_size": 3,
+   "flags": 8,
+   "str_code32": 3567514835
+  },
+  {
+   "name": "customizedWeapon",
+   "offset": 2822,
+   "type": "UINT16",
+   "array_size": 3,
+   "flags": 8,
+   "str_code32": 1336003260
+  },
+  {
+   "name": "initChimeraParts",
+   "offset": 2828,
+   "type": "UINT8",
+   "array_size": 36,
+   "flags": 8,
+   "str_code32": 2154274597
+  },
+  {
+   "name": "chimeraParts",
+   "offset": 2864,
+   "type": "UINT8",
+   "array_size": 36,
+   "flags": 8,
+   "str_code32": 3437485343
+  },
+  {
+   "name": "initChimeraPaintType",
+   "offset": 2900,
+   "type": "UINT8",
+   "array_size": 3,
+   "flags": 8,
+   "str_code32": 1112823588
+  },
+  {
+   "name": "chimeraPaintType",
+   "offset": 2903,
+   "type": "UINT8",
+   "array_size": 3,
+   "flags": 8,
+   "str_code32": 2740515240
+  },
+  {
+   "name": "initChimeraColorIndex",
+   "offset": 2906,
+   "type": "UINT8",
+   "array_size": 3,
+   "flags": 8,
+   "str_code32": 129667703
+  },
+  {
+   "name": "chimeraColorIndex",
+   "offset": 2909,
+   "type": "UINT8",
+   "array_size": 3,
+   "flags": 8,
+   "str_code32": 3721337813
+  },
+  {
+   "name": "isUseCustomizedWeapon",
+   "offset": 2912,
+   "type": "UINT8",
+   "array_size": 3,
+   "flags": 2,
+   "str_code32": 3644858695
+  },
+  {
+   "name": "customizedWeaponSlotIndex",
+   "offset": 2915,
+   "type": "UINT8",
+   "array_size": 3,
+   "flags": 2,
+   "str_code32": 585744204
+  },
+  {
+   "name": "itemLevels",
+   "offset": 2918,
+   "type": "UINT8",
+   "array_size": 72,
+   "flags": 2,
+   "str_code32": 3257332765
+  },
+  {
+   "name": "itemLevelsDeveloped",
+   "offset": 2990,
+   "type": "UINT8",
+   "array_size": 72,
+   "flags": 8,
+   "str_code32": 950755426
+  },
+  {
+   "name": "developedItemLevels",
+   "offset": 3062,
+   "type": "UINT8",
+   "array_size": 72,
+   "flags": 32,
+   "str_code32": 4060068265
+  },
+  {
+   "name": "droppedWeapons",
+   "offset": 7106,
+   "type": "UINT16",
+   "array_size": 3,
+   "flags": 2,
+   "str_code32": 331985234
+  },
+  {
+   "name": "droppedWeaponPos",
+   "offset": 7112,
+   "type": "FLOAT",
+   "array_size": 9,
+   "flags": 8,
+   "str_code32": 2503990653
+  },
+  {
+   "name": "droppedWeaponRot",
+   "offset": 7148,
+   "type": "FLOAT",
+   "array_size": 12,
+   "flags": 8,
+   "str_code32": 3765015662
+  },
+  {
+   "name": "droppedCount",
+   "offset": 7196,
+   "type": "UINT16",
+   "array_size": 6,
+   "flags": 8,
+   "str_code32": 3064906420
+  },
+  {
+   "name": "droppedAmmo",
+   "offset": 7208,
+   "type": "UINT16",
+   "array_size": 6,
+   "flags": 8,
+   "str_code32": 247935997
+  },
+  {
+   "name": "droppedSuppressorLife",
+   "offset": 7220,
+   "type": "UINT8",
+   "array_size": 3,
+   "flags": 8,
+   "str_code32": 3591106208
+  },
+  {
+   "name": "droppedCarrier",
+   "offset": 7224,
+   "type": "UINT16",
+   "array_size": 3,
+   "flags": 8,
+   "str_code32": 4110640862
+  },
+  {
+   "name": "droppedCarrierPlaceNo",
+   "offset": 7230,
+   "type": "UINT8",
+   "array_size": 3,
+   "flags": 8,
+   "str_code32": 1725567567
+  },
+  {
+   "name": "droppedWeaponStatus",
+   "offset": 7233,
+   "type": "UINT8",
+   "array_size": 3,
+   "flags": 8,
+   "str_code32": 3438066965
+  },
+  {
+   "name": "importantItems",
+   "offset": 7236,
+   "type": "UINT16",
+   "array_size": 32,
+   "flags": 2,
+   "str_code32": 2477373570
+  },
+  {
+   "name": "importantItemNumber",
+   "offset": 7300,
+   "type": "UINT16",
+   "array_size": 32,
+   "flags": 8,
+   "str_code32": 788739716
+  },
+  {
+   "name": "importantItemPos",
+   "offset": 7364,
+   "type": "FLOAT",
+   "array_size": 96,
+   "flags": 8,
+   "str_code32": 1139255398
+  },
+  {
+   "name": "importantItemRot",
+   "offset": 7748,
+   "type": "FLOAT",
+   "array_size": 128,
+   "flags": 8,
+   "str_code32": 1389662308
+  },
+  {
+   "name": "importantItemStatus",
+   "offset": 8260,
+   "type": "UINT8",
+   "array_size": 32,
+   "flags": 8,
+   "str_code32": 410780391
+  },
+  {
+   "name": "markingsOfPickable",
+   "offset": 8292,
+   "type": "UINT32",
+   "array_size": 33,
+   "flags": 8,
+   "str_code32": 1390021109
+  },
+  {
+   "name": "missionCodeMarkingsOfPickable",
+   "offset": 8424,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3479911067
+  },
+  {
+   "name": "markingsOfPlaced",
+   "offset": 8428,
+   "type": "UINT32",
+   "array_size": 33,
+   "flags": 8,
+   "str_code32": 1157681843
+  },
+  {
+   "name": "missionCodeMarkingsOfPlaced",
+   "offset": 8560,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2408763085
+  },
+  {
+   "name": "placedWeapons",
+   "offset": 8562,
+   "type": "UINT16",
+   "array_size": 32,
+   "flags": 8,
+   "str_code32": 813144875
+  },
+  {
+   "name": "placedOwnerIds",
+   "offset": 8626,
+   "type": "UINT16",
+   "array_size": 32,
+   "flags": 8,
+   "str_code32": 4155978882
+  },
+  {
+   "name": "placedPos",
+   "offset": 8692,
+   "type": "FLOAT",
+   "array_size": 96,
+   "flags": 8,
+   "str_code32": 244911436
+  },
+  {
+   "name": "placedRot",
+   "offset": 9076,
+   "type": "FLOAT",
+   "array_size": 128,
+   "flags": 8,
+   "str_code32": 3742968358
+  },
+  {
+   "name": "placedAttachTargetNames",
+   "offset": 9588,
+   "type": "UINT32",
+   "array_size": 64,
+   "flags": 8,
+   "str_code32": 107629820
+  },
+  {
+   "name": "placedAttachTargetIndex",
+   "offset": 9844,
+   "type": "UINT16",
+   "array_size": 32,
+   "flags": 8,
+   "str_code32": 396613933
+  },
+  {
+   "name": "placedAttachTargetGameObjectType",
+   "offset": 9908,
+   "type": "UINT8",
+   "array_size": 32,
+   "flags": 8,
+   "str_code32": 3034816482
+  },
+  {
+   "name": "placedAttachPoints",
+   "offset": 9940,
+   "type": "UINT32",
+   "array_size": 64,
+   "flags": 8,
+   "str_code32": 4250527566
+  },
+  {
+   "name": "placedCorrelationId",
+   "offset": 10196,
+   "type": "UINT16",
+   "array_size": 32,
+   "flags": 8,
+   "str_code32": 2589745382
+  },
+  {
+   "name": "placedTargetGroupBlast",
+   "offset": 10260,
+   "type": "UINT16",
+   "array_size": 32,
+   "flags": 8,
+   "str_code32": 3365308935
+  },
+  {
+   "name": "placedStatus",
+   "offset": 10324,
+   "type": "UINT8",
+   "array_size": 32,
+   "flags": 8,
+   "str_code32": 369745616
+  },
+  {
+   "name": "playerDecoyInstanceIndicies",
+   "offset": 10356,
+   "type": "UINT16",
+   "array_size": 12,
+   "flags": 8,
+   "str_code32": 2989469662
+  },
+  {
+   "name": "playerDecoyAngleBallon",
+   "offset": 10380,
+   "type": "FLOAT",
+   "array_size": 12,
+   "flags": 8,
+   "str_code32": 3773808579
+  },
+  {
+   "name": "caputreAnimalId",
+   "offset": 10428,
+   "type": "UINT16",
+   "array_size": 16,
+   "flags": 8,
+   "str_code32": 866047432
+  },
+  {
+   "name": "captureAreaName",
+   "offset": 10460,
+   "type": "UINT32",
+   "array_size": 16,
+   "flags": 8,
+   "str_code32": 1704854398
+  },
+  {
+   "name": "captureAnimalIndex",
+   "offset": 10524,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3163474006
+  },
+  {
+   "name": "collectionPositionsMoved",
+   "offset": 10528,
+   "type": "FLOAT",
+   "array_size": 96,
+   "flags": 2,
+   "str_code32": 2547771070
+  },
+  {
+   "name": "collectionRotationsMoved",
+   "offset": 10912,
+   "type": "UINT32",
+   "array_size": 32,
+   "flags": 2,
+   "str_code32": 3648686239
+  },
+  {
+   "name": "collectionLocatorIndicesMoved",
+   "offset": 11040,
+   "type": "UINT16",
+   "array_size": 32,
+   "flags": 2,
+   "str_code32": 320824362
+  },
+  {
+   "name": "collectionMovedIndexEnd",
+   "offset": 11104,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 2586019639
+  },
+  {
+   "name": "locationCodeOfCollectionMoved",
+   "offset": 11108,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 1342407864
+  },
+  {
+   "name": "cboxIsValid",
+   "offset": 11110,
+   "type": "UINT8",
+   "array_size": 16,
+   "flags": 2,
+   "str_code32": 2311644041
+  },
+  {
+   "name": "cboxLife",
+   "offset": 11128,
+   "type": "FLOAT",
+   "array_size": 16,
+   "flags": 2,
+   "str_code32": 163259332
+  },
+  {
+   "name": "cboxFlag",
+   "offset": 11192,
+   "type": "UINT16",
+   "array_size": 16,
+   "flags": 2,
+   "str_code32": 2268329936
+  },
+  {
+   "name": "cboxPosterType",
+   "offset": 11224,
+   "type": "UINT8",
+   "array_size": 16,
+   "flags": 2,
+   "str_code32": 3340300391
+  },
+  {
+   "name": "cboxEquipId",
+   "offset": 11240,
+   "type": "UINT16",
+   "array_size": 16,
+   "flags": 2,
+   "str_code32": 2986015782
+  },
+  {
+   "name": "cboxLocation",
+   "offset": 11272,
+   "type": "FLOAT",
+   "array_size": 64,
+   "flags": 2,
+   "str_code32": 2868565224
+  },
+  {
+   "name": "buddyTypeMissionStart",
+   "offset": 11528,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 4244578393
+  },
+  {
+   "name": "obtainedBuddyTypeMissionStart",
+   "offset": 11529,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3539567347
+  },
+  {
+   "name": "sortieBuddyTypeMissionStart",
+   "offset": 11530,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3970062730
+  },
+  {
+   "name": "deadBuddyTypeMissionStart",
+   "offset": 11531,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 4242316907
+  },
+  {
+   "name": "initialBuddyStatusMissionStart",
+   "offset": 11532,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3023964040
+  },
+  {
+   "name": "initialBuddyPosMissionStart",
+   "offset": 11536,
+   "type": "FLOAT",
+   "array_size": 3,
+   "flags": 8,
+   "str_code32": 1378660558
+  },
+  {
+   "name": "initialBuddyRotYMissionStart",
+   "offset": 11548,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2272770090
+  },
+  {
+   "name": "buddyCommonFlagMissionStart",
+   "offset": 11552,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3404495678
+  },
+  {
+   "name": "buddyFriendlyPointMissionStart",
+   "offset": 11556,
+   "type": "UINT16",
+   "array_size": 8,
+   "flags": 8,
+   "str_code32": 2058391287
+  },
+  {
+   "name": "reliefVehicleCarryType",
+   "offset": 11572,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 2609109900
+  },
+  {
+   "name": "reliefVehicleCarryAttitude",
+   "offset": 11576,
+   "type": "FLOAT",
+   "array_size": 4,
+   "flags": 2,
+   "str_code32": 3177466446
+  },
+  {
+   "name": "reliefVehicleCarryLife",
+   "offset": 11592,
+   "type": "UINT16",
+   "array_size": 12,
+   "flags": 2,
+   "str_code32": 1573263830
+  },
+  {
+   "name": "reliefVehicleCarryAmmo",
+   "offset": 11616,
+   "type": "UINT16",
+   "array_size": 3,
+   "flags": 2,
+   "str_code32": 92388858
+  },
+  {
+   "name": "reliefVehicleCarryState",
+   "offset": 11622,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 3031687196
+  },
+  {
+   "name": "buddyType",
+   "offset": 11624,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 4277405531
+  },
+  {
+   "name": "obtainedBuddyType",
+   "offset": 11625,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 967608581
+  },
+  {
+   "name": "sortieBuddyType",
+   "offset": 11626,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1658332781
+  },
+  {
+   "name": "disableCallBuddyType",
+   "offset": 11627,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1466340107
+  },
+  {
+   "name": "deadBuddyType",
+   "offset": 11628,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3415705010
+  },
+  {
+   "name": "initialBuddyStatus",
+   "offset": 11629,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 340059151
+  },
+  {
+   "name": "initialBuddyPos",
+   "offset": 11632,
+   "type": "FLOAT",
+   "array_size": 3,
+   "flags": 8,
+   "str_code32": 1081851676
+  },
+  {
+   "name": "initialBuddyRotY",
+   "offset": 11644,
+   "type": "FLOAT",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 173369967
+  },
+  {
+   "name": "buddyCommonFlag",
+   "offset": 11648,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3097922174
+  },
+  {
+   "name": "buddyMissionFlag",
+   "offset": 11652,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2711329237
+  },
+  {
+   "name": "buddyCallCount",
+   "offset": 11656,
+   "type": "UINT32",
+   "array_size": 7,
+   "flags": 8,
+   "str_code32": 2830933244
+  },
+  {
+   "name": "buddyEspionageCpNames",
+   "offset": 11684,
+   "type": "UINT32",
+   "array_size": 8,
+   "flags": 8,
+   "str_code32": 216572128
+  },
+  {
+   "name": "buddyFriendlyTimer",
+   "offset": 11716,
+   "type": "UINT32",
+   "array_size": 8,
+   "flags": 8,
+   "str_code32": 3999360654
+  },
+  {
+   "name": "buddyFriendlyPoint",
+   "offset": 11748,
+   "type": "UINT16",
+   "array_size": 8,
+   "flags": 8,
+   "str_code32": 3423777716
+  },
+  {
+   "name": "buddyFriendlyMaxPoint",
+   "offset": 11764,
+   "type": "UINT16",
+   "array_size": 8,
+   "flags": 8,
+   "str_code32": 401342888
+  },
+  {
+   "name": "buddyFriendlyCount",
+   "offset": 11780,
+   "type": "UINT8",
+   "array_size": 64,
+   "flags": 8,
+   "str_code32": 1523185431
+  },
+  {
+   "name": "buddyQuietEquipType",
+   "offset": 11844,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3101277762
+  },
+  {
+   "name": "buddyQuietCostumeType",
+   "offset": 11846,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 469629329
+  },
+  {
+   "name": "buddyDogEquipType",
+   "offset": 11849,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2651591083
+  },
+  {
+   "name": "buddyDogEyeType",
+   "offset": 11850,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 510190171
+  },
+  {
+   "name": "buddyDogColorType",
+   "offset": 11851,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1149623686
+  },
+  {
+   "name": "buddyDogMode",
+   "offset": 11848,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3176999372
+  },
+  {
+   "name": "buddyDogFlag",
+   "offset": 11847,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3667096278
+  },
+  {
+   "name": "buddyGearAmmoCount",
+   "offset": 11852,
+   "type": "UINT16",
+   "array_size": 2,
+   "flags": 8,
+   "str_code32": 3718655351
+  },
+  {
+   "name": "buddyGearStockAmmoCount",
+   "offset": 11856,
+   "type": "UINT16",
+   "array_size": 2,
+   "flags": 8,
+   "str_code32": 378705777
+  },
+  {
+   "name": "buddyGearBodyGrade",
+   "offset": 11860,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2965982671
+  },
+  {
+   "name": "buddyGearEquipGrade",
+   "offset": 11861,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3137074380
+  },
+  {
+   "name": "buddyGearReloadGrade",
+   "offset": 11862,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2084393645
+  },
+  {
+   "name": "buddyGearHeadType",
+   "offset": 11863,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3744128504
+  },
+  {
+   "name": "buddyGearHeadGrade",
+   "offset": 11864,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3930501837
+  },
+  {
+   "name": "buddyGearArmType",
+   "offset": 11865,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 2810538249
+  },
+  {
+   "name": "buddyGearArmGrade",
+   "offset": 11866,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 4208218148
+  },
+  {
+   "name": "buddyGearMainWPType",
+   "offset": 11867,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1871678045
+  },
+  {
+   "name": "buddyGearMainWPGrade",
+   "offset": 11868,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 4254728863
+  },
+  {
+   "name": "buddyGearSubWPType",
+   "offset": 11869,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 215696228
+  },
+  {
+   "name": "buddyGearSubWPGrade",
+   "offset": 11870,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 388580004
+  },
+  {
+   "name": "buddyGearColoring0",
+   "offset": 11871,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3622484222
+  },
+  {
+   "name": "buddyGearColoring1",
+   "offset": 11872,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 999348443
+  },
+  {
+   "name": "buddyHorseType",
+   "offset": 11873,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3534940739
+  },
+  {
+   "name": "buddyHorseColorType",
+   "offset": 11874,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3250469992
+  },
+  {
+   "name": "buddyHorseHeadDesignType",
+   "offset": 11875,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1232950341
+  },
+  {
+   "name": "buddyHorseFootDesignType",
+   "offset": 11876,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1780710444
+  },
+  {
+   "name": "battleGearAmmoCountMain",
+   "offset": 11878,
+   "type": "UINT16",
+   "array_size": 2,
+   "flags": 8,
+   "str_code32": 2694630849
+  },
+  {
+   "name": "battleGearAmmoCountSub",
+   "offset": 11882,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 741620031
+  },
+  {
+   "name": "battleGearStockAmmoCountMain",
+   "offset": 11884,
+   "type": "UINT16",
+   "array_size": 2,
+   "flags": 8,
+   "str_code32": 293879878
+  },
+  {
+   "name": "battleGearStockAmmoCountSub",
+   "offset": 11888,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3619304726
+  },
+  {
+   "name": "battleGearMainWPType",
+   "offset": 11890,
+   "type": "UINT8",
+   "array_size": 2,
+   "flags": 8,
+   "str_code32": 4049971746
+  },
+  {
+   "name": "battleGearMainWPGrade",
+   "offset": 11892,
+   "type": "UINT8",
+   "array_size": 2,
+   "flags": 8,
+   "str_code32": 1594606975
+  },
+  {
+   "name": "battleGearSubWPType",
+   "offset": 11894,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 40950306
+  },
+  {
+   "name": "battleGearSubWPGrade",
+   "offset": 11895,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3134910973
+  },
+  {
+   "name": "battleGearColoring0",
+   "offset": 11896,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 4079219665
+  },
+  {
+   "name": "battleGearColoring1",
+   "offset": 11897,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1827117213
+  },
+  {
+   "name": "maxPhase",
+   "offset": 11898,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 1525547748
+  },
+  {
+   "name": "playerPhase",
+   "offset": 11899,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 4109614970
+  },
+  {
+   "name": "sahelanBrokenMesh",
+   "offset": 11900,
+   "type": "UINT16",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 3556279956
+  },
+  {
+   "name": "supportHeliCustomize",
+   "offset": 11904,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 8,
+   "str_code32": 596849157
+  },
+  {
+   "name": "pfRatingPoint",
+   "offset": 11908,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 4,
+   "str_code32": 3360088678
+  },
+  {
+   "name": "mbmTppGmp",
+   "offset": 11912,
+   "type": "INT32",
+   "array_size": 1,
+   "flags": 32,
+   "str_code32": 2230936536
+  },
+  {
+   "name": "mbmServerWalletGmp",
+   "offset": 11916,
+   "type": "INT32",
+   "array_size": 1,
+   "flags": 32,
+   "str_code32": 1658034250
+  },
+  {
+   "name": "missionHeroicPoint",
+   "offset": 11924,
+   "type": "INT32",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 4210533371
+  },
+  {
+   "name": "mbmTppHeroicPoint",
+   "offset": 11920,
+   "type": "INT32",
+   "array_size": 1,
+   "flags": 32,
+   "str_code32": 4132321895
+  },
+  {
+   "name": "missionOgrePoint",
+   "offset": 11932,
+   "type": "INT32",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 2368659387
+  },
+  {
+   "name": "mbmRequestMisogi",
+   "offset": 11936,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 2,
+   "str_code32": 3325933788
+  },
+  {
+   "name": "mbmTppOgrePoint",
+   "offset": 11928,
+   "type": "INT32",
+   "array_size": 1,
+   "flags": 32,
+   "str_code32": 100980870
+  },
+  {
+   "name": "mbmTppTotalIncomeGmp",
+   "offset": 11940,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 32,
+   "str_code32": 1258196869
+  },
+  {
+   "name": "mbmStaffSyncVersion",
+   "offset": 12016,
+   "type": "UINT32",
+   "array_size": 1,
+   "flags": 32,
+   "str_code32": 1461954866
+  },
+  {
+   "name": "mbmStaffSvarsSeeds",
+   "offset": 26020,
+   "type": "UINT32",
+   "array_size": 3500,
+   "flags": 32,
+   "str_code32": 1037654071
+  },
+  {
+   "name": "mbmStaffSvarsHeaders",
+   "offset": 12020,
+   "type": "UINT32",
+   "array_size": 3500,
+   "flags": 32,
+   "str_code32": 141109731
+  },
+  {
+   "name": "mbmStaffSvarsStatusesSync",
+   "offset": 40020,
+   "type": "UINT32",
+   "array_size": 3500,
+   "flags": 32,
+   "str_code32": 3379849264
+  },
+  {
+   "name": "mbmStaffSvarsStatusesNoSync",
+   "offset": 54020,
+   "type": "UINT16",
+   "array_size": 3500,
+   "flags": 32,
+   "str_code32": 1733153548
+  },
+  {
+   "name": "mbmStaffSkillGots",
+   "offset": 61020,
+   "type": "UINT8",
+   "array_size": 87,
+   "flags": 32,
+   "str_code32": 983019508
+  },
+  {
+   "name": "mbmStaffSortKeysSvars",
+   "offset": 61107,
+   "type": "UINT8",
+   "array_size": 13,
+   "flags": 32,
+   "str_code32": 2049445692
+  },
+  {
+   "name": "mbmStaffSortDirsSvars",
+   "offset": 61120,
+   "type": "UINT8",
+   "array_size": 13,
+   "flags": 32,
+   "str_code32": 4134700088
+  },
+  {
+   "name": "mbmStaffListMainListModeSvars",
+   "offset": 61133,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 32,
+   "str_code32": 3350522032
+  },
+  {
+   "name": "mbmStaffListAssignListModeSvars",
+   "offset": 61134,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 32,
+   "str_code32": 3348439289
+  },
+  {
+   "name": "mbmEnmityElapsedTimeMinuteSvars",
+   "offset": 61135,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 32,
+   "str_code32": 1809741798
+  },
+  {
+   "name": "mbmMoraleElapsedTimeMinuteSvars",
+   "offset": 61136,
+   "type": "UINT8",
+   "array_size": 1,
+   "flags": 32,
+   "str_code32": 3391542029
+  }
+ ]
+}

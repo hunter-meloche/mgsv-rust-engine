@@ -5,6 +5,7 @@
 //! modules are provided by Rust in [`natives`]; anything not yet implemented is
 //! a traced "phantom" (see `prelude.lua`).
 
+pub mod constants;
 mod natives;
 pub mod script_vars;
 

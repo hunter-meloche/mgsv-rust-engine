@@ -356,6 +356,7 @@ pub fn install(host: &FoxLua) -> mlua::Result<()> {
         Ok(())
     })?;
 
+    crate::constants::install(lua, |lua, name| module(lua, name))?;
     install_bitop(host)?;
     crate::script_vars::install(lua, host.trace.clone())?;
     install_splash_screen(host)?;

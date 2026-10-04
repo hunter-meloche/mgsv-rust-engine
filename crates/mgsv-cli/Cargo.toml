@@ -4,6 +4,7 @@ description = "Command-line tools for inspecting and extracting a local MGSV: TP
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "mgsv"

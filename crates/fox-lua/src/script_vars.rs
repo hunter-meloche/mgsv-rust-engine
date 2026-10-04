@@ -5,9 +5,8 @@
 //! and then use them as `gvars.x[0] = 3`. Values are coerced to the declared
 //! type; arrays are fixed-size and 0-based.
 //!
-//! The numeric values of the `TYPE_*`/`CATEGORY_*` constants are placeholders
-//! chosen here (scripts only hand them back to the engine). They will be
-//! replaced by the retail values once recovered from the executable.
+//! `TYPE_*` codes match retail; `CATEGORY_*` and the other constants come from
+//! `re/api/lua_bindings.json` via [`crate::constants`].
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -22,31 +21,31 @@ use crate::Trace;
 /// recovered yet.
 const UNKNOWN_ARRAY_SIZE: i64 = 1024;
 
+/// Variable types, with the retail engine's `TppScriptVars.TYPE_*` codes
+/// (recovered from the binding registration in mgsvtpp.exe).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(i64)]
 pub enum VarType {
-    Bool,
-    Int8,
-    UInt8,
-    Int16,
-    UInt16,
-    Int32,
-    UInt32,
-    Float,
+    Bool = 0,
+    Int32 = 1,
+    UInt32 = 2,
+    Float = 3,
+    Int8 = 4,
+    UInt8 = 5,
+    Int16 = 6,
+    UInt16 = 7,
 }
 
 impl VarType {
-    const ALL: [(&'static str, VarType); 10] = [
+    const ALL: [(&'static str, VarType); 8] = [
         ("TYPE_BOOL", VarType::Bool),
+        ("TYPE_INT32", VarType::Int32),
+        ("TYPE_UINT32", VarType::UInt32),
+        ("TYPE_FLOAT", VarType::Float),
         ("TYPE_INT8", VarType::Int8),
         ("TYPE_UINT8", VarType::UInt8),
         ("TYPE_INT16", VarType::Int16),
         ("TYPE_UINT16", VarType::UInt16),
-        ("TYPE_INT32", VarType::Int32),
-        ("TYPE_UINT32", VarType::UInt32),
-        ("TYPE_FLOAT", VarType::Float),
-        // Short aliases used by some scripts.
-        ("TYPE_INT", VarType::Int32),
-        ("TYPE_UINT", VarType::UInt32),
     ];
 
     fn code(self) -> i64 {
@@ -57,19 +56,6 @@ impl VarType {
         Self::ALL.iter().map(|(_, t)| *t).find(|t| t.code() == c)
     }
 }
-
-/// Category constants; bit flags so scripts can combine them.
-const CATEGORIES: &[&str] = &[
-    "CATEGORY_GAME_GLOBAL",
-    "CATEGORY_MISSION",
-    "CATEGORY_RETRY",
-    "CATEGORY_MB_MANAGEMENT",
-    "CATEGORY_QUEST",
-    "CATEGORY_CONFIG",
-    "CATEGORY_PERSONAL",
-    "CATEGORY_MISSION_RESTARTABLE",
-    "CATEGORY_MGO",
-];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Scalar {
@@ -135,6 +121,19 @@ pub struct Var {
 #[derive(Default)]
 pub struct VarStore {
     pub vars: HashMap<String, Var>,
+    trace: Arc<Mutex<Trace>>,
+}
+
+/// Prepare a value for storing: phantoms (native constants not recovered
+/// yet) become numbers via [`crate::lua_number`], which records them.
+fn incoming(lua: &Lua, store: &Shared, val: Value) -> mlua::Result<Value> {
+    match val {
+        Value::Table(_) => {
+            let trace = store.borrow().trace.clone();
+            Ok(Value::Number(crate::lua_number(&trace, lua, &val)?))
+        }
+        v => Ok(v),
+    }
 }
 
 impl VarStore {
@@ -175,7 +174,8 @@ impl UserData for VarArray {
                 .and_then(|i| v.values.get(i))
                 .map_or(Value::Nil, |x| x.to_lua()))
         });
-        m.add_meta_method(MetaMethod::NewIndex, |_, this, (i, val): (i64, Value)| {
+        m.add_meta_method(MetaMethod::NewIndex, |lua, this, (i, val): (i64, Value)| {
+            let val = incoming(lua, &this.store, val)?;
             let mut s = this.store.borrow_mut();
             let v = s.vars.get_mut(&this.name).unwrap();
             // Retail scripts write one past the end (TppVarInit loops
@@ -213,28 +213,36 @@ impl UserData for VarStoreHandle {
         m.add_meta_method(
             MetaMethod::NewIndex,
             |lua, this, (key, val): (Value, Value)| {
-                if let Value::String(k) = &key {
-                    let k = k.to_str()?.to_string();
-                    if let Some(v) = this.store.borrow_mut().vars.get_mut(&k) {
-                        if v.is_array {
-                            return Err(mlua::Error::runtime(format!(
-                                "cannot assign to array script var {k}"
-                            )));
-                        }
-                        v.values[0] = Scalar::coerce(v.ty, &val)?;
-                        return Ok(());
-                    }
+                let declared = match &key {
+                    Value::String(k) => Some(k.to_str()?.to_string())
+                        .filter(|k| this.store.borrow().vars.contains_key(k)),
+                    _ => None,
+                };
+                let Some(k) = declared else {
+                    return lua.registry_value::<Table>(&this.loose)?.raw_set(key, val);
+                };
+                let val = incoming(lua, &this.store, val)?;
+                let mut s = this.store.borrow_mut();
+                let v = s.vars.get_mut(&k).expect("checked above");
+                if v.is_array {
+                    return Err(mlua::Error::runtime(format!(
+                        "cannot assign to array script var {k}"
+                    )));
                 }
-                lua.registry_value::<Table>(&this.loose)?.raw_set(key, val)
+                v.values[0] = Scalar::coerce(v.ty, &val)?;
+                Ok(())
             },
         );
     }
 }
 
 impl VarStoreHandle {
-    fn new(lua: &Lua) -> mlua::Result<Self> {
+    fn new(lua: &Lua, trace: &Arc<Mutex<Trace>>) -> mlua::Result<Self> {
         Ok(Self {
-            store: Shared::default(),
+            store: Rc::new(RefCell::new(VarStore {
+                vars: HashMap::new(),
+                trace: trace.clone(),
+            })),
             loose: Rc::new(lua.create_registry_value(lua.create_table()?)?),
         })
     }
@@ -286,12 +294,82 @@ impl VarStoreHandle {
         }
         Ok(())
     }
+
+    /// Declare the engine-owned variables (`vars`) from the layout recovered
+    /// from the binary. Values start zeroed, as the engine's block does.
+    fn declare_layout(&self, layout: &[EngineVar]) {
+        let mut s = self.store.borrow_mut();
+        for v in layout {
+            let Some(ty) = VarType::from_name(&v.ty) else {
+                continue;
+            };
+            let zero = Scalar::coerce(ty, &Value::Nil).expect("nil coerces");
+            let len = v.array_size.max(1) as usize;
+            s.vars.insert(
+                v.name.clone(),
+                Var {
+                    ty,
+                    save: false,
+                    category: v.flags,
+                    default: zero,
+                    values: vec![zero; len],
+                    is_array: v.array_size > 1,
+                },
+            );
+        }
+    }
+}
+
+/// One entry of `re/api/vars_layout.json`.
+#[derive(serde::Deserialize, Debug)]
+pub struct EngineVar {
+    pub name: String,
+    pub offset: u32,
+    #[serde(rename = "type")]
+    pub ty: String,
+    pub array_size: u32,
+    pub flags: i64,
+    pub str_code32: u32,
+}
+
+#[derive(serde::Deserialize)]
+struct EngineVarLayout {
+    vars: Vec<EngineVar>,
+}
+
+const VARS_LAYOUT_JSON: &str = include_str!("../../../re/api/vars_layout.json");
+
+/// The engine's `vars` declarations, recovered from mgsvtpp.exe.
+pub fn engine_vars_layout() -> Vec<EngineVar> {
+    serde_json::from_str::<EngineVarLayout>(VARS_LAYOUT_JSON)
+        .expect("re/api/vars_layout.json is valid")
+        .vars
+}
+
+impl VarType {
+    fn from_name(n: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .find(|(k, _)| k.strip_prefix("TYPE_") == Some(n))
+            .map(|(_, t)| *t)
+    }
+
+    pub fn size(self) -> u32 {
+        match self {
+            VarType::Bool | VarType::Int8 | VarType::UInt8 => 1,
+            VarType::Int16 | VarType::UInt16 => 2,
+            _ => 4,
+        }
+    }
 }
 
 pub fn install(lua: &Lua, trace: Arc<Mutex<Trace>>) -> mlua::Result<()> {
     let g = lua.globals();
-    let gvars = VarStoreHandle::new(lua)?;
-    let svars = VarStoreHandle::new(lua)?;
+    let gvars = VarStoreHandle::new(lua, &trace)?;
+    let svars = VarStoreHandle::new(lua, &trace)?;
+    let vars = VarStoreHandle::new(lua, &trace)?;
+    vars.declare_layout(&engine_vars_layout());
+    g.raw_set("vars", lua.create_userdata(vars)?)?;
     g.raw_set("gvars", lua.create_userdata(gvars.clone())?)?;
     g.raw_set("svars", lua.create_userdata(svars.clone())?)?;
 
@@ -317,9 +395,6 @@ pub fn install(lua: &Lua, trace: Arc<Mutex<Trace>>) -> mlua::Result<()> {
     for (name, ty) in VarType::ALL {
         m.raw_set(name, ty.code())?;
     }
-    for (i, name) in CATEGORIES.iter().enumerate() {
-        m.raw_set(*name, 1i64 << i)?;
-    }
     let t = trace.clone();
     m.raw_set(
         "DeclareGVars",
@@ -335,6 +410,51 @@ pub fn install(lua: &Lua, trace: Arc<Mutex<Trace>>) -> mlua::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The binary stores StrCode32(name) next to each name; matching it
+    /// validates both the layout decoder and our CityHash/StrCode port.
+    #[test]
+    fn engine_vars_hashes_match() {
+        let layout = engine_vars_layout();
+        assert!(layout.len() > 300);
+        for v in &layout {
+            assert_eq!(
+                fox_hash::str_code32(v.name.as_bytes()),
+                v.str_code32,
+                "{}",
+                v.name
+            );
+        }
+    }
+
+    /// Offsets, types and array sizes must describe non-overlapping storage.
+    #[test]
+    fn engine_vars_do_not_overlap() {
+        let mut spans: Vec<(u32, u32, &str)> = engine_vars_layout()
+            .iter()
+            .map(|v| {
+                let ty = VarType::from_name(&v.ty).unwrap_or_else(|| panic!("type {}", v.ty));
+                (
+                    v.offset,
+                    v.offset + ty.size() * v.array_size.max(1),
+                    v.name.as_str(),
+                )
+            })
+            .map(|(a, b, n)| (a, b, Box::leak(n.to_string().into_boxed_str()) as &str))
+            .collect();
+        spans.sort();
+        for w in spans.windows(2) {
+            assert!(
+                w[0].1 <= w[1].0,
+                "{} [{:#x},{:#x}) overlaps {} at {:#x}",
+                w[0].2,
+                w[0].0,
+                w[0].1,
+                w[1].2,
+                w[1].0
+            );
+        }
+    }
 
     #[test]
     fn declare_and_use() {

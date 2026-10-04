@@ -89,22 +89,46 @@ their first byte is `0x1B`/`0x1C`.
 
 ### Current boot progress
 
-`mgsv boot` runs `init.lua` to completion. In `start.lua` it loads 40
-libraries, passes the splash-screen wait, declares the script variables, and
-stops in `TppVarInit.SetInitPlayerWeapons`. That function writes to `vars`,
-the engine-declared player state. The layout and the native constants that
-`vars` needs (`TppScriptVars.PLAYER_AMMO_STOCK_TYPE_COUNT`, ...) are the
-next things to recover from the binary.
+`mgsv boot` runs `init.lua` and `start.lua` to completion (31 simulated
+frames). By then 40 libraries are loaded, the splash wait has passed, and the
+title-screen variables are initialised. About 320 distinct native APIs are
+still phantoms. Only three unrecovered constants are read as numbers:
+`TppEquip.EQP_None` and two `TppRevenge` `MAX` values.
+
+## Recovered from the binary
+
+All of this is committed under `re/api/`; it holds identifiers and numbers only.
+
+* `lua_bindings.json`: the native modules registered by 230 functions.
+  Members are registered with a helper taking `(L, name, value_or_function)`.
+  Enums are often registered in a loop over a pointer table of names, with the
+  loop counter as the value. `tools/lua_bindings.py` replays each registration
+  function with a register tracker, which yields 471 functions and 1,301
+  constants. Examples: `TppScriptVars.TYPE_*` = BOOL 0, INT32 1, UINT32 2,
+  FLOAT 3, INT8 4, UINT8 5, INT16 6, UINT16 7; the `CATEGORY_*` values are
+  single-bit flags; `TppGameObject.PHASE_*` = SNEAK 0, CAUTION 1, EVASION 2,
+  ALERT 3.
+* `vars_layout.json`: the engine-declared `vars` store (333 variables,
+  `0x140996b70`). Each variable is a 24-byte descriptor:
+  `{storage*, name*, StrCode32(name), flags<<24 | type<<16 | array_size}`.
+  Tests check every stored hash against our `StrCode32` and check that no two
+  variables overlap in storage.
+* 78 modules (`Fox`, `Script`, `GrTools`, ...) register through a different
+  path (class reflection); they have not been mapped yet.
 
 ## Reverse-engineering workflow (`re/`)
 
-1. `re/run-ghidra-analysis.sh`: one-time headless import and auto-analysis
-   (takes hours). The project is stored in `re/projects/` (gitignored).
-2. `re/run-ghidra-exports.sh`: runs `ExportFunctions` and `ExportLuaBindings`.
+1. `re/Run-GhidraAnalysis.ps1`: one-time headless import and auto-analysis
+   (about 15 minutes). The project is stored in `re/projects/` (gitignored).
+   Run the `.ps1` scripts with
+   `powershell -ExecutionPolicy Bypass -File re\<script>.ps1`.
+2. `re/Run-GhidraExports.ps1`: runs `ExportFunctions` and `ExportLuaBindings`.
    `tools/lua_bindings.py pair` then rebuilds `Module.Member → address` and
-   constant values into `re/api/lua_bindings.json`.
+   constant values into `re/api/lua_bindings.json`. `tools/vars_layout.py`
+   rebuilds `re/api/vars_layout.json` from an `ExportLuaBindings` run over the
+   `vars` member names.
 3. Put addresses in `re/out/decompile_targets.txt` and run
-   `re/run-ghidra-exports.sh DecompileFunctions.java` to get local C
+   `re/Run-GhidraExports.ps1 DecompileFunctions.java` to get local C
    references in `re/out/decomp/`.
 4. For interactive work, install the GhidraMCP extension
    (`.tools/GhidraMCP/`) in the Ghidra GUI. That lets an assistant query the

@@ -178,6 +178,15 @@ fn boot(vfs: Vfs, all: bool) -> Result<()> {
     for (k, n) in v.iter().take(if all { usize::MAX } else { 25 }) {
         println!("  {n:>5}  {k}");
     }
+    println!(
+        "unrecovered native constants used as numbers (read as 0): {}",
+        t.phantom_values.len()
+    );
+    let mut pv: Vec<_> = t.phantom_values.iter().collect();
+    pv.sort_by(|a, b| b.1.cmp(a.1));
+    for (k, n) in pv.iter().take(if all { usize::MAX } else { 15 }) {
+        println!("  {n:>5}  {k}");
+    }
     if !t.log.is_empty() {
         println!("script log ({} lines, first 10):", t.log.len());
         for l in t.log.iter().take(10) {

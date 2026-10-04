@@ -9,14 +9,17 @@
 - [x] Static scan of the native Lua API used by all 1,204 scripts (`re/api/lua_native_api.json`)
 - [x] Lua 5.1 host with traced phantoms for unimplemented natives
 - [x] Natives: `Script.LoadLibrary*`, `dofile`/`loadfile` via archives, `Fox` logging/hash/platform, `foxmath`, `bit` (LuaBitOp), `SplashScreen`, `TppScriptVars` declarations and typed `gvars`/`svars`
-- [x] Boot runs `init.lua` and `start.lua` (coroutine-driven) up to native player vars
-- [x] Ghidra headless pipeline and export scripts
+- [x] Ghidra headless pipeline and export scripts (PowerShell)
+- [x] Native binding recovery: 471 functions and 1,301 enum constants (`re/api/lua_bindings.json`)
+- [x] Engine `vars` layout recovered (333 variables, hash- and overlap-validated); typed `vars` store
+- [x] Boot runs `init.lua` and `start.lua` to completion
 
 ## Next
 
-- [ ] Finish Ghidra analysis and run the binding export; record recovered native constants (`TppScriptVars.*`, `TppGameObject.*`, `fox.KEY_*`, ...) in `re/api/`
-- [ ] Engine-declared `vars` (player state) from the binary's declaration tables
-- [ ] Boot through `start.lua` and `start2nd.lua` into the title sequence (`TppMain`, `TppSequence`)
+- [ ] Map the 78 modules registered through class reflection (`Fox`, `Script`, `GrTools`, `fox.KEY_*` ...)
+- [ ] The 25 script-used `vars` declared outside `0x140996b70` (`sortiePrep*`, `mbm*`)
+- [ ] `TppEquip` equipment ids (`EQP_*`) and the remaining unrecovered constants
+- [ ] Drive the title sequence after boot (`TppMain`, `TppSequence`, mission load)
 - [ ] `.fox2` DataSet parser (entities and properties); see FoxTool
 - [ ] Per-location chunk mounting from `foxfs.dat`
 

@@ -8,9 +8,9 @@ and runs the game's own Lua scripts at runtime. No game code, data or assets
 are included in this repository.
 
 Status: early. The archive layer is complete and verified against the retail
-data, and the game's own boot scripts run in the Rust Lua host up to the
-point where native player state is needed. There is no renderer yet. See
-[docs/ROADMAP.md](docs/ROADMAP.md).
+data. The game's own boot scripts (`init.lua`, `start.lua`) run to completion
+in the Rust Lua host, using engine constants and the `vars` layout recovered
+from the binary. There is no renderer yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Install
 
@@ -70,6 +70,28 @@ rewritten into Windows paths.
   API signatures) may be committed under `re/api/` and `docs/`.
 * The retail executable carries a protector layer. This project does not
   analyse, modify or bypass it; analysis is limited to the engine's own code.
+
+## Reverse engineering
+
+Windows PowerShell scripts drive a headless Ghidra install under `.tools/`
+(gitignored); see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md):
+
+```
+powershell -ExecutionPolicy Bypass -File re\Run-GhidraAnalysis.ps1
+powershell -ExecutionPolicy Bypass -File re\Run-GhidraExports.ps1
+```
+
+## License
+
+Copyright (c) 2026 the MGSV Rust Engine contributors. This project's original
+code is licensed under the [GNU General Public License version 3 only](LICENSE)
+(`GPL-3.0-only`). You may use, modify and distribute it, including
+commercially. If you distribute a modified version or a binary, you must make
+the corresponding source available under GPLv3 and keep the required notices.
+
+Third-party material keeps its own license, including the path dictionaries
+in `dictionaries/` (MIT, GzsTool). This license grants no rights to Konami's
+game code, data, assets or trademarks.
 
 ## Credits
 

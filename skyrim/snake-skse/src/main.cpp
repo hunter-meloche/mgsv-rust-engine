@@ -3,9 +3,9 @@
 //
 // Phase B: Snake's animation drives the player's skeleton. Press F8 in game
 // (F10 cycles write modes: compute only / local transforms / + world)
-// to toggle. Skyrim still moves the character; Snake's controller picks
-// walk / run / dash from the player's actual speed, C and Z toggle crouch
-// and prone, the right mouse button raises the weapon. Every frame, after
+// to toggle. Skyrim still moves the character; Snake follows Skyrim's own
+// state: walk / run / sprint flags, crouch while sneaking, X toggles prone,
+// the right mouse button raises the weapon. Every frame, after
 // Skyrim's own animation update, Snake's pose is retargeted onto the
 // skeleton (snake_retarget_apply) and written into the bone nodes.
 //
@@ -180,7 +180,11 @@ constexpr uintptr_t kPlayerSingleton = 0x03230778;  // PlayerCharacter** (SKSE g
 constexpr size_t kVtUpdateAnimation = 0x7D;          // TESObjectREFR::UpdateAnimation(float)
 constexpr size_t kVtGet3D1 = 0x6F;                   // TESObjectREFR::Get3D1(bool firstPerson)
 constexpr size_t kVtAsNode = 0x03;                   // NiObject::AsNode()
-constexpr size_t kRefPosition = 0x4C;                // TESObjectREFR data.location (NiPoint3)
+// TESObjectREFR data (OBJ_REFR) sits 8 bytes later than in SE on this
+// runtime (verified in game): angle (pitch, roll, heading) at 0x48,
+// location at 0x54.
+constexpr size_t kRefAngle = 0x48;
+constexpr size_t kRefPosition = 0x54;
 
 // NiAVObject / NiNode fields.
 constexpr size_t kName = 0x10;
@@ -334,6 +338,13 @@ void CheckLayout() {
 std::atomic<bool> g_enabled{false};
 std::atomic<int> g_mode{2};  // 0 compute only, 1 local transforms, 2 local + world (default)
 std::atomic<float> g_speed{0.0f};  // player speed (m/s), measured by the hook
+// Actor::ActorState::actorState1: the ActorState base is at actor + 0xC0 on
+// this runtime (vtable there, verified in game), flags follow at + 0xC8.
+// Bits 0-3 moving back / forward / right / left, 6 walking, 7 running,
+// 8 sprinting, 9 sneaking.
+constexpr size_t kActorState1 = 0xC8;
+std::atomic<uint32_t> g_actorFlags{0};
+std::atomic<float> g_pitch{0.0f};  // actor look pitch (radians, positive looks down)
 std::atomic<bool> g_running{false};
 std::atomic<uint32_t> g_hookCalls{0};  // player UpdateAnimation calls (for the status log)
 std::thread g_snakeThread;
@@ -403,7 +414,11 @@ void PollControl(int curStance) {
 }
 
 void SnakeThread() {
-    Key f8{VK_F8}, f9{VK_F10}, c{'C'}, z{'Z'};
+    // Crouch follows Skyrim's sneak; X toggles prone (C is Skyrim's
+    // auto-move, Z its shout key).
+    Key f8{VK_F8}, f9{VK_F10}, x{'X'};
+    bool proneToggled = false;
+    uint32_t lastFlags = 0xFFFFFFFF;
     const double dt = 1.0 / 60.0;
     auto next = std::chrono::steady_clock::now();
     double logTimer = 0;
@@ -431,28 +446,43 @@ void SnakeThread() {
         if (!g_enabled) continue;
 
         float speed = g_speed;
+        uint32_t flags = g_actorFlags;
+        if (flags != lastFlags) {
+            Log("actor state: moving %x walk %u run %u sprint %u sneak %u (speed %.2f m/s)", flags & 0xF, (flags >> 6) & 1,
+                (flags >> 7) & 1, (flags >> 8) & 1, (flags >> 9) & 1, speed);
+            lastFlags = flags;
+        }
+        bool moving = (flags & 0xF) != 0 || speed > 0.3f;
+        bool sprint = (flags >> 8) & 1, walkFlag = (flags >> 6) & 1, runFlag = (flags >> 7) & 1;
+        bool sneaking = (flags >> 9) & 1;
         const std::string& mv = g_control.move;
-        if (mv == "idle") speed = 0;
-        else if (mv == "walk") speed = 1.5f;
-        else if (mv == "run") speed = 4.0f;
-        else if (mv == "dash") speed = 7.0f;
+        if (mv == "idle") moving = false, sprint = false;
+        else if (mv == "walk") moving = true, walkFlag = true, runFlag = sprint = false;
+        else if (mv == "run") moving = true, runFlag = true, walkFlag = sprint = false;
+        else if (mv == "dash") moving = true, sprint = true;
         SnakeInput in{};
         in.switch_to = -1;
-        in.move_y = speed > 0.3f ? 1.0f : 0.0f;
-        in.walk = speed > 0.3f && speed < 2.6f;
-        in.sprint = speed > 5.5f;
-        in.crouch = c.Pressed(focused);
-        in.prone = z.Pressed(focused);
-        // Requested stance from the control file: toggle toward it.
-        const int want = g_control.stance == "stand" ? 0 : g_control.stance == "crouch" ? 1 : g_control.stance == "prone" ? 2 : -1;
-        if (want >= 0 && want != cur.stance) {
-            if (want == 2 || cur.stance == 2) in.prone = true;
-            else in.crouch = true;
-        } else if (want >= 0) {
-            g_control.stance.clear();
+        in.move_y = moving ? 1.0f : 0.0f;
+        // Gait from Skyrim's own flags, falling back to the measured speed.
+        if (sprint || (!walkFlag && !runFlag && speed > 5.5f)) in.sprint = true;
+        else if (walkFlag || (!runFlag && speed < 2.6f)) in.walk = true;
+        // Stance: X toggles prone; otherwise crouch while Skyrim sneaks.
+        if (x.Pressed(focused)) {
+            proneToggled = !proneToggled;
+            Log("prone %s", proneToggled ? "on" : "off");
+        }
+        int want = proneToggled ? 2 : sneaking ? 1 : 0;
+        if (g_control.stance == "stand") want = 0;
+        else if (g_control.stance == "crouch") want = 1;
+        else if (g_control.stance == "prone") want = 2;
+        if (want != cur.stance) {
+            if (want == 2) in.prone = true;                         // stand/crouch -> prone
+            else if (cur.stance == 2) (want == 1 ? in.crouch : in.prone) = true;  // prone -> crouch / stand
+            else in.crouch = true;                                  // stand <-> crouch
         }
         in.aim = g_control.aim >= 0 ? g_control.aim == 1 : focused && (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
         in.fire = in.aim && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+        in.aim_pitch = -g_pitch.load();
         // Snake's own heading is "forward": Skyrim decides where the actor faces.
         SnakeVec3 snakePos{};
         float snakeYaw = 0;
@@ -520,6 +550,10 @@ void ApplySnake(void* player, float delta) {
     if (g_havePos && delta > 0) {
         float dx = pos[0] - g_lastPos[0], dy = pos[1] - g_lastPos[1];
         g_speed = std::sqrt(dx * dx + dy * dy) / delta / 70.0f;
+    }
+    {
+        g_actorFlags = At<uint32_t>(player, kActorState1);
+        g_pitch = At<float>(player, kRefAngle);
     }
     memcpy(g_lastPos, pos, sizeof g_lastPos);
     g_havePos = true;

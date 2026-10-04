@@ -6,9 +6,10 @@ systems from your own MGSV: TPP install. See `docs/BRIDGE.md` for the design.
 
 Status: **phase B works in game** — press **F8** to toggle Snake mode:
 Snake's animation drives the player's skeleton (retargeted onto Skyrim's
-bones; verified in Riverwood: idle, crouch and prone show on the stock
-Dragonborn). Skyrim still moves the character; walk / run / dash follow your
-speed, **C** / **Z** toggle crouch / prone, the **right mouse button** aims.
+bones). Skyrim still moves the character, and Snake follows Skyrim's own
+state: walk / run / sprint from the player's movement flags, **crouch while
+sneaking** (Skyrim's sneak key), **X** toggles prone, the **right mouse
+button** raises the weapon (aim pitch from the player's look pitch).
 **F10** cycles debug write modes (2 = full, default; 1 = local only; 0 = off).
 
 How it runs: Snake's controller and the retarget run on the plugin's own

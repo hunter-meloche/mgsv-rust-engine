@@ -2,6 +2,7 @@
 
 pub mod fmdl;
 pub mod fox2;
+pub mod mtar;
 mod names;
 
 pub use fmdl::Fmdl;

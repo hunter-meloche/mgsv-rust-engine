@@ -30,8 +30,11 @@ as a self-contained part of the engine that can later run as a library
 bridged into Skyrim through an SKSE plugin (the SkyCraft model). The full
 game (world, AI, missions) continues afterwards.
 
-- [ ] `.frig` skeleton and `.fmdl` mesh parsers (Snake's body and weapons)
-- [ ] `.gani`/`.mtar` animation parsers and a playback core
+- [x] Engine function names imported from IHHook (165, verified against the exe)
+- [x] `.fmdl` parser: all 14,555 models parse and validate (skeleton, meshes, materials, buffers)
+- [x] `.mtar` motion archive container (clip table); `mgsv find` across packages
+- [ ] `.gani` clip decoding (track table seen; find the engine's decoder) and a playback core
+- [ ] Bone-name dictionary for `StrCode64` skeleton hashes; `.frig` beyond the header
 - [ ] Player controller: stances (stand, crouch, prone, crawl), dive, sprint, cover; recover parameters from the binary and `.fox2` player data
 - [ ] Camera: over-the-shoulder, shoulder swap, aim zoom
 - [ ] Weapons: equip parameters (`EquipParameters.lua`, `TppEquip` ids), recoil, ballistics, reload

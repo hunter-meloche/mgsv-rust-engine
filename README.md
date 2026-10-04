@@ -48,6 +48,9 @@ cargo build --release
 | `mgsv run [--frames N] [--watch EXPR]... [--post F:CLASS:MSG[:SENDER]]... [--messages]` | Boot and run the game loop from the `init` mission, following mission switches. Prints events, sequence changes and watched Lua expressions; `--post` injects UI messages as stand-ins for player input |
 | `mgsv fox2 PATH` | Dump a `.fox2` DataSet (`PKG.fpkd:/inner/path.fox2` for files inside packages) |
 | `mgsv fox2-check` | Parse every `.fox2` in every package and report failures |
+| `mgsv fmdl PATH` / `mgsv fmdl-check` | Summarise one `.fmdl` model / parse and validate every model |
+| `mgsv mtar PATH` | List the animation clips in an `.mtar` motion archive |
+| `mgsv find PATTERN` | Find files inside packages, printed as `PACKAGE:INNER` |
 
 On Git Bash, set `MSYS_NO_PATHCONV=1` so `/Assets/...` arguments are not
 rewritten into Windows paths.

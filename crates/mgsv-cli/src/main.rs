@@ -83,6 +83,11 @@ enum Cmd {
     Fmdl { path: String },
     /// Parse and validate every .fmdl inside every .fpk.
     FmdlCheck,
+    /// Find files inside packages whose path contains PATTERN; prints
+    /// `PACKAGE:INNER` lines usable with fox2/fmdl.
+    Find { pattern: String },
+    /// List the clips in an .mtar motion archive (PACKAGE.fpk:INNER).
+    Mtar { path: String },
 }
 
 /// Read a file from the archives, or from inside a package with `PKG:INNER`.
@@ -255,6 +260,68 @@ fn run() -> Result<()> {
             Ok(())
         }
         Cmd::FmdlCheck => fmdl_check(&vfs),
+        Cmd::Mtar { path } => {
+            let data = read_any(&vfs, &path)?;
+            let m = fox_data::mtar::Mtar::parse(&data)?;
+            writeln!(
+                out,
+                "mtar: {} clips, flags {:#x}, table end {:#x}, header {:?}, size {:#x}",
+                m.entries.len(),
+                m.flags,
+                m.table_end,
+                m.header_u16,
+                data.len()
+            )?;
+            let named = m
+                .entries
+                .iter()
+                .filter(|e| vfs.dictionary.resolve(e.hash).1)
+                .count();
+            writeln!(out, "names resolved: {named}/{}", m.entries.len())?;
+            for e in &m.entries {
+                let (name, _) = vfs.dictionary.resolve(e.hash);
+                writeln!(
+                    out,
+                    "  {:#08x} frames {:>4}/{:<4} tracks {:>3} aux {:#08x}  {name}",
+                    e.offset, e.frames, e.frames2, e.tracks, e.secondary_offset
+                )?;
+            }
+            Ok(())
+        }
+        Cmd::Find { pattern } => {
+            let pkgs: Vec<_> = vfs
+                .iter()
+                .filter(|(h, _)| {
+                    matches!(
+                        fox_hash::extension_from_id((h >> 51) as u16),
+                        Some("fpk" | "fpkd")
+                    )
+                })
+                .collect();
+            let mut hits: Vec<String> = pkgs
+                .par_iter()
+                .flat_map(|(h, r)| {
+                    let pkg_name = vfs.dictionary.resolve(*h).0;
+                    let Ok(data) = vfs.read_ref(*r) else {
+                        return Vec::new();
+                    };
+                    let Ok(pkg) = Fpk::parse(&data) else {
+                        return Vec::new();
+                    };
+                    pkg.entries
+                        .iter()
+                        .map(|e| e.clean_path())
+                        .filter(|p| p.contains(pattern.as_str()))
+                        .map(|p| format!("{pkg_name}:{p}"))
+                        .collect()
+                })
+                .collect();
+            hits.sort();
+            for h in hits {
+                writeln!(out, "{h}")?;
+            }
+            Ok(())
+        }
     }
 }
 

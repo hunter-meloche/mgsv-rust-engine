@@ -1,0 +1,6 @@
+[package]
+name = "fox-hash"
+description = "Fox Engine hash functions (CityHash64 v1.0.x, PathCode64, StrCode64)"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true

@@ -1,0 +1,21 @@
+/target/
+
+# Anything produced from the user's own copy of the game. Never commit these.
+/extracted/
+/re/out/
+/re/projects/
+*.gpr
+*.rep/
+*.fpk
+*.fpkd
+*.fox2
+*.ftex
+*.ftexs
+*.fmdl
+*.dat
+*.lua.orig
+
+# Local tool installs (Ghidra etc.)
+/.tools/
+
+*.log

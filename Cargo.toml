@@ -1,0 +1,29 @@
+[workspace]
+members = ["crates/fox-hash", "crates/fox-archive", "crates/fox-lua", "crates/mgsv-cli"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+fox-hash = { path = "crates/fox-hash" }
+fox-archive = { path = "crates/fox-archive" }
+fox-lua = { path = "crates/fox-lua" }
+flate2 = "1"
+md-5 = "0.10"
+memmap2 = "0.9"
+rayon = "1"
+anyhow = "1"
+thiserror = "2"
+clap = { version = "4", features = ["derive"] }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+debug = 1

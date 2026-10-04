@@ -1,0 +1,13 @@
+[package]
+name = "fox-archive"
+description = "Readers for Fox Engine archives (QAR .dat, FPK/FPKD) and a virtual file system over a TPP install"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+fox-hash.workspace = true
+flate2.workspace = true
+md-5.workspace = true
+memmap2.workspace = true
+thiserror.workspace = true

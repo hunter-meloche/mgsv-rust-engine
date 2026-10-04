@@ -6,9 +6,14 @@
 //! a traced "phantom" (see `prelude.lua`).
 
 pub mod constants;
+pub mod game;
+pub mod messages;
 pub mod mission;
+pub mod mission_manager;
 mod natives;
+pub mod script_block;
 pub mod script_vars;
+pub mod ui;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -49,6 +54,9 @@ pub struct FoxLua {
     pub vfs: Arc<Vfs>,
     pub trace: Arc<Mutex<Trace>>,
     pub clock: Arc<Mutex<Clock>>,
+    /// Things the engine-side systems did during frame ticks (block loads,
+    /// UI callbacks), for the game's event log.
+    pub events: Mutex<Vec<String>>,
 }
 
 impl FoxLua {
@@ -61,6 +69,7 @@ impl FoxLua {
             vfs,
             trace,
             clock: Arc::default(),
+            events: Mutex::default(),
         };
 
         {
@@ -91,11 +100,33 @@ impl FoxLua {
         run_file(&self.lua, &self.vfs, &self.trace, path)
     }
 
-    /// Advance the simulated clock by one frame.
-    pub fn advance_frame(&self) {
-        let mut c = self.clock.lock().unwrap();
-        c.frame += 1;
-        c.seconds += FRAME_SECONDS;
+    /// Advance one frame: clock, timers, and the engine systems that make
+    /// progress between script updates (script block loads, native UI flows).
+    /// This runs between coroutine resumes too, so scripts that wait inside
+    /// `OnInitialize` see their loads complete.
+    pub fn advance_frame(&self) -> mlua::Result<()> {
+        let now = {
+            let mut c = self.clock.lock().unwrap();
+            c.frame += 1;
+            c.seconds += FRAME_SECONDS;
+            c.seconds
+        };
+        messages::tick_timers(&self.lua, now);
+        for (block, packages) in script_block::tick(&self.lua, &self.vfs)? {
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("script block {block} loaded {packages}"));
+        }
+        if let Some(e) = ui::tick(&self.lua)? {
+            self.events.lock().unwrap().push(e);
+        }
+        Ok(())
+    }
+
+    /// Take the events recorded by [`FoxLua::advance_frame`].
+    pub fn take_events(&self) -> Vec<String> {
+        std::mem::take(&mut self.events.lock().unwrap())
     }
 
     /// Run a script as a coroutine, resuming it once per simulated frame
@@ -120,7 +151,7 @@ impl FoxLua {
                 return Ok(frames);
             }
             frames += 1;
-            self.advance_frame();
+            self.advance_frame()?;
             if frames >= max_frames {
                 return Err(mlua::Error::runtime(format!(
                     "{path} still running after {max_frames} frames"

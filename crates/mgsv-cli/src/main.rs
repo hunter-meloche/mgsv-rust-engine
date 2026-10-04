@@ -48,12 +48,24 @@ enum Cmd {
         /// Print every unimplemented native that was called.
         #[arg(long)]
         all: bool,
-        /// After boot, load this mission package and run its lifecycle.
-        #[arg(long)]
-        mission: Option<String>,
-        /// Frames of OnUpdate to run for --mission.
-        #[arg(long, default_value_t = 300)]
+    },
+    /// Boot, then run the game loop from the init mission (or --mission-code),
+    /// following the scripts' mission switches. Prints events and sequence
+    /// changes.
+    Run {
+        /// Frames to run after boot.
+        #[arg(long, default_value_t = 600)]
         frames: usize,
+        /// First mission code (default: init, 1).
+        #[arg(long, default_value_t = fox_lua::game::INIT_MISSION_CODE)]
+        mission_code: i64,
+        /// Lua expression to print whenever its value changes (repeatable),
+        /// e.g. --watch mvars.seq_missionPrepareState
+        #[arg(long)]
+        watch: Vec<String>,
+        /// Print every unimplemented native that was called.
+        #[arg(long)]
+        all: bool,
     },
     /// Dump a .fox2 DataSet. PATH is an archive path, or `PACKAGE:INNER` for
     /// a file inside an .fpk/.fpkd (e.g. `/Assets/.../init.fpkd:/Assets/.../init.fox2`).
@@ -185,11 +197,13 @@ fn run() -> Result<()> {
             }
             Ok(())
         }
-        Cmd::Boot {
-            all,
-            mission,
+        Cmd::Boot { all } => boot(vfs, all),
+        Cmd::Run {
             frames,
-        } => boot(vfs, all, mission, frames),
+            mission_code,
+            watch,
+            all,
+        } => run_game(vfs, frames, mission_code, &watch, all),
         Cmd::Fox2 { path } => {
             let ds = fox_data::DataSet::parse(&read_any(&vfs, &path)?)?;
             out.write_all(ds.to_text(&fox_names(&vfs)).as_bytes())?;
@@ -253,59 +267,82 @@ fn fox2_check(vfs: &Vfs) -> Result<()> {
     Ok(())
 }
 
-fn run_mission(host: &fox_lua::FoxLua, pkg: &str, frames: usize) -> fox_lua::mlua::Result<()> {
-    let m = host.load_mission(pkg)?;
-    println!("ok    mission {pkg}");
-    for (k, p) in &m.sub_scripts {
-        println!("        {k} = {p}");
+fn new_host(vfs: Vfs) -> Result<fox_lua::FoxLua> {
+    fox_lua::FoxLua::new(std::sync::Arc::new(vfs)).map_err(|e| anyhow::anyhow!("{e}"))
+}
+
+fn boot(vfs: Vfs, all: bool) -> Result<()> {
+    let host = new_host(vfs)?;
+    let mut game = fox_lua::game::Game::new(&host);
+    let res = game.boot();
+    for (f, e) in &game.events {
+        println!("@{f:<6} {e}");
     }
-    for hook in ["OnAllocate", "OnInitialize"] {
-        let n = m.run_hook(host, hook, 100_000)?;
-        println!("ok    {hook} ({n} frames)");
+    if let Err(e) = res {
+        println!("FAIL  {e}");
     }
-    // Report sequence transitions (TppSequence is the game's mission state machine).
-    let current = || -> String {
-        host.lua
-            .load("local ok, s = pcall(TppSequence.GetCurrentSequenceName) return ok and tostring(s) or '?'")
-            .eval::<String>()
-            .unwrap_or_else(|_| "?".into())
-    };
-    let mut last = current();
-    println!("        sequence @0: {last}");
-    for f in 0..frames {
-        m.call("OnUpdate")
-            .map_err(|e| fox_lua::mlua::Error::runtime(format!("OnUpdate, frame {f}: {e}")))?;
-        host.advance_frame();
-        let now = current();
-        if now != last {
-            println!("        sequence @{}: {now}", f + 1);
-            last = now;
-        }
-    }
-    println!("ok    OnUpdate x{frames}");
+    report(&host, all);
     Ok(())
 }
 
-fn boot(vfs: Vfs, all: bool, mission: Option<String>, frames: usize) -> Result<()> {
-    let host =
-        fox_lua::FoxLua::new(std::sync::Arc::new(vfs)).map_err(|e| anyhow::anyhow!("{e}"))?;
-    // start.lua runs start2nd.lua itself.
-    let mut booted = true;
-    for script in ["/init.lua", "/Tpp/start.lua"] {
-        match host.run_coroutine(script, 100_000) {
-            Ok(frames) => println!("ok    {script} ({frames} frames)"),
-            Err(e) => {
-                println!("FAIL  {script}\n{e}");
-                booted = false;
-                break;
+fn run_game(vfs: Vfs, frames: usize, mission_code: i64, watch: &[String], all: bool) -> Result<()> {
+    let host = new_host(vfs)?;
+    let mut game = fox_lua::game::Game::new(&host);
+
+    // Watched expressions; the current sequence is always included.
+    let mut exprs = vec!["TppSequence.GetCurrentSequenceName()".to_string()];
+    exprs.extend(watch.iter().cloned());
+    let eval = |expr: &str| -> String {
+        host.lua
+            .load(format!(
+                "local ok, v = pcall(function() return {expr} end) return ok and tostring(v) or '<error>'"
+            ))
+            .eval::<String>()
+            .unwrap_or_else(|_| "<error>".into())
+    };
+    let mut last: Vec<String> = Vec::new();
+    let mut printed = 0;
+    let flush = |game: &fox_lua::game::Game, printed: &mut usize| {
+        for (f, e) in &game.events[*printed..] {
+            println!("@{f:<6} {e}");
+        }
+        *printed = game.events.len();
+    };
+
+    let result = (|| -> fox_lua::mlua::Result<()> {
+        game.boot()?;
+        flush(&game, &mut printed);
+        game.load_mission_code(mission_code)?;
+        flush(&game, &mut printed);
+        last = exprs.iter().map(|e| eval(e)).collect();
+        for (e, v) in exprs.iter().zip(&last) {
+            println!("@{:<6} {e} = {v}", host.clock.lock().unwrap().frame);
+        }
+        for _ in 0..frames {
+            game.frame()?;
+            flush(&game, &mut printed);
+            let f = host.clock.lock().unwrap().frame;
+            for (i, e) in exprs.iter().enumerate() {
+                let now = eval(e);
+                if now != last[i] {
+                    println!("@{f:<6} {e} = {now}");
+                    last[i] = now;
+                }
             }
         }
+        Ok(())
+    })();
+    flush(&game, &mut printed);
+    match result {
+        Ok(()) => println!("ok    ran {frames} frames"),
+        Err(e) => println!("FAIL  at frame {}\n{e}", host.clock.lock().unwrap().frame),
     }
-    if let (true, Some(pkg)) = (booted, mission) {
-        if let Err(e) = run_mission(&host, &pkg, frames) {
-            println!("FAIL  mission {pkg}\n{e}");
-        }
-    }
+    report(&host, all);
+    Ok(())
+}
+
+/// Print the native-API trace collected by the host.
+fn report(host: &fox_lua::FoxLua, all: bool) {
     let t = host.trace.lock().unwrap();
     println!("\nscripts loaded: {}", t.loaded.len());
     for p in &t.missing {
@@ -341,7 +378,6 @@ fn boot(vfs: Vfs, all: bool, mission: Option<String>, frames: usize) -> Result<(
             println!("  {l}");
         }
     }
-    Ok(())
 }
 
 fn info(vfs: &Vfs) -> Result<()> {

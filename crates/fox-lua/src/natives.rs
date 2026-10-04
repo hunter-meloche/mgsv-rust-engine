@@ -360,6 +360,27 @@ pub fn install(host: &FoxLua) -> mlua::Result<()> {
     install_bitop(host)?;
     crate::script_vars::install(lua, host.trace.clone())?;
     install_splash_screen(host)?;
+    crate::messages::install(lua, host.clock.clone(), |l, n| module(l, n))?;
+    crate::mission_manager::install(lua, |l, n| module(l, n))?;
+    crate::ui::install(lua, |l, n| module(l, n))?;
+
+    // --- ScriptBlock ------------------------------------------------------------
+    crate::script_block::install(lua, |l, n| module(l, n))?;
+
+    // --- StageBlock -------------------------------------------------------------
+    {
+        // No stage (terrain block grid) is streamed yet, so the current
+        // minimum small-block index is the grid origin. Returns (x, y).
+        // TODO: derive from the player position once stages load.
+        let sb = module(lua, "StageBlock")?;
+        def(
+            host,
+            &sb,
+            "StageBlock",
+            "GetCurrentMinimumSmallBlockIndex",
+            |_, _: MultiValue| Ok((0, 0)),
+        )?;
+    }
 
     // --- TppEquip ----------------------------------------------------------------
     {

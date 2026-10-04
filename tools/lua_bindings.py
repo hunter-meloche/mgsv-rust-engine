@@ -181,6 +181,46 @@ def stack_enum_pairs(instructions):
                 yield strings[reg(ops[1])], values[prev]
 
 
+CODE_START, CODE_END = 0x140001000, 0x14208D000  # .xtext
+ABS_ADDR = re.compile(r"^\[0x([0-9a-f]+)\]$", re.I)
+
+
+def stack_reg_pairs(instructions):
+    """Yield (name, function) from luaL_Reg-style arrays built on the stack:
+    `{const char* name; lua_CFunction func}` with the name at slot X and the
+    function at X+8. Code pointers Ghidra did not define as functions are
+    accepted when they point into .xtext."""
+    regs: dict = {}
+    slots: dict = {}
+    for mn, ops, sref, fref, is_call, _table in instructions:
+        if is_call:
+            regs.clear()
+            continue
+        dst = reg(ops[0]) if ops else None
+        if mn == "LEA" and dst and len(ops) == 2:
+            if sref is not None:
+                regs[dst] = Str(sref)
+            else:
+                m = ABS_ADDR.match(ops[1])
+                addr = int(m.group(1), 16) if m else None
+                if fref is not None:
+                    regs[dst] = Fn(fref)
+                elif addr is not None and CODE_START <= addr < CODE_END:
+                    regs[dst] = Fn(f"{addr:x}")
+                else:
+                    regs.pop(dst, None)
+            continue
+        m = STACK_SLOT.match(ops[0]) if mn == "MOV" and len(ops) == 2 else None
+        if m and m.group(1).lower() == "qword" and reg(ops[1]) in regs:
+            slots[(m.group(2).upper(), int(m.group(3), 16))] = regs[reg(ops[1])]
+        elif dst:
+            regs.pop(dst, None)
+    for (base, off), v in slots.items():
+        nxt = slots.get((base, off + 8))
+        if isinstance(v, Str) and isinstance(nxt, Fn):
+            yield str(v), str(nxt)
+
+
 def cmd_pair() -> None:
     mods = load_api()
     native = {k for k, v in mods.items() if v["in_exe"] and not v["defined_by_script"]}
@@ -206,6 +246,18 @@ def cmd_pair() -> None:
                 (mod,) = mods_for
                 constants[mod].setdefault(name, value)
                 registrars[mod].add(rec["func"])
+
+    # luaL_Reg arrays on the stack. Attribute by the record's module when it
+    # names exactly one, otherwise by the member's unique owner.
+    for rec in records:
+        rec_mods = [m for m in rec["modules"] if m in native]
+        for name, fn in stack_reg_pairs(rec["ins"]):
+            cands = [m for m in rec_mods if name in mods[m]["members"]] if len(rec_mods) >= 1 else []
+            if len(cands) != 1:
+                cands = [m for m in owners.get(name, set())]
+            if len(cands) == 1:
+                functions[cands[0]].setdefault(name, fn)
+                registrars[cands[0]].add(rec["func"])
 
     for rec in records:
         if rec.get("parent") is None and not (set(rec["modules"]) & native):

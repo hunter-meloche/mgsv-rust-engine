@@ -116,31 +116,80 @@ Both kinds of wait loop therefore terminate. Natives whose answer matters are
 implemented for real: `TppEquip.IsExistFile` checks the archive index, and
 `TppScriptVars.IsSavingOrLoading`/`GetLastResult` report no save in flight.
 
+### Frame loop and engine systems (`game.rs`)
+
+`FoxLua::advance_frame` is one engine frame: clock, event timers, script
+block loads and native UI flows. It also runs between resumes of coroutine
+hooks, so a script that waits inside `OnInitialize` sees its loads finish.
+`Game::frame` runs `OnUpdate`, delivers svars notifications and messages,
+advances the frame, then follows mission switch requests.
+
+* **svars notifications.** Writes that change an `svars` value queue
+  `(name, index)`. The engine passes them to the mission's
+  `OnChangeSVars(name, index)` hook. `TppSequence` switches sequences there
+  (`svars.seq_sequence`); `TppSequence.Update` does nothing until
+  `mvars.seq_currentSequence` is set by that path.
+* **Messages.** Delivered as `OnMessage(scripts, class, message, arg0..arg3)`
+  with `StrCode32` ids. Scripts key handlers by class and message names, and
+  optionally by sender (`arg0`). A handler can return
+  `Mission.ON_MESSAGE_RESULT_RESEND` to get the message again next frame,
+  with `Mission.GetCurrentMessageResendCount` counting up. (The value of that
+  constant is host-defined until the `Mission` module is mapped.)
+* **Event timers** (`GkEventTimerManager.Start/StartRaw/Stop/StopAll/
+  IsTimerActive/SetPaused`) run on the simulated clock. On expiry they post
+  `Timer`/`Finish` with the timer's `StrCode32` as sender. For example,
+  `Seq_Mission_Prepare` leaves its final state through `Timer_WaitStartingGame`.
+* **Mission switching.** Scripts register package path functions
+  (`Mission.SetMissionPackagePathFunc`), set `vars.missionCode`, and call
+  `Mission.LoadMission{...}`; the request carries only options. The host runs
+  `OnTerminate`, resolves the packages through the registered function, and
+  loads the new mission. All Lua files in the mission's packages run as
+  libraries before the mission's main script and sub-scripts (e.g.
+  `title_sequence.lua`, `cypr_mission_block.lua`). Sub-scripts load in an
+  order where every script follows the sub-scripts whose globals it references.
+* **Script blocks.** Declared by `ScriptBlockData` entities (`name`,
+  `enabled`, `sizeInBytes`, `prerequisites`) in the mission's DataSets.
+  `ScriptBlock.Load(id, packages)` moves a block to PROCESSING. The next
+  frame runs the packages' scripts and the block becomes INACTIVE, or ACTIVE
+  if `Activate` came during the load (`TppScriptBlock.Load` activates right
+  after requesting).
+* **Pre-title UI.** `TppUiCommand.StartPreTitleSequence` (state machine at
+  `0x14085c8c0`) shows the `PreTitle` layout and then calls the script
+  function `TppVarInit.StartTitle()`. That function chooses the title mission
+  from the save state and requests it. Headless, the logos take no time.
+
 ### Current progress
 
-`mgsv boot --mission /Assets/tpp/pack/mission2/init/init.fpkd`:
+`mgsv run --frames 600`:
 
-* `init.lua` and `start.lua` complete (31 frames); 94 scripts are loaded.
-* The `init` mission loads; `OnAllocate` and `OnInitialize` complete through
-  the real `TppMain` code. The sequence machine enters `Seq_Mission_Prepare`
-  and logs the game's own `init MissionPrepare` / `OnLoad` messages.
-* It stays in `Seq_Mission_Prepare`. Progress depends on mission-start state
-  and on engine messages delivered through `TppMain.OnMessage`, which is the
-  next subsystem to build.
+* `init.lua`/`start.lua` (31 frames), then mission 1 (`init`). `init` reloads
+  itself once (`LoadMission{force=true}`), as on retail. `Seq_Mission_Prepare`
+  then runs through its states to `Seq_Demo_Init` and `Seq_Demo_StartTitle`.
+* The pre-title flow calls `TppVarInit.StartTitle()`, which selects mission
+  10010 (new game: the prologue with the title screen on top). It loads from
+  five packages, and its four Cyprus script blocks stream their demo and
+  small-mission packages.
+* Mission 10010 finishes `OnInitialize` and enters
+  `Seq_Demo_StartHasTitleMission`, the title-menu state. Advancing past it
+  needs title-menu UI messages (`TitleMenu`/`PressStart`, `GameStart`).
 
 ## Recovered from the binary
 
 All of this is committed under `re/api/`; it holds identifiers and numbers only.
 
-* `lua_bindings.json`: 585 native functions and 4,043 constants across 157
-  modules, registered by 230 functions plus about 200 callbacks they hand out.
+* `lua_bindings.json`: 1,115 native functions (1,068 of the 1,281 callable
+  members scripts use) and 4,043 constants across 161 modules, registered by
+  230 functions plus about 200 callbacks they hand out.
   Members are registered with a helper taking `(L, name, value_or_function)`.
   Enums are often registered in a loop over a pointer table of names, with the
   loop counter as the value. `tools/lua_bindings.py` replays each registration
   function with a register tracker. Three registration shapes are handled:
   direct calls (`name`, value or function), loops over a pointer table of
   names (the value is the loop counter), and `{u32 value; char* name}` arrays
-  built on the stack (e.g. the 2,187 `TppEquip.EQP_*` ids). Class-style
+  built on the stack (e.g. the 2,187 `TppEquip.EQP_*` ids), and `luaL_Reg`
+  arrays (`{name; function}`) built on the stack (most of `TppUiCommand`).
+  Code pointers that Ghidra did not define as functions are accepted when
+  they point into `.xtext`. Class-style
   modules (`GrTools`, `Script`) register inside a callback handed to a static
   class descriptor. Short names may be undefined in Ghidra or pooled into the
   tail of a longer string; the exporter reads those raw. Members that scripts

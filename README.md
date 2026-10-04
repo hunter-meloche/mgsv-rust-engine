@@ -8,11 +8,12 @@ and runs the game's own Lua scripts at runtime. No game code, data or assets
 are included in this repository.
 
 Status: early. The archive and `.fox2` layers parse every file in the retail
-data. The game's own boot scripts run to completion in the Rust Lua host, and
-the first mission (`init`) loads from its package and runs its setup hooks
-through the real `TppMain`/`TppSequence` code. It currently waits in
-`Seq_Mission_Prepare` for engine events that are not implemented yet. There is
-no renderer yet. See [docs/ROADMAP.md](docs/ROADMAP.md).
+data. `mgsv run` boots the game's own scripts in the Rust Lua host, runs the
+`init` mission's boot flow, follows its hand-off through the pre-title UI to
+mission 10010 (the prologue with the title screen over it), streams that
+mission's script blocks, and reaches the title-mode sequence. There is no
+renderer yet; single-player only (MGO and online features are out of scope).
+See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Install
 
@@ -43,7 +44,8 @@ cargo build --release
 | `mgsv cat PATH` | Print one file, e.g. `/Assets/tpp/script/lib/TppMain.lua` |
 | `mgsv extract [FILTER] [--unpack-fpk]` | Extract to `extracted/` (gitignored) |
 | `mgsv fpk PATH` | List an `.fpk`/`.fpkd` package |
-| `mgsv boot [--all] [--mission PKG] [--frames N]` | Run the boot scripts (and optionally a mission) in the Rust Lua host; report native API use and sequence changes |
+| `mgsv boot [--all]` | Run the boot scripts in the Rust Lua host and report native API use |
+| `mgsv run [--frames N] [--mission-code C] [--watch EXPR]...` | Boot, then run the game loop from the `init` mission, following mission switches; print events, sequence changes and watched Lua expressions |
 | `mgsv fox2 PATH` | Dump a `.fox2` DataSet (`PKG.fpkd:/inner/path.fox2` for files inside packages) |
 | `mgsv fox2-check` | Parse every `.fox2` in every package and report failures |
 

@@ -17,13 +17,18 @@
 - [x] `.fox2` DataSet parser (`fox-data`): all 75,967 files parse
 - [x] `requires` dependency loading (52 core libraries, `TppMain`, `TppSequence`)
 - [x] Mission loading from `TppSimpleMissionData`; `init` mission runs `OnAllocate`/`OnInitialize` into `Seq_Mission_Prepare`
+- [x] svars change notifications (`OnChangeSVars`), engine messages (`OnMessage`, resend), event timers
+- [x] Game loop with mission switching (`Mission.LoadMission`, package path functions), loose package scripts
+- [x] Script blocks from `ScriptBlockData` (load, activate, states)
+- [x] Pre-title UI flow calling `TppVarInit.StartTitle`; boot reaches mission 10010's title mode
+- [x] luaL_Reg stack arrays in binding recovery: 1,115 native functions mapped
 
 ## Next
 
-- [ ] Engine to Lua messages (`TppMain.OnMessage`, StrCode32 sender/message ids) and native mission-load stages, to advance `Seq_Mission_Prepare`
-- [ ] Remaining ~50 unmapped modules (`Fox`, `fox.KEY_*`, class objects)
+- [ ] Title menu: inject `TitleMenu` UI messages (press start, new game) to start the prologue
+- [ ] Location loading (`Mission.LoadLocation`, location package path function, stage block groups)
+- [ ] Remaining unmapped modules (`Fox`, `fox.KEY_*`, `Mission` constants, class objects)
 - [ ] The 25 script-used `vars` declared outside `0x140996b70` (`sortiePrep*`, `mbm*`)
-- [ ] Title mission (`title_fpkd`, `s00005`) after `init`
 - [ ] Per-location chunk mounting from `foxfs.dat`
 
 ## Later

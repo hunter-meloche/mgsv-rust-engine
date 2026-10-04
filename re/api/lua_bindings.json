@@ -4,9 +4,15 @@
    "GetInstance": "1400839d0"
   },
   "AssetConfiguration": {
-   "GetDefaultCategory": "140171720",
+   "GetConfigurationFromAssetManager": "1409fa3b0",
+   "GetDefaultCategory": "1401709a0",
+   "IsDiscOrHddImage": "14053a440",
+   "RegisterExtensionInfo": "140170fb0",
    "SetDefaultCategory": "140171720",
-   "SetDefaultTargetDirectory": "140171720"
+   "SetDefaultTargetDirectory": "140171900",
+   "SetGroupCurrentLanguage": "140171cb0",
+   "SetLanguageGroupExtention": "140171fe0",
+   "SetTargetDirectory": "140172420"
   },
   "AvatarPreloadTextureDaemon": {
    "PreloadRequestForLocalPlayer": "140ac82d0"
@@ -29,10 +35,17 @@
    "GetDataWithIdentifier": "14017f170"
   },
   "DemoDaemon": {
-   "FindDemoBody": "141ae1470",
+   "FindDemoBody": "141adfad0",
+   "GetPlayingDemoId": "141ae0a30",
+   "GetStartPosition": "141ae0da0",
+   "IsDemoPaused": "141ae1040",
+   "IsDemoPlaying": "141ae1140",
+   "IsPlayingDemoId": "141ae11f0",
    "Play": "141ae1470",
-   "SkipAll": "141ae1470",
-   "StopAll": "141ae1470"
+   "SetDemoTransform": "141ae1be0",
+   "SkipAll": "141ae2080",
+   "SkipAtDemoPlay": "141ae2120",
+   "StopAll": "141ae2280"
   },
   "DemoxUi": {
    "SetDemoUiTriggerInvalid": "14041d570"
@@ -43,12 +56,25 @@
    "StartCheckingDlc": "1409acd40"
   },
   "FadeFunction": {
-   "CallFadeOut": "1405c8330",
+   "CallFadeIn": "1405c7c80",
+   "CallFadeOut": "1405c7df0",
    "InitFadeSetting": "1405c8330",
-   "SetFadeCallEnable": "1405c8330"
+   "IsFadeProcessing": "1405c83e0",
+   "ResetFadeColor": "1405c85f0",
+   "SetFadeCallEnable": "1405c80b0",
+   "SetFadeColor": "1405c8670"
   },
   "FoxGameFrame": {
    "SetGameFrameWaitType": "140080ea0"
+  },
+  "GameConfig": {
+   "ApplyAllConfig": "14052f710",
+   "GetCameraLRIsReversed": "14052fa70",
+   "GetCameraUDIsReversed": "14052fcd0",
+   "GetStealthAssistEnabled": "1405304b0",
+   "Reset": "140530960",
+   "SetCameraUDIsReversed": "140530c90",
+   "SetStealthAssistEnabled": "1405314e0"
   },
   "GeoPathService": {
    "BindEdgeTag": "141bb9aa0",
@@ -59,9 +85,53 @@
   },
   "Gimmick": {
    "BreakGimmick": "14065a210",
-   "InvincibleGimmickData": "14065a210",
-   "InvisibleGimmick": "14065a210",
-   "IsBrokenGimmick": "14065a210"
+   "CallBurglarAlarm": "14065a350",
+   "CallFindContainerResourceLog": "14065a450",
+   "ChangeSequentialEventAnimation": "14065a650",
+   "ChangeSequentialEventAnimation2": "14065a500",
+   "ChangeSwitch": "14065a7e0",
+   "CloseDoor": "14065a900",
+   "ContinueSquentialEventAnimation": "14065a9c0",
+   "EnableAlarmLampAll": "14065ab80",
+   "EnableCandleWind": "14065abe0",
+   "EnableMarkerGimmick": "14065ac40",
+   "EnableNoEffectBreak": "14065ad70",
+   "EspionageBoxAllInvisible": "14065add0",
+   "EspionageBoxFadeout": "14065ae20",
+   "EspionageBoxOnGround": "14065ae30",
+   "ForceIndelibleClear": "14065afb0",
+   "ForceResetOfRadioCassetteWithCassette": "14065b0d0",
+   "GetGameObjectId": "14065b0f0",
+   "InvincibleGimmickData": "14065b390",
+   "InvisibleGimmick": "14065b4d0",
+   "IsBrokenGimmick": "14065b800",
+   "IsDoorLocking": "14065b970",
+   "IsJoinNewClientSynced": "14065ba60",
+   "IsNuclearTypeContainer": "14065bab0",
+   "IsVehicleFultonUpdating": "14065bb40",
+   "IsWestSideWeapon": "14065bba0",
+   "JoinNewClientSyncRequest": "14065bc30",
+   "NotifyOfTakingCassette": "14065bc40",
+   "PauseSharedAnim": "14065bd00",
+   "PowerCutOff": "14065be40",
+   "PowerCutOn": "14065beb0",
+   "PushGimmick": "14065bf60",
+   "RegistGimmickNameIdentifier": "14065c0d0",
+   "RegisterCassetteToRadio": "14065c320",
+   "ResetGimmick": "14065c510",
+   "ResetGimmickData": "14065c610",
+   "ResetSharedGimmickData": "14065c6e0",
+   "RestoreSaveDataPermanentGimmickFromCheckPoint": "14065c7c0",
+   "RestoreSaveDataPermanentGimmickFromMission": "14065c7e0",
+   "SetAiPodLocation": "14065c830",
+   "SetEventDoorInvisible": "14065c880",
+   "SetEventDoorLock": "14065c980",
+   "SetFultonableContainerForMission": "14065cab0",
+   "SetOffsetPosition": "14065d2e0",
+   "StopAiPod": "14065d3a0",
+   "StoreSaveDataPermanentGimmickFromCheckPoint": "14065d410",
+   "StoreSaveDataPermanentGimmickFromMission": "14065d430",
+   "StoreSaveDataPermanentGimmickFromMissionAfterClear": "14065d450"
   },
   "GkEventTimerManager": {
    "IsTimerActive": "1404abf80",
@@ -120,6 +190,9 @@
   "LanguageBlock": {
    "Create": "1404b5b90"
   },
+  "LipSyncDaemon": {
+   "Create": "140492a90"
+  },
   "MotherBaseConstructConnector": {
    "ClearVariableGimmickList": "14051f4b0",
    "GetContainerResourceId": "14051ffe0",
@@ -130,6 +203,9 @@
   },
   "NavTactical": {
    "SetTacticalActionSystemScript": "141c658e0"
+  },
+  "NtDaemon": {
+   "Create": "141ceec00"
   },
   "PatchDlc": {
    "DoesExistPatchDlc": "1409ad350",
@@ -151,6 +227,9 @@
   },
   "PlatformConfiguration": {
    "SetShareScreenEnabled": "141c658e0"
+  },
+  "PlayRecord": {
+   "RegistPlayRecord": "1405426e0"
   },
   "PlayerVars": {
    "cameraZoomRate": "1409aabf0",
@@ -204,9 +283,16 @@
    "SetForceStopSimWindEffect": "141d85470"
   },
   "SoundCoreDaemon": {
-   "Create": "140329c40",
+   "Create": "140329090",
    "SetAssetPath": "140329c40",
-   "SetInterferenceRTPCName": "140329c40"
+   "SetDopplerRTPCName": "140329cb0",
+   "SetInterferenceRTPCName": "140329e40",
+   "SetRearParameter": "140329ff0"
+  },
+  "SoundDaemon": {
+   "Create": "141d76e50",
+   "MakeLeftRightAnimEventPair": "141d76f10",
+   "RegisterAnimEvent": "141d76f70"
   },
   "SplashScreen": {
    "Create": "14090e690",
@@ -231,7 +317,18 @@
    "IsEqual": "141a45430"
   },
   "SubtitlesCommand": {
-   "DisplayText": "1404b0570"
+   "ConvertToSubtitlesId": "1404b0450",
+   "DisplayText": "1404b0640",
+   "IsPlayingSubtitles": "1404b08b0",
+   "SetDefaultGeneratorName": "1404b0a30",
+   "SetDefaultSubPriority": "1404b0aa0",
+   "SetIsEnableToDisplaySubtitlesLanguage": "1404b0bb0",
+   "SetIsEnabledUiPrioStrong": "1404b0c20",
+   "SetLanguage": "1404b0c70",
+   "SetSubFilePath": "1404b1060",
+   "SetSubpFilePath": "1404b11a0",
+   "SetVoiceLanguage": "1404b13a0",
+   "StopAll": "1404b14f0"
   },
   "SubtitlesDaemon": {
    "GetInstance": "1404ad550",
@@ -242,17 +339,67 @@
    "SetScriptStep": "140ace590"
   },
   "TppBuddy2BlockController": {
-   "CreateBlock": "140a48510",
-   "DeleteBlock": "140a48510",
-   "IsBlockActive": "140a48510"
+   "CallBuddy": "140a44560",
+   "CreateBlock": "141c658e0",
+   "DeleteBlock": "141c658e0",
+   "DidObtainBuddyType": "140a459a0",
+   "GetActiveBuddyType": "140a46030",
+   "IsBlockActive": "140a47060",
+   "Load": "140a47cf0",
+   "ReserveCallBuddy": "140a49160",
+   "SetObtainedBuddyType": "140a49350",
+   "Unload": "140a49db0"
   },
   "TppBuddyService": {
-   "BuddyMissionInit": "140a547c0",
-   "ResetDogLeakedInformation": "140a547c0",
-   "SetMissionGroundStartPositions": "140a547c0"
+   "AddFriendlyPoint": "140a4da70",
+   "AdjustFromDropPoint": "140a4dce0",
+   "BuddyMissionInit": "140a4e470",
+   "BuddyProcessMissionEnd": "140a4e5f0",
+   "BuddyProcessMissionSuccess": "140a4e640",
+   "CanSortieBuddyType": "140a4e870",
+   "CheckBuddyCommonFlag": "140a4f200",
+   "ClearDisableAllBuddy": "140a4f300",
+   "DidObtainBuddyType": "140a4f640",
+   "EntryGateGo": "140a4f6d0",
+   "GetFriendlyPoint": "140a51170",
+   "HeliSpaceSetting": "140a513c0",
+   "IsBuddyDogGot": "140a51d90",
+   "IsBuddyDogSecondGot": "140a51de0",
+   "IsDeadBuddyType": "140a51e70",
+   "IsEnableBuddyCommand": "140a52200",
+   "IsEspionagedCp": "140a526b0",
+   "IsQuietDeadFromDying": "140a528b0",
+   "QuietDyingToDead": "140a53140",
+   "QuietHospitalized": "140a53230",
+   "RemoveTargetAnimalId": "140a53360",
+   "ReserveBuddyForLandStart": "140a53490",
+   "ResetDogLeakedInformation": "140a53530",
+   "ResetVarsMissionStart": "140a53850",
+   "SetBuddyDogGot": "140a53ab0",
+   "SetBuddyPuppyMBDemoPlayed": "140a53cc0",
+   "SetDisable": "140a53df0",
+   "SetDisableAllBuddy": "140a53e70",
+   "SetDisableBuddyType": "140a53eb0",
+   "SetDisableCallBuddyType": "140a53f60",
+   "SetFriendlyPoint": "140a54450",
+   "SetIgnoreDisableNpc": "140a54560",
+   "SetMissionEntryPosition": "140a54630",
+   "SetMissionEntryRotationY": "140a54710",
+   "SetMissionGroundStartPositions": "140a547c0",
+   "SetObtainedBuddyType": "140a54930",
+   "SetSortieBuddyType": "140a54a60",
+   "SetTargetAnimalId": "140a54af0",
+   "SetVarsMissionStart": "140a54e10",
+   "SetVarsQuietWeaponType": "140a54f10",
+   "UnsetBuddyCommonFlag": "140a551a0",
+   "UnsetDeadBuddyType": "140a552e0",
+   "UnsetDisableCallBuddyType": "140a55420",
+   "UnsetObtainedBuddyType": "140a49e50",
+   "UnsetSortieBuddyType": "140a555a0"
   },
   "TppBullet": {
-   "ClearBulletMark": "140a43000"
+   "ClearBulletMark": "140a43000",
+   "ReloadRecoilMaterials": "140a170e0"
   },
   "TppCassetteTapeInfo": {
    "Setup": "14057d030"
@@ -274,11 +421,19 @@
    "SetCyprusStep": "1405b2fb0"
   },
   "TppDataUtility": {
-   "CreateEffectFromGroupId": "14057a720",
-   "CreateEffectFromId": "14057a720",
-   "SetEnableDataFromIdentifier": "14057a720",
+   "CreateEffectFromGroupId": "140578f50",
+   "CreateEffectFromId": "140579030",
+   "DestroyEffectFromGroupId": "140579110",
+   "DestroyEffectFromId": "1405791f0",
+   "DestroyImmediateEffectFromId": "1405793b0",
+   "InvisibleMeshFromIdentifier": "1405794d0",
+   "IsValidEffectFromId": "140579830",
+   "SetEnableDataFromIdentifier": "140579cf0",
+   "SetVector4EffectFromGroupId": "140579f90",
+   "SetVector4EffectFromId": "14057a180",
    "SetVisibleDataFromIdentifier": "14057a720",
-   "SetVisibleEffectFromGroupId": "14057a720"
+   "SetVisibleEffectFromGroupId": "14057a860",
+   "VisibleMeshFromIdentifier": "14057aaa0"
   },
   "TppDemoUtility": {
    "AddSubjectMapping": "1405be5e0"
@@ -310,6 +465,10 @@
    "CreateResidentBlockGroups": "140a02fe0",
    "LoadCommonBlock": "140a02fe0"
   },
+  "TppEventLog": {
+   "StartRecording": "140bfde90",
+   "StopRecording": "140bfe0f0"
+  },
   "TppGameMode": {
    "GetUserMode": "140547350"
   },
@@ -327,8 +486,11 @@
    "SetSystemBlockSize": "14053a7a0"
   },
   "TppHeliPhotoFova": {
-   "ClearGroupSetting": "14057e4f0",
+   "ClearGroupSetting": "14057e200",
    "SetGroupUnit": "14057e4f0"
+  },
+  "TppHostage2": {
+   "SetSVarsKeyNames2": "1409ff7c0"
   },
   "TppMarker2System": {
    "CreateMarker2System": "1405c4280",
@@ -613,9 +775,24 @@
    "StopMusicPlayer": "14097bee0"
   },
   "TppNetworkUtil": {
-   "CloseSession": "141c658e0",
-   "IsHost": "141c658e0",
-   "IsSessionConnect": "141c658e0"
+   "CloseSession": "140a1a710",
+   "EnableMultiPlaySession": "141c658e0",
+   "GetClientFobGrade": "140a1a790",
+   "GetEventFobSkullsParam": "140a1a7e0",
+   "GetFobDeployDamageParams": "140a1a930",
+   "GetFobEventTaskParam": "140a1abd0",
+   "GetFobServerParameter": "140a1add0",
+   "GetOnlineChallengeTaskParam": "140a1aec0",
+   "GetOnlineChallengeTaskVersion": "140a1b050",
+   "GetSessionMemberCount": "140a1b0a0",
+   "IsEnableFobDeployDamage": "140a1b1a0",
+   "IsHost": "140a1b1e0",
+   "IsRequestFobServerParameterBusy": "140a1b230",
+   "IsSessionConnect": "140a1b280",
+   "RequestGetFobServerParameter": "140a1b550",
+   "SessionDisconnectPreparingMembers": "140a1b580",
+   "SessionEnableAccept": "140a1b5b0",
+   "SetFobResultRankingParam": "140a1b5f0"
   },
   "TppPause": {
    "RegisterPause": "140545b00",
@@ -631,11 +808,54 @@
    "SetEnableByLocatorName": "140a09430",
    "StartToCreateFromLocators": "140a094f0"
   },
+  "TppPlaced": {
+   "ChangeEquipIdByLocatorName": "140a0d8a0",
+   "DeleteAllCaptureCage": "140a0da30",
+   "GetCaptureCageInfo": "140a0dc50",
+   "IsLocator": "140a0de90",
+   "IsQuestBlock": "140a0def0",
+   "OnAllocate": "140a0df60",
+   "SetCorrelationValueByLocatorName": "140a0e480",
+   "SetEnableByLocatorName": "140a0e4e0",
+   "SetFobFreePositionMineId": "140a0e540",
+   "StartToCreateFromLocators": "140a0e5a0"
+  },
   "TppRadioCommand": {
+   "ClearEspionageRadioTable": "140ab77e0",
    "CreateSoundControl": "140ab78b0",
-   "RegisterEspionageRadioTable": "140ab78b0",
-   "RegisterTppCommonConditionCheckFunc": "140ab78b0",
-   "SetEnableIgnoreGamePause": "140ab78b0"
+   "DisableFlagIsMarkAsRead": "140ab7af0",
+   "DisableFlagIsMarkAsReadAndSaveToScriptVars": "140ab7bc0",
+   "DisableRadio": "140ab7c90",
+   "EnableFlagIsMarkAsRead": "140ab7e70",
+   "EnableFlagIsMarkAsReadAndSaveToScriptVars": "140ab7f40",
+   "EnableRadio": "140ab8010",
+   "ForceHideEspionageIcon": "140ab8080",
+   "GetEspionageRadioTypeIndex": "140ab80f0",
+   "IsPlayingRadio": "140ab83a0",
+   "IsRadioGroupMarkAsRead": "140ab8550",
+   "PlayDirectGroupTable": "140ab8920",
+   "PlayDirectGroupTableEnqueue": "140ab8c30",
+   "RegisterEspionageRadioTable": "140ab8f40",
+   "RegisterIntervalNextLabelTable": "140ab9190",
+   "RegisterInvalidTimeTable": "140ab9280",
+   "RegisterOverwriteByPhaseRadioGroupSet": "140ab94e0",
+   "RegisterPriorityTable": "140ab95b0",
+   "RegisterRadioGroupSetOverwrite": "140ab9780",
+   "RegisterRadioGroupToActiveRadioGroupSetInsert": "140ab9850",
+   "RegisterTppCommonConditionCheckFunc": "140ab9a80",
+   "RegisterTutorialRadioGroupSet": "140ab9ae0",
+   "RegisterWaitTimeForNoise": "140ab9bb0",
+   "RestoreRadioState": "140ab9d60",
+   "SetEnableEspionageRadio": "140ab9e40",
+   "SetEnableEspionageRadioTarget": "140ab9eb0",
+   "SetEnableIgnoreGamePause": "140aba020",
+   "SetScriptDeclVars": "140aba960",
+   "StopDirect": "140aba9d0",
+   "StoreRadioState": "140abab30",
+   "UnregisterOverwriteByPhaseRadioGroupSet": "140abab60",
+   "UnregisterRadioGroupFromActiveRadioGroupSet": "140ababe0",
+   "UnregisterRadioGroupSetFromList": "140abae40",
+   "UnregisterTutorialRadioGroupSet": "140abaea0"
   },
   "TppScriptVars": {
    "CopySlot": "140a21950",
@@ -668,17 +888,58 @@
    "StoreUtcTimeToScriptVars": "1409abc90",
    "WriteSlotToFile": "140a23050"
   },
+  "TppServerManager": {
+   "AbortDefenseMotherBase": "1407d6040",
+   "AbortSneakMotherBase": "1407d6040",
+   "FobIsSneak": "1407d6210",
+   "GetEventId": "1407d6300",
+   "GetFobStatus": "1407d6450",
+   "GetNuclearNum": "1407d6690",
+   "StartFobPickup": "1407d7470",
+   "StartLogin": "1407d74a0"
+  },
   "TppSimpleGameSequenceSystem": {
    "Start": "140994720"
   },
   "TppSoldier2": {
-   "ReloadSoldier2ParameterTables": "141c658e0",
-   "SetDefaultPartsPath": "141c658e0",
-   "SetDefaultSoldierWeapon": "141c658e0"
+   "ReloadSoldier2ParameterTables": "1409ebbb0",
+   "SetDefaultPartsPath": "1409ebf80",
+   "SetDefaultSoldierWeapon": "1409ec070"
   },
   "TppSoldier2CommonBlockController": {
    "CreateCommonMotionBlockGroup": "141c658e0",
-   "SetPackagePathWithPrerequisites": "141c658e0"
+   "SetPackagePathWithPrerequisites": "1409fa460"
+  },
+  "TppSoldierFace": {
+   "CheckFemale": "1409ed870",
+   "ClearExtendFova": "1409edae0",
+   "ConvertFova2PathToFovaFile": "1409ee210",
+   "CreateFaceTable": "1409eee60",
+   "GetBodyFpkFileCodeList": "1409f0270",
+   "GetFaceFpkFileCodeList": "1409f0a40",
+   "GetLoadedFaceTable": "1409f13c0",
+   "GetRandomFaceId": "1409f15f0",
+   "IsMoreVariationMode": "1409f28b0",
+   "ModBodyFovaDefinitionTable": "1409f2c90",
+   "ModFaceFovaDefinitionTable": "1409f2e80",
+   "OverwriteMissionFovaData": "1409f32a0",
+   "ReserveExtendFovaForHostage": "1409f3f00",
+   "ResetForPreMissionLoad": "1409f3f60",
+   "SetBodyFovaDefinitionTable": "1409f4150",
+   "SetBodyFovaUserType": "1409f42f0",
+   "SetFaceFovaDefinitionTable": "1409f48f0",
+   "SetFovaFileTable": "1409f5120",
+   "SetHostageUseHairFova": "1409f5560",
+   "SetMissionFovaData": "1409f55a0",
+   "SetPoolTable": "1409f5960",
+   "SetSoldierNoFaceResourceMode": "1409f5cd0",
+   "SetSoldierOutsideFaceMode": "1409f5d20",
+   "SetSoldierUseHairFova": "1409f5d70",
+   "SetSpecialFovaId": "1409f5dc0",
+   "SetSplitRaceForHostageRandomFaceId": "1409f5fc0",
+   "SetUseBlackDdFova": "1409f6070",
+   "SetUseFaceIdListMode": "1409f6120",
+   "SetUseZombieFova": "1409f62b0"
   },
   "TppSoundDaemon": {
    "GetInstance": "140970cb0",
@@ -695,12 +956,301 @@
    "GetCurrentGameMode": "140532230"
   },
   "TppUiCommand": {
-   "GetPopupSelect": "1408dff40",
-   "IsShowPopup": "1408dff40",
-   "SetErrorPopupParam": "1408dff40",
-   "SetPopupSelectNegative": "1408dff40",
-   "ShowErrorPopup": "1408dff40",
-   "ShowPopup": "1408dff40"
+   "AbortFobMissionPreparation": "1408cb910",
+   "AbortMissionPreparation": "1408cb930",
+   "ActivateSpySearchForCP": "1408cbac0",
+   "ActivateSpySearchForField": "1408cbb80",
+   "ActivateSpySearchForFobDefense": "1408cbbb0",
+   "ActivateSpySearchForFobSneak": "1408cbbe0",
+   "ActivateSpySearchForGameObject": "1408cbc10",
+   "ActiveDemoKeyHelp": "1408cbd90",
+   "AddAnimalEmblemTextureByDataBase": "1408cbe10",
+   "AddDisabledLandPoint": "1408cc4b0",
+   "AddEmblemTexture": "1408cc530",
+   "AllResetTelopCast": "1408cc630",
+   "AnnounceLogDelayTime": "1408cc690",
+   "AnnounceLogViewJoinLangId": "1408cc820",
+   "AnnounceLogViewLangId": "1408ccbf0",
+   "BlackRadioCommand": "1408cd110",
+   "CallAccessContinueMessage": "1408cd540",
+   "CallAccessMessage": "1408cd560",
+   "CallButtonGuide": "1408cd580",
+   "CallButtonGuideContinue": "1408cd5b0",
+   "CallControllerHelp": "1408cd5e0",
+   "CallCountAnnounce": "1408cd700",
+   "CallLoadMessage": "1408cdd40",
+   "CallMissionEndTelop": "1408cdd60",
+   "CallMissionStartTelop": "1408cdde0",
+   "CallMissionTelopTyping": "1408cdee0",
+   "CallSaveMessage": "1408ce3e0",
+   "ChangeLanguage": "1408ce490",
+   "CheckDlcAcquiredFlag": "1408ce510",
+   "CheckDlcFlag": "1408ce5b0",
+   "CheckGzPrivilegeAcquiredFlag": "1408ce620",
+   "CheckGzSaveDataFlag": "1408ce6b0",
+   "CheckMbTopMenuDDogCustomizeOpen": "1408ce820",
+   "CheckMbTopMenuDHorseCustomizeOpen": "1408ce880",
+   "ClearAllChangeLocationMenu": "1408ceb00",
+   "ClearAllDisabledLandPoints": "1408ceb30",
+   "ClearAllMissionPhotoIds": "1408ceb90",
+   "ClearAllMissionTask": "1408cebc0",
+   "ClearIconUniqueInformation": "1408cebf0",
+   "ClearMbDvcOpenConditionRequest": "1408cec20",
+   "CloseCustomizeSelector": "1408cec90",
+   "CreateBlendTexture": "1408cecd0",
+   "CreateEmblem": "1408ced70",
+   "CreateEmblemToVisit": "1408cef30",
+   "CreateResidentBlockController": "1408cef80",
+   "CreateUiDependJob": "1408cf090",
+   "CreateUiUpdateMarkerJob": "1408cf0b0",
+   "CreateUiUseGrJob": "1408cf0d0",
+   "DeactivateSpySearchForCP": "1408cf120",
+   "DeactivateSpySearchForField": "1408cf150",
+   "DeactivateSpySearchForFobDefense": "1408cf180",
+   "DeactivateSpySearchForFobSneak": "1408cf1b0",
+   "DeactivateSpySearchForGameObject": "1408cf1e0",
+   "DeleteBlendTexture": "1408cf280",
+   "DeleteTips": "1408cf350",
+   "DisableMissionPhotoId": "1408cf6c0",
+   "DisableMissionTask": "1408cf720",
+   "DisableQuietTarget": "1408cf7c0",
+   "DispTipsGuide": "1408cfa00",
+   "EnableChangeLocationMenu": "1408cfb50",
+   "EnableMissionPhotoId": "1408cfd10",
+   "EnableMissionTask": "1408cfda0",
+   "EnableQuietTarget": "1408d0080",
+   "EnableTips": "1408d00b0",
+   "EnableTipsGroup": "1408d01d0",
+   "EndAvatarEdit": "1408d0280",
+   "EndMissionPreparation": "1408d02e0",
+   "EndNameEntry": "1408d0300",
+   "EraseDisplayTimer": "1408d0400",
+   "ErasePopup": "1408d0450",
+   "EraseWormHoleTimer": "1408d0630",
+   "ExcludeNonPermissionContents": "1408d0650",
+   "ExecSpySearchForFobSneak": "141c658e0",
+   "FobWeaponNumInfo": "1408d0680",
+   "GetAreaPopupResult": "1408d07e0",
+   "GetBonusPopupRegist": "1408d09f0",
+   "GetCurrentMissionSubGoalByNo": "1408d0c10",
+   "GetCurrentPlayerStaffRankBonus": "1408d0ce0",
+   "GetEmblemLangId": "1408d0d70",
+   "GetEmblemPartsType": "1408d0e20",
+   "GetLeftTimeFromDisplayTimer": "1408d1440",
+   "GetPopupAllPadNo": "1408d1560",
+   "GetPopupSelect": "1408d15b0",
+   "GetSuspendAnnounceLogNum": "1408d1690",
+   "GetTapeLangIdByTrackId": "1408d17b0",
+   "GetTrackLangIdBySaveIndex": "1408d18d0",
+   "HasEmblemTexture": "1408d1960",
+   "HideAccessMessage": "1408d1a00",
+   "HideDemoKeyHelp": "1408d1ab0",
+   "HideHotZone": "1408d1ae0",
+   "HideInfoTypingText": "1408d1b80",
+   "HideInnerZone": "1408d1bc0",
+   "HideMusicTelop": "1408d1ca0",
+   "HideOuterZone": "1408d1cd0",
+   "HidePictureInfoHud": "1408d1ce0",
+   "HideTextureLogo": "1408d1d80",
+   "InitAllEnemyRoutePoints": "1408d1de0",
+   "InitAllMbTopMenuItemActive": "1408d1ea0",
+   "InitAllMbTopMenuItemVisible": "1408d1f40",
+   "InitEmblemSaveData": "1408d2060",
+   "InitEnemyRoutePoints": "1408d2090",
+   "InitPrefabSystem": "1408d2170",
+   "IsAvatarEditReady": "1408d23e0",
+   "IsBirthDay": "1408d2420",
+   "IsBootTypeMGO": "1408d24b0",
+   "IsChangeLanguage": "1408d24e0",
+   "IsCreatingBlendTexture": "1408d2520",
+   "IsCreatingEmblem": "1408d2520",
+   "IsCreatingEmblemToVisit": "1408d2560",
+   "IsDispGuide": "1408d25a0",
+   "IsDispToBeContinue": "1408d2660",
+   "IsEndBrightnessSetting": "1408d2700",
+   "IsEndLoadingTips": "1408d2740",
+   "IsEndMissionTelop": "1408d2770",
+   "IsKansaiDialectEquip": "1408d28e0",
+   "IsMbDvcTerminalOpened": "1408d2940",
+   "IsMissionPhotoIdEnable": "1408d2b10",
+   "IsShowAreaPopup": "1408d2c30",
+   "IsShowLangPopup": "1408d2cc0",
+   "IsShowPopup": "1408d2d50",
+   "IsStartTelopCast": "1408d2e90",
+   "IsTppUiReady": "1408d2ee0",
+   "IsUsingButterflyEmblem": "1408d2f60",
+   "KeepMissionStartTelopBg": "1408d2fb0",
+   "LoadAvatarEdit": "1408d3010",
+   "LoadUiDefaultBlock": "1408d3100",
+   "LoadoutSetForStartFromHelicopter": "1408d3150",
+   "LoadoutSetItemEquipInfoInMission": "1408d3180",
+   "LoadoutSetMissionEndFromMissionToFree": "1408d32c0",
+   "LoadoutSetMissionRecieveFromFreeToMission": "1408d32f0",
+   "LoadoutSetReturnHelicopter": "1408d3320",
+   "LyricTexture": "1408d3350",
+   "MapParamToMbsParam": "1408d3590",
+   "NukeCountDownText": "1408d3890",
+   "OpenBrightnessSetting": "1408d3a30",
+   "OpenCustomizeSelector": "1408d3a60",
+   "PermitEndLoadingTips": "1408d3b10",
+   "RebootTitleSelectMenu": "1408d3c70",
+   "ReflectSortieLoadoutInfoToVarsOfCanceledPreparation": "1408d3c90",
+   "RegistCpNameBaseLangId": "1408d3e10",
+   "RegistInfoTypingText": "1408d40f0",
+   "RegistMissionEpisodeNo": "1408d47c0",
+   "RegistTelopCast": "1408d4850",
+   "RegistTipsDoc": "1408d4c80",
+   "RegistTipsGroup": "1408d4df0",
+   "RegistTipsTitle": "1408d4ee0",
+   "RegisterCrackPoints": "1408d5010",
+   "RegisterDangerLandPointTable": "1408d51a0",
+   "RegisterDangerLandingZoneTable": "1408d52b0",
+   "RegisterDefaultLandPoint": "1408d53c0",
+   "RegisterDisableDeliveryStation": "1408d5540",
+   "RegisterEnemyRevengeParameters": "1408d55e0",
+   "RegisterForceDropItemPosition": "1408d56f0",
+   "RegisterGameOverMenuItems": "1408d5770",
+   "RegisterIconUniqueInformation": "1408d5910",
+   "RegisterMapRadio": "1408d5b90",
+   "RegisterMbMissionListFunction": "1408d5c20",
+   "RegisterMemorialMission": "1408d5cc0",
+   "RegisterPauseMenuPage": "1408d5830",
+   "RegisterSideOpsListFunction": "1408d5df0",
+   "RemoveEmblemTexture": "1408d5ff0",
+   "RemovedAllUserMarker": "1408d6090",
+   "RequestEndLoadingTips": "1408d60c0",
+   "RequestMbDvcOpenCondition": "1408d60e0",
+   "RequestMbSoundControllerVoice": "1408d6390",
+   "ResetCpNameBaseLangId": "1408d6890",
+   "ResetCurrentMissionSubGoalNo": "1408d68c0",
+   "ResetDlcAcquired": "1408d68f0",
+   "ResetGameOverType": "1408d6970",
+   "ResetMissionPhotoRadioGroupName": "1408d69d0",
+   "SeekLoadingTips": "1408d6c30",
+   "SeekTips": "1408d6ca0",
+   "SetAdditonalMissionPhotoId": "1408d6db0",
+   "SetAllInvalidMbSoundControllerVoice": "1408d6fb0",
+   "SetBonusPopupAfterRadio": "1408d7020",
+   "SetBonusPopupCategory": "1408d70d0",
+   "SetBonusPopupRadio": "1408d7260",
+   "SetButtonGuideDispTime": "1408d74f0",
+   "SetCurrentMissionSubGoalNo": "1408d7600",
+   "SetCustomizeBuddyPreviewPosition": "1408d7700",
+   "SetCustomizeHelicopterPreviewPosition": "1408d77d0",
+   "SetCustomizeVehiclePreviewPosition": "1408d78a0",
+   "SetCustomizeWeaponPreviewPosition": "1408d7970",
+   "SetDisplayTimerText": "1408d7a40",
+   "SetDlcAcquired": "1408d7b60",
+   "SetEnableMenuCancelClose": "1408d7be0",
+   "SetErrorPopupParam": "1408d7c40",
+   "SetGameOverType": "1408d7e20",
+   "SetGzPrivilegeAcquired": "1408d7ea0",
+   "SetLoadIndicatorVisible": "1408e1950",
+   "SetMBMapArrowIcon": "1408db0c0",
+   "SetMbMapPhotoRealModeByForce": "1408db600",
+   "SetMbMapZoomLevelByForce": "1408db660",
+   "SetMbStageSpot": "1408db6b0",
+   "SetMbTopMenuDDogCustomizeOpen": "1408db900",
+   "SetMbTopMenuDHorseCustomizeOpen": "1408db980",
+   "SetMbTopMenuItemActive": "1408dba00",
+   "SetMbTopMenuItemTutorialNotice": "1408dbad0",
+   "SetMbTopMenuItemVisible": "1408dbba0",
+   "SetMbTopModeToMapByForce": "1408dbc70",
+   "SetMbTutorialMark": "1408dbcf0",
+   "SetMisionInfoCurrentStoryNo": "1408dbdb0",
+   "SetMission10115Emergency": "1408dbe10",
+   "SetMissionNameStatus": "1408dbe70",
+   "SetMissionPhotoRadioGroupName": "1408dbfb0",
+   "SetMissionPrepBuddyBattleGearPreviewPosition": "1408dc040",
+   "SetMissionPrepBuddyBattleGearPreviewRotation": "1408dc0a0",
+   "SetMissionPrepBuddyDogPreviewPosition": "1408dc100",
+   "SetMissionPrepBuddyDogPreviewRotation": "1408dc160",
+   "SetMissionPrepBuddyHorsePreviewPosition": "1408dc1c0",
+   "SetMissionPrepBuddyHorsePreviewRotation": "1408dc220",
+   "SetMissionPrepBuddyQuietPreviewPosition": "1408dc340",
+   "SetMissionPrepBuddyQuietPreviewRotation": "1408dc3a0",
+   "SetMissionPrepBuddyWalkerPreviewPosition": "1408dc400",
+   "SetMissionPrepBuddyWalkerPreviewRotation": "1408dc460",
+   "SetMissionPrepHelicopterPreviewPosition": "1408dc4c0",
+   "SetMissionPrepHelicopterPreviewRotation": "1408dc520",
+   "SetMissionPrepPlayerPreviewPosition": "1408dc620",
+   "SetMissionPrepPlayerPreviewRotation": "1408dc680",
+   "SetMissionPrepVehiclePreviewPosition": "1408dc6e0",
+   "SetMissionPrepVehicleTankPreviewPosition": "1408dc7a0",
+   "SetMissionPrepVehicleTankPreviewRotation": "1408dc800",
+   "SetMissionPrepVehicleTruckPreviewPosition": "1408dc860",
+   "SetMissionPrepVehicleTruckPreviewRotation": "1408dc8c0",
+   "SetMissionPrepVehicleVehiclePreviewPosition": "1408dc920",
+   "SetMissionPrepVehicleVehiclePreviewRotation": "1408dc980",
+   "SetMissionPrepVehicleWheeledArmoredVehiclePreviewPosition": "1408dc9e0",
+   "SetMissionPrepVehicleWheeledArmoredVehiclePreviewRotation": "1408dca40",
+   "SetMissionPrepWeaponPreviewPosition": "1408dcaa0",
+   "SetMissionPrepWeaponPreviewRotation": "1408dcb00",
+   "SetMissionStartTelopId": "1408dcb60",
+   "SetMotherBaseInfoPhotoParameters": "1408dcbd0",
+   "SetMotherBaseStageSecurityTable": "141c658e0",
+   "SetPlatformLanguage": "1408dcea0",
+   "SetPlayRecordClearInfo": "1408dcf30",
+   "SetPopupAllPad": "1408dd170",
+   "SetPopupSelectNegative": "1408dd330",
+   "SetPopupType": "1408dd540",
+   "SetResultBatteryGmp": "1408dd780",
+   "SetResultScore": "1408dd7e0",
+   "SetResultSound": "1408ddc20",
+   "SetSideOpsListUpdate": "1408ddd50",
+   "SetStrongPrioTelopCast": "1408ddde0",
+   "SetTutorialMode": "1408ddfc0",
+   "SetVarsLanguage": "1408de080",
+   "SetupMapIconRadiusMeters": "1408de0f0",
+   "ShowAreaPopup": "1408de220",
+   "ShowBonusPopupAnimal": "1408de390",
+   "ShowBonusPopupCommon": "1408de580",
+   "ShowBonusPopupItemTape": "1408deb00",
+   "ShowBonusPopupRegist": "1408ded70",
+   "ShowBonusPopupStaff": "1408def10",
+   "ShowChapterTelop": "1408df070",
+   "ShowDemoKeyHelp": "1408df2e0",
+   "ShowDlcAnnouncePopup": "1408df330",
+   "ShowEnemyRoutePoints": "1408df360",
+   "ShowErrorPopup": "1408df6d0",
+   "ShowHotZone": "1408df7f0",
+   "ShowInfoTypingText": "1408df880",
+   "ShowInnerZone": "1408df8d0",
+   "ShowLangPopup": "1408df960",
+   "ShowMissionIcon": "1408df990",
+   "ShowMusicTelop": "1408dfaf0",
+   "ShowOuterZone": "1408dfbe0",
+   "ShowPictureInfoHud": "1408dfbf0",
+   "ShowPopup": "1408dff40",
+   "ShowSideFobInfo": "1408e0530",
+   "ShowTextureLogo": "1408e0900",
+   "StartAvatarEdit": "1408e0ee0",
+   "StartCyprusTitle": "1408e0f60",
+   "StartDisplayTimer": "1408e1030",
+   "StartGameOver": "1408e11a0",
+   "StartLoadingTipsCommon": "1408e1230",
+   "StartMissionPreparation": "1408e1280",
+   "StartNameEntry": "1408e12a0",
+   "StartOnlineStore": "1408e12d0",
+   "StartPreTitleSequence": "1408e1320",
+   "StartPressStartCyprusTitle": "1408e1340",
+   "StartPressStartMenu": "1408e1490",
+   "StartRespawnMenuSetRecord": "1408e1510",
+   "StartResultBlockLoad": "1408e16e0",
+   "StartResultBlockUnload": "1408e1700",
+   "StartTelopCast": "1408e1720",
+   "StartTitleMenu": "1408e1790",
+   "StartWormHoleTimer": "1408e1810",
+   "StopRespawnMenu": "1408e18d0",
+   "UiAreaSetting": "1408e1970",
+   "UiPadStart": "1408e19b0",
+   "UiPlatFormSetting": "1408e19c0",
+   "UnRegisterCrackPoints": "1408e1a00",
+   "UnRegisterDisableDeliveryStation": "1408e1b30",
+   "UnRegisterForceDropItemPosition": "1408e1bd0",
+   "UnRegisterIconUniqueInformation": "1408e1c00",
+   "UnregisterAllMapRadios": "1408e1cc0",
+   "UnregisterMapRadio": "1408e1cf0"
   },
   "TppWeatherManager": {
    "GetInstance": "1405357f0"
@@ -5053,6 +5603,9 @@
   "FoxGameFrame": [
    "14007fd20"
   ],
+  "GameConfig": [
+   "140530720"
+  ],
   "GameMessage": [
    "140994ba0"
   ],
@@ -5270,6 +5823,7 @@
    "140a45be0"
   ],
   "TppBuddyService": [
+   "140a45be0",
    "140a50180"
   ],
   "TppBullet": [
@@ -5343,6 +5897,9 @@
    "140a3af60",
    "140a419f0"
   ],
+  "TppEventLog": [
+   "140bfdb70"
+  ],
   "TppGameMode": [
    "140547230"
   ],
@@ -5382,6 +5939,9 @@
   "TppPickable": [
    "140a09190"
   ],
+  "TppPlaced": [
+   "140a0e100"
+  ],
   "TppRadioCommand": [
    "140aba1b0"
   ],
@@ -5391,11 +5951,15 @@
   "TppScriptVars": [
    "140996b70"
   ],
+  "TppServerManager": [
+   "1407d71b0"
+  ],
   "TppSimpleGameSequenceSystem": [
    "140993ed0"
   ],
   "TppSoldier2": [
-   "1409eba60"
+   "1409eba60",
+   "1409ff090"
   ],
   "TppSoldier2CommonBlockController": [
    "1409fa040"

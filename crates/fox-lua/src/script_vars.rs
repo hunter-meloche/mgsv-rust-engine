@@ -122,6 +122,22 @@ pub struct Var {
 pub struct VarStore {
     pub vars: HashMap<String, Var>,
     trace: Arc<Mutex<Trace>>,
+    /// Only `svars` records changes: the engine reports each changed value to
+    /// the mission's `OnChangeSVars(name, index)` hook, and `TppSequence`
+    /// switches sequences from there (`svars.seq_sequence`).
+    record_changes: bool,
+    /// `TppScriptVars.SetSVarsNotificationEnabled`.
+    notify: bool,
+    /// Pending `(name, array index)` change notifications.
+    pub changes: Vec<(String, Option<usize>)>,
+}
+
+impl VarStore {
+    fn note_change(&mut self, name: &str, index: Option<usize>) {
+        if self.record_changes && self.notify {
+            self.changes.push((name.to_string(), index));
+        }
+    }
 }
 
 /// Prepare a value for storing: phantoms (native constants not recovered
@@ -195,8 +211,16 @@ impl UserData for VarArray {
                 // 0..=MISSION_COUNT_MAX over a MISSION_COUNT_MAX array) and the
                 // game does not fault, so out-of-range writes are dropped.
                 // TODO(re): confirm against the native store's bounds check.
-                if let Some(slot) = i.and_then(|i| v.values.get_mut(i)) {
-                    *slot = Scalar::coerce(v.ty, &val)?;
+                let mut changed = None;
+                if let Some((idx, slot)) = i.and_then(|i| v.values.get_mut(i).map(|s| (i, s))) {
+                    let new = Scalar::coerce(v.ty, &val)?;
+                    if *slot != new {
+                        *slot = new;
+                        changed = Some(idx);
+                    }
+                }
+                if let Some(idx) = changed {
+                    s.note_change(&this.name, Some(idx));
                 }
                 Ok(())
             },
@@ -243,11 +267,26 @@ impl UserData for VarStoreHandle {
                         "cannot assign to array script var {k}"
                     )));
                 }
-                v.values[0] = Scalar::coerce(v.ty, &val)?;
+                let new = Scalar::coerce(v.ty, &val)?;
+                if v.values[0] != new {
+                    v.values[0] = new;
+                    s.note_change(&k, None);
+                }
                 Ok(())
             },
         );
     }
+}
+
+/// The `svars` store, kept in Lua app data so the mission loop can deliver
+/// change notifications.
+struct SvarsStore(Shared);
+
+/// Take the pending `svars` change notifications (`(name, array index)`).
+pub fn take_svars_changes(lua: &Lua) -> Vec<(String, Option<usize>)> {
+    lua.app_data_ref::<SvarsStore>()
+        .map(|s| std::mem::take(&mut s.0.borrow_mut().changes))
+        .unwrap_or_default()
 }
 
 impl VarStoreHandle {
@@ -256,6 +295,9 @@ impl VarStoreHandle {
             store: Rc::new(RefCell::new(VarStore {
                 vars: HashMap::new(),
                 trace: trace.clone(),
+                record_changes: false,
+                notify: true,
+                changes: Vec::new(),
             })),
             loose: Rc::new(lua.create_registry_value(lua.create_table()?)?),
         })
@@ -381,6 +423,8 @@ pub fn install(lua: &Lua, trace: Arc<Mutex<Trace>>) -> mlua::Result<()> {
     let g = lua.globals();
     let gvars = VarStoreHandle::new(lua, &trace)?;
     let svars = VarStoreHandle::new(lua, &trace)?;
+    svars.store.borrow_mut().record_changes = true;
+    lua.set_app_data(SvarsStore(svars.store.clone()));
     let vars = VarStoreHandle::new(lua, &trace)?;
     vars.declare_layout(&engine_vars_layout());
     g.raw_set("vars", lua.create_userdata(vars)?)?;
@@ -422,6 +466,15 @@ pub fn install(lua: &Lua, trace: Arc<Mutex<Trace>>) -> mlua::Result<()> {
     // Save/load state. No save I/O is implemented yet, so nothing is ever in
     // flight and the last operation always succeeded.
     m.raw_set("IsSavingOrLoading", lua.create_function(|_, ()| Ok(false))?)?;
+    m.raw_set(
+        "SetSVarsNotificationEnabled",
+        lua.create_function(|lua, on: bool| {
+            if let Some(s) = lua.app_data_ref::<SvarsStore>() {
+                s.0.borrow_mut().notify = on;
+            }
+            Ok(())
+        })?,
+    )?;
     let result_ok: Value = m.raw_get("RESULT_OK")?;
     m.raw_set(
         "GetLastResult",

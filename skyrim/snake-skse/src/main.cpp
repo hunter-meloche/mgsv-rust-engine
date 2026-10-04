@@ -254,19 +254,85 @@ void QuatToMat(const SnakeQuat& q, float* m) {
     m[6] = 2 * (x * z - w * y);     m[7] = 2 * (y * z + w * x);     m[8] = 1 - 2 * (x * x + y * y);
 }
 
-// ---- per-frame hook --------------------------------------------------------------
+// ---- state ---------------------------------------------------------------------
 
 using UpdateAnimationFn = void (*)(void* self, float delta);
 UpdateAnimationFn g_originalUpdateAnimation = nullptr;
 std::mutex g_mutex;
 bool g_enabled = false;
-bool g_f8Down = false, g_cDown = false, g_zDown = false;
+bool g_f8Down = false, g_f9Down = false, g_cDown = false, g_zDown = false;
+// 0 = compute only (no writes), 1 = write local transforms, 2 = also world.
+int g_mode = 0;
+bool g_layoutOk = false;
 float g_lastPos[3] = {0, 0, 0};
 bool g_havePos = false;
 void* g_cachedRoot = nullptr;
 std::vector<void*> g_nodes;
 double g_logTimer = 0;
 int g_frames = 0;
+
+bool Readable(const void* p, size_t n) {
+    MEMORY_BASIC_INFORMATION mbi{};
+    if (!p || !VirtualQuery(p, &mbi, sizeof mbi)) return false;
+    if (mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) return false;
+    return reinterpret_cast<const char*>(p) + n <= reinterpret_cast<const char*>(mbi.BaseAddress) + mbi.RegionSize;
+}
+
+// Raw dump of a node's child array (to check the layout assumptions).
+void DumpChildren(void* obj) {
+    if (!obj || !Readable(obj, 0x130)) return;
+    void* node = AsNode(obj);
+    uint16_t* f = &At<uint16_t>(obj, 0x120);
+    void** data = At<void**>(obj, kChildren);
+    Log("  dump %s: AsNode %p data %p u16[0x120..0x126] = %u %u %u %u", Name(obj), node, data, f[0], f[1], f[2], f[3]);
+    for (int i = 0; i < 12 && data && Readable(data + i, sizeof(void*)); ++i) {
+        void* c = data[i];
+        const char* nm = (c && Readable(c, 0x18) && Readable(At<const char*>(c, kName), 1)) ? Name(c) : "-";
+        Log("    [%d] %p %s", i, c, nm);
+    }
+}
+
+// Engine world vs parent world * local, under both matrix conventions.
+void CheckLayout() {
+    double errA = 0, errB = 0, errPos = 0;
+    const char* worst = "";
+    int checked = 0;
+    for (size_t i = 0; i < g_nodes.size(); ++i) {
+        void* node = g_nodes[i];
+        if (!node) continue;
+        void* parent = At<void*>(node, kParent);
+        if (!parent) continue;
+        float* pr = &At<float>(parent, kWorldRot);
+        float* lr = &At<float>(node, kLocalRot);
+        float* wr = &At<float>(node, kWorldRot);
+        float a[9], b[9], pt[9], lt[9];
+        MatMul(pr, lr, a);
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c) pt[r * 3 + c] = pr[c * 3 + r], lt[r * 3 + c] = lr[c * 3 + r];
+        float bt[9];
+        MatMul(pt, lt, bt);
+        for (int r = 0; r < 3; ++r)
+            for (int c = 0; c < 3; ++c) b[r * 3 + c] = bt[c * 3 + r];
+        double ea = 0, eb = 0;
+        for (int k = 0; k < 9; ++k) ea = (std::max)(ea, (double)std::fabs(a[k] - wr[k])), eb = (std::max)(eb, (double)std::fabs(b[k] - wr[k]));
+        float* lp = &At<float>(node, kLocalPos);
+        float ps = At<float>(parent, kWorldScale), sc[3] = {lp[0] * ps, lp[1] * ps, lp[2] * ps}, rp[3];
+        MatVec(pr, sc, rp);
+        float* pp = &At<float>(parent, kWorldPos);
+        float* wp = &At<float>(node, kWorldPos);
+        double ep = 0;
+        for (int k = 0; k < 3; ++k) ep = (std::max)(ep, (double)std::fabs(pp[k] + rp[k] - wp[k]));
+        if (ea > errA) worst = g_boneNames[i].c_str();
+        errA = (std::max)(errA, ea), errB = (std::max)(errB, eb), errPos = (std::max)(errPos, ep);
+        ++checked;
+    }
+    g_layoutOk = checked > 0 && errA < 0.02 && errPos < 0.5;
+    Log("layout check over %d bones: rot err (P*L) %.4f [worst %s], rot err (transposed) %.4f, pos err %.3f -> %s", checked,
+        errA, worst, errB, errPos, g_layoutOk ? "OK, writes allowed" : "MISMATCH, writes disabled");
+}
+
+// ---- per-frame hook --------------------------------------------------------------
+
 
 bool KeyPressed(int vk, bool& wasDown) {
     bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
@@ -290,6 +356,10 @@ void ApplySnake(void* player, float delta) {
             g_nodes.size() - missing, g_nodes.size());
         for (size_t i = 0; i < g_nodes.size(); ++i)
             if (!g_nodes[i]) Log("  missing: %s", g_boneNames[i].c_str());
+        for (const char* nm : {"NPC L Forearm [LLar]", "NPC L Hand [LHnd]", "NPC L Foot [Lft ]", "NPC L UpperArm [LUar]"})
+            for (size_t i = 0; i < g_boneNames.size(); ++i)
+                if (g_boneNames[i] == nm) DumpChildren(g_nodes[i]);
+        CheckLayout();
         g_frames = 0;
     }
 
@@ -324,6 +394,15 @@ void ApplySnake(void* player, float delta) {
     std::vector<SnakeVec3> tr(n);
     std::vector<uint8_t> hasTr(n);
     if (g_snake.retarget_apply(g_retarget, g_player, rot.data(), tr.data(), hasTr.data(), n) != n) return;
+    if (g_frames < 3) {
+        bool finite = true;
+        for (uint32_t i = 0; i < n; ++i) finite &= std::isfinite(rot[i].x + rot[i].y + rot[i].z + rot[i].w);
+        Log("frame %d: mode %d, retarget output finite: %d", g_frames + 1, g_mode, finite);
+    }
+    if (g_mode < 1 || !g_layoutOk) {
+        ++g_frames;
+        return;
+    }
     for (uint32_t i = 0; i < n; ++i) {
         void* node = g_nodes[i];
         if (!node) continue;
@@ -337,7 +416,7 @@ void ApplySnake(void* player, float delta) {
     }
     // World transforms of the retargeted bones, parent-first (table order),
     // from each bone's actual parent node.
-    for (uint32_t i = 0; i < n; ++i) {
+    for (uint32_t i = 0; i < n && g_mode >= 2; ++i) {
         void* node = g_nodes[i];
         if (!node) continue;
         void* parent = At<void*>(node, kParent);
@@ -380,6 +459,11 @@ void HookedUpdateAnimation(void* self, float delta) {
     g_originalUpdateAnimation(self, delta);
     if (self != ThePlayer() || !g_retarget) return;
     std::lock_guard<std::mutex> lock(g_mutex);
+    if (KeyPressed(VK_F9, g_f9Down)) {
+        g_mode = (g_mode + 1) % 3;
+        g_frames = 0;
+        Log("write mode %d (%s)", g_mode, g_mode == 0 ? "compute only" : g_mode == 1 ? "local transforms" : "local + world transforms");
+    }
     if (KeyPressed(VK_F8, g_f8Down)) {
         g_enabled = !g_enabled;
         g_havePos = false;

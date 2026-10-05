@@ -1196,6 +1196,11 @@ std::atomic<int> g_mode{2};  // 0 compute only, 1 local transforms, 2 local + wo
 std::atomic<float> g_speed{0.0f};  // player speed (m/s), measured by the hook
 std::atomic<int> g_snakeStance{0};  // Snake's stance (0 stand, 1 crouch, 2 prone)
 std::atomic<int> g_wantSneak{-1};   // Skyrim's sneak flag to keep (-1: leave it alone)
+std::atomic<bool> g_snakeAiming{false};
+std::atomic<float> g_cameraYaw{0.0f};      // camera heading (Skyrim convention: forward (sin, cos))
+std::atomic<bool> g_cameraYawValid{false};
+std::atomic<bool> g_ownHeading{false};      // Snake's facing is shown (NPC Root turned to it)
+std::atomic<float> g_snakeHeading{0.0f};    // Snake's facing in Skyrim's heading convention (radians)
 std::atomic<float> g_cameraDrop{0.0f};  // camera lowered by (game units) for Snake's head height
 std::atomic<float> g_moveForward{0.0f}, g_moveRight{0.0f};  // the same in the actor's frame (m/s)
 // Actor::ActorState::actorState1: the ActorState base is at actor + 0xC0 on
@@ -1489,14 +1494,13 @@ public:
 
 // From the Snake thread each tick: Snake's horizontal velocity (his root
 // motion over the tick, in his own frame) turned into Skyrim's world axes
-// by the actor's heading (forward (sin h, cos h), right (cos h, -sin h)).
-void UpdateDrive(void* player, float forward, float right) {
+// by his facing h (forward (sin h, cos h), right (cos h, -sin h)).
+void UpdateDrive(void* player, float forward, float right, float h) {
     void* cc = CharController(player);
     if (cc != g_playerController) {
         g_playerController = cc;
         if (cc && !g_originalSetVelocity && g_tasks && !g_driveQueued.exchange(true)) g_tasks->AddTask(new DriveHookTask());
     }
-    float h = At<float>(player, kRefAngle + 8);
     g_driveVx = forward * std::sin(h) + right * std::cos(h);
     g_driveVy = forward * std::cos(h) - right * std::sin(h);
     g_driveStamp = NowMs();
@@ -1651,6 +1655,8 @@ void SnakeThread() {
     bool ctrlHoldDone = false;
     constexpr double kHoldSeconds = 0.35;
     float standHead = 1.6f;  // Snake's standing head height (m), learned
+    bool owning = false;     // Snake sets the actor's heading (see "Facing" below)
+    float headingSum = 0;    // c in h = c - y
     double sinceAim = 10.0;  // seconds since Snake last aimed
     float snakeAvg = 0, skyAvg = 0;  // smoothed ground speeds (m/s): Snake's, Skyrim's
     double speedTimer = 0, movingTime = 0;
@@ -1697,6 +1703,8 @@ void SnakeThread() {
             // Skyrim's own sneak toggle, camera and Sneak again.
             wantStance = -1;
             g_wantSneak = -1;
+            owning = false;
+            g_ownHeading = false;
             g_cameraDrop = 0.0f;
             RequestCrawlBonus(false);
             // Give the player their own speed back.
@@ -1793,6 +1801,7 @@ void SnakeThread() {
             else in.crouch = true;                                  // stand <-> crouch
         }
         in.aim = g_control.aim >= 0 ? g_control.aim == 1 : focused && (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
+        g_snakeAiming = in.aim;
         in.fire = in.aim && (g_control.fire >= 0 ? g_control.fire == 1 : focused && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
         in.reload = reloadKey.Pressed(focused) || g_control.reload != 0;
         g_control.reload = 0;
@@ -1815,11 +1824,31 @@ void SnakeThread() {
             in.move_x = mx;
             in.move_y = my;
         }
-        // Snake's own heading is "forward": Skyrim decides where the actor faces.
+        // Facing: Snake's yaw y and a Skyrim heading h turn opposite ways
+        // (Fox +X is Skyrim -X), so h = c - y, with c fixed from when Snake
+        // mode starts. Aiming, Snake turns toward the camera and the stick
+        // strafes relative to it; otherwise he steers toward camera heading
+        // + stick direction (and stays put when there is no stick).
         SnakeVec3 snakePos{};
         float snakeYaw = 0;
         g_snake.player_transform(g_player, &snakePos, &snakeYaw);
         in.camera_yaw = snakeYaw;
+        void* playerRef = ThePlayer();
+        if (!owning && playerRef) {
+            headingSum = snakeYaw + At<float>(playerRef, kRefAngle + 8);
+            owning = true;
+        }
+        float ix = 0, iy = 0;
+        bool stick = ReadMoveInput(ix, iy) && ix * ix + iy * iy > 0.01f;
+        if (owning && g_cameraYawValid) {
+            if (in.aim) {
+                in.camera_yaw = headingSum - g_cameraYaw;
+            } else if (moving && stick) {
+                in.camera_yaw = headingSum - (g_cameraYaw + std::atan2(ix, iy));
+                in.move_x = 0;
+                in.move_y = (std::min)(1.0f, std::sqrt(ix * ix + iy * iy));
+            }
+        }
         SnakeVec3 before = snakePos;
         if (!g_snake.player_update(g_player, &in, nullptr, static_cast<float>(dt))) {
             Log("snake_player_update failed: %s", g_snake.last_error());
@@ -1833,10 +1862,17 @@ void SnakeThread() {
             g_snake.player_transform(g_player, &after, &yawAfter);
             float dx = after.x - before.x, dz = after.z - before.z;
             float snakeSpeed = std::sqrt(dx * dx + dz * dz) / static_cast<float>(dt);
+            float snakeHeading = headingSum - yawAfter;
+            if (owning) {
+                g_snakeHeading = snakeHeading;
+                g_ownHeading = true;
+            } else {
+                g_ownHeading = false;
+            }
             // Snake's own frame (Fox: +Z ahead at yaw 0, right is -X).
             float fwd = (dx * std::sin(yawAfter) + dz * std::cos(yawAfter)) / static_cast<float>(dt);
             float rgt = (-dx * std::cos(yawAfter) + dz * std::sin(yawAfter)) / static_cast<float>(dt);
-            if (void* player = ThePlayer(); player && g_control.drive) UpdateDrive(player, fwd, rgt);
+            if (void* player = ThePlayer(); player && g_control.drive && owning) UpdateDrive(player, fwd, rgt, snakeHeading);
             else g_driving = false;
             bool driven = g_driving && g_originalSetVelocity;
             static int traceTick = 0;
@@ -1851,9 +1887,22 @@ void SnakeThread() {
                 }
             }
             if (g_control.trace && ++traceTick % 6 == 0)
-                Log("trace: snake %.2f fwd %.2f right %.2f | skyrim %.2f fwd %.2f right %.2f m/s (stance %d, moving %d, driven %d)",
-                    snakeSpeed, fwd, rgt, speed, g_moveForward.load(), g_moveRight.load(), (int)cur.stance, (int)moving,
+                Log("trace: snake %.2f fwd %.2f right %.2f | skyrim %.2f fwd %.2f right %.2f m/s, heading %.0f deg (stance %d, moving %d, driven %d)",
+                    snakeSpeed, fwd, rgt, speed, g_moveForward.load(), g_moveRight.load(),
+                    ThePlayer() ? At<float>(ThePlayer(), kRefAngle + 8) * 57.2958f : 0.0f, (int)cur.stance, (int)moving,
                     (int)driven);
+            if (g_control.trace && traceTick % 6 == 0 && ThePlayer()) {
+                // Headings of the 3D root and its NPC node (local +Y in world).
+                auto yawOf = [](void* n) {
+                    if (!n || !Readable(n, 0x140)) return -1.0f;
+                    const float* m = &At<float>(n, kWorldRot);
+                    float a = std::atan2(m[1], m[4]) * 57.2958f;
+                    return a < 0 ? a + 360.0f : a;
+                };
+                void* root = Get3D(ThePlayer(), false);
+                Log("trace: root yaw %.0f, NPC yaw %.0f, NPC Root yaw %.0f, input %.2f %.2f", yawOf(root), yawOf(root ? FindNode(root, "NPC") : nullptr), yawOf(root ? FindNode(root, "NPC Root [Root]") : nullptr),
+                    [] { float x = 0, y = 0; ReadMoveInput(x, y); return x; }(), [] { float x = 0, y = 0; ReadMoveInput(x, y); return y; }());
+            }
             // SpeedMult = 100 x Snake's speed / Skyrim's speed at SpeedMult
             // 100, both learned per state: Snake's per stance x gait (its
             // controller is deterministic, so this settles quickly), Skyrim's
@@ -2509,6 +2558,7 @@ bool IsArmBone(const std::string& n) {
 }
 
 void PlaceCameras(void* player, float drop);
+void FollowTurn(void* player);
 
 void ApplySnake(void* player, float delta) {
     void* root = Get3D(player, false);
@@ -2567,8 +2617,12 @@ void ApplySnake(void* player, float delta) {
         g_actorFlags = At<uint32_t>(player, kActorState1);
         // Aim pitch follows the camera (positive looks down), else the actor.
         float cam[3], dir[3];
-        g_pitch = CameraAim(cam, dir) ? -std::asin((std::max)(-1.0f, (std::min)(1.0f, dir[2])))
-                                      : At<float>(player, kRefAngle);
+        bool haveCamera = CameraAim(cam, dir);
+        g_pitch = haveCamera ? -std::asin((std::max)(-1.0f, (std::min)(1.0f, dir[2]))) : At<float>(player, kRefAngle);
+        if (haveCamera && dir[0] * dir[0] + dir[1] * dir[1] > 1e-4f) {
+            g_cameraYaw = std::atan2(dir[0], dir[1]);
+            g_cameraYawValid = true;
+        }
     }
     memcpy(g_lastPos, pos, sizeof g_lastPos);
     g_havePos = true;
@@ -2592,6 +2646,7 @@ void ApplySnake(void* player, float delta) {
         }
     }
     size_t n = (std::min)(g_nodes.size(), g_hookRot.size());
+    if (mode >= 2) FollowTurn(player);
     WritePose(g_nodes, n, mode >= 2);
     if (mode >= 2) {
         void* hand = nullptr;
@@ -2690,6 +2745,40 @@ void PlaceCameras(void* player, float drop) {
         }
         if (c.node) At<float>(c.node, kLocalPos + 8) = c.baseZ + drop;
     }
+}
+
+// Facing: Snake decides where he faces (MGSV: he turns toward the
+// camera-relative stick with his own turn rate and turn clips; aiming, toward
+// the camera). The actor's heading is left to Skyrim, because its
+// third-person camera keeps its yaw relative to it (writing the heading spun
+// the camera). Instead "NPC Root [Root]" is turned by Snake's facing minus
+// the actor's heading, replacing the turn Skyrim's animation graph puts
+// there (which snapped back on stopping).
+void FollowTurn(void* player) {
+    static void* root = nullptr;
+    static void* npcRoot = nullptr;
+    void* r = Get3D(player, false);
+    if (r != root) {
+        root = r;
+        npcRoot = r ? FindNode(r, "NPC Root [Root]") : nullptr;
+    }
+    if (!npcRoot) return;
+    void* parent = At<void*>(npcRoot, kParent);
+    if (!parent) return;
+    // Local yaw d (heading convention: local +Y goes to (sin d, cos d)).
+    float d = g_ownHeading ? g_snakeHeading - At<float>(player, kRefAngle + 8) : 0.0f;
+    float c = std::cos(d), sn = std::sin(d);
+    float lr[9] = {c, sn, 0, -sn, c, 0, 0, 0, 1};
+    memcpy(&At<float>(npcRoot, kLocalRot), lr, sizeof lr);
+    // World = parent world x local.
+    const float* pr = &At<float>(parent, kWorldRot);
+    const float* pp = &At<float>(parent, kWorldPos);
+    float ps = At<float>(parent, kWorldScale);
+    const float* lp = &At<float>(npcRoot, kLocalPos);
+    float* wr = &At<float>(npcRoot, kWorldRot);
+    float* wp = &At<float>(npcRoot, kWorldPos);
+    MatMul(pr, lr, wr);
+    for (int a = 0; a < 3; ++a) wp[a] = pp[a] + ps * (pr[a * 3 + 0] * lp[0] + pr[a * 3 + 1] * lp[1] + pr[a * 3 + 2] * lp[2]);
 }
 
 void RestoreCameras() {

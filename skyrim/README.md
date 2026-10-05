@@ -151,7 +151,16 @@ stop and every stance, within about 0.05 m/s. If the controller is not found,
 the earlier SpeedMult matching takes over (Skyrim's run measured at 5.0 m/s,
 SpeedMult = 100 x Snake's speed / Skyrim's, `MoveSpeedScale` in snake.ini);
 `drive=0` in the control file forces it. The player's own SpeedMult is left
-alone while driving. While aiming, Snake's stick is Skyrim's own movement input
+alone while driving. Facing: Snake decides where he faces, as in MGSV: without aiming he turns
+toward camera heading + stick direction (his own turn rate and turn clips)
+and runs that way; aiming, he turns to the camera and the stick strafes.
+Skyrim's actor heading is left alone, because its third-person camera keeps
+its yaw relative to it (writing the heading spun the camera); instead
+`NPC Root [Root]` is turned by Snake's facing minus the actor's heading
+(Skyrim's animation graph otherwise turns that node toward the steering
+direction itself and snaps it back on stopping), and his root motion is
+turned into the world by his own facing. Snake's yaw and Skyrim headings
+are tied by one fixed offset taken when Snake mode starts. While aiming, Snake's stick is Skyrim's own movement input
 (`PlayerControls` +0x24: x right, y forward, keys or gamepad; the actor's
 movement flags cannot tell back from right while aiming), so strafes go
 the way the keys say (checked in game for W/A/S/D). Skyrim's jump is off

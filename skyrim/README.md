@@ -82,21 +82,25 @@ gun and flash and lets Skyrim derive world transforms (writing them itself,
 as it does for bones, made the renderer draw the gun as a flat
 fog-coloured silhouette on some frames).
 
-Gunshot sound: played with XAudio2 from
-`Data\SKSE\Plugins\snake_sounds\<weapon>_shot.wav` (`ShotVolume` in
-`snake.ini`). The shots come from MGSV's `common_bank_01.sbp`. Wwise event
-names are hashed (FNV-1 of the lower-case name), and the game builds the
-player's shot event names in code from pieces stored as plain strings in the
-exe: `sfx_w_p_` + the weapon's sound set (EquipParameters'
-`receiverParamSetsSound`, e.g. `hg01`) + `_m` (unsuppressed) or `_sup` +
-`_active` / `_nonact`. With those, all 100+ player shot events in the bank
-resolve. An event plays several layers (transient, body, low thump, tails),
-each with its own delay, volume and pitch, so `mgsv skyrim-export` mixes the
-event from its layers (`fox_data::wwise`; `mgsv sound-event` writes any
-event as a `.wav`). The WU S.Pistol uses `sfx_w_p_hg01_sup_active` (its
-suppressor is built in). The MRS-4 still uses the four single sounds picked
-by ear earlier (`wp_west_ar_010_shot*.wav`, one at random per shot); its
-own events are `sfx_w_p_ar00_m_active` / `_nonact`.
+Gunshot sound: each weapon plays the shot event MGSV itself posts for the
+player, exported by `mgsv skyrim-export` to
+`Data\SKSE\Plugins\snake_sounds\<weapon>_shot.wav` and played with XAudio2
+(`ShotVolume` in `snake.ini`). Wwise event names are hashed (FNV-1 of the
+lower-case name); the game builds the player's shot event names in code
+from pieces kept as plain strings in the exe: `sfx_w_p_` + the weapon's
+sound set (EquipParameters: the receiver row's last field indexes
+`receiverParamSetsSound`, e.g. `ar00`, `hg01`) + `_sup` when its muzzle
+option is a suppressor (`muzzleOption` flag), else `_m` (handguns leave it
+out) + `_nonact` for non-lethal weapons, else `_active` (the game's
+"non-active" weapons, `Player.IsNonActiveBySlot`, are the non-lethal ones:
+machine guns only have `_active`, the stun SMG has `_nonact`). The export
+derives the name from the tables (`WeaponStats::shot_events`) and mixes the
+event from its layers (transient, body, low thump, reverb tail; each with
+its delay, volume and pitch; `fox_data::wwise`, `mgsv sound-event`):
+MRS-4 `sfx_w_p_ar00_m_active` (2.6 s with its tail), WU S.Pistol
+`sfx_w_p_hg01_sup_nonact`. The plugin gives each sound enough voices for 14
+shots a second to ring out (37 for the MRS-4). Not modelled yet: the
+suppressor's durability (30 shots for the WU S.Pistol in the tables).
 
 Exported meshes: Fox triangles wind the other way from Skyrim's, so the
 export reverses them (checked against vanilla meshes, whose triangles face

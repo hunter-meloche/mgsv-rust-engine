@@ -842,9 +842,11 @@ void RequestHands(bool draw) {
 //
 // Each weapon's shot is a .wav exported from the user's MGSV sound banks by
 // `mgsv skyrim-export` (Data/SKSE/Plugins/snake_sounds/<weapon id>_shot.wav).
-// Played through XAudio2 with a small pool of voices per sound so full-auto
-// shots overlap instead of cutting each other off. Volume: snake.ini
-// ShotVolume (percent, default 70).
+// The sound is MGSV's own shot event for the weapon, tail included (the
+// MRS-4's rings out for 2.6 s). Played through XAudio2 with a pool of voices
+// per sound, sized so full-auto shots overlap for their whole length instead
+// of cutting each other off (the oldest, quietest tail is reused first).
+// Volume: snake.ini ShotVolume (percent, default 70).
 
 struct ShotSound {
     std::vector<uint8_t> data;  // PCM samples
@@ -907,12 +909,15 @@ void SetUpSounds() {
             std::wstring path = base + (k ? std::to_wstring(k) : L"") + L".wav";
             ShotSound s;
             if (!ReadWav(path, s)) break;
-            for (int v = 0; v < 4; ++v) {
+            // Enough voices for 14 shots a second (840 rpm) to ring out.
+            double seconds = s.data.size() / double(s.format.nAvgBytesPerSec);
+            int pool = std::clamp(static_cast<int>(std::ceil(seconds * 14.0)), 4, 48);
+            for (int v = 0; v < pool; ++v) {
                 IXAudio2SourceVoice* voice = nullptr;
                 if (SUCCEEDED(g_audio->CreateSourceVoice(&voice, &s.format))) s.voices.push_back(voice);
             }
-            Log("sound: %s shot %d: %u Hz x%u, %.2f s", id.c_str(), k, s.format.nSamplesPerSec, s.format.nChannels,
-                s.data.size() / double(s.format.nAvgBytesPerSec));
+            Log("sound: %s shot %d: %u Hz x%u, %.2f s, %zu voices", id.c_str(), k, s.format.nSamplesPerSec,
+                s.format.nChannels, seconds, s.voices.size());
             g_shotSounds[i].push_back(std::move(s));
         }
         if (g_shotSounds[i].empty()) Log("sound: no shot sound for %s (%s.wav)", id.c_str(), Narrow(base).c_str());

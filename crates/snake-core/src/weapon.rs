@@ -30,6 +30,14 @@ pub struct WeaponStats {
     /// Sleep (tranquilizer) damage per hit; the WU S.Pistol does 750 and no
     /// lethal damage.
     pub sleep_damage: f32,
+    /// The receiver's sound set (`receiverParamSetsSound`, e.g. `ar00`),
+    /// naming its shot events; empty if the table has none.
+    pub sound_set: String,
+    /// Whether the weapon's muzzle option is a suppressor (`muzzleOption`
+    /// rows: id, ?, durability in shots or -1, suppressor flag), and its
+    /// durability.
+    pub suppressor: bool,
+    pub suppressor_shots: Option<u32>,
 }
 
 impl WeaponStats {
@@ -38,7 +46,10 @@ impl WeaponStats {
     ///
     /// Row layouts used (0-based set indices):
     /// * `gunBasic`: weapon, receiver, barrel, magazine, stock, ...
+    /// * `gunBasic`: ..., muzzle (5), muzzle option (6), ...
     /// * `receiver`: id, attack id, base set, wobbling set, system set, sound set
+    /// * `receiverParamSetsSound[i][0]`: sound set name
+    /// * `muzzleOption`: id, ?, durability (shots, -1 = unlimited), suppressor flag
     /// * `receiverParamSetsBase[i][0]`: rounds per minute
     /// * `receiverParamSetsSystem[i][2]`: trigger type
     /// * `magazine`: id, equip id, rounds, reserve, bullet
@@ -90,6 +101,21 @@ impl WeaponStats {
             .row(&bullet)
             .ok_or_else(|| format!("{bullet} not found"))?;
         let strip = |s: String| s.trim_start_matches("TppEquip.").to_string();
+        let sound_set = num(rc, 5)
+            .ok()
+            .and_then(|i| nth("receiverParamSetsSound", i as usize).ok())
+            .and_then(|r| ident(&r, 0))
+            .unwrap_or_default();
+        let muzzle_option = ident(gun, 6).and_then(|mo| table("muzzleOption").ok()?.row(&mo).cloned());
+        let suppressor = muzzle_option
+            .as_ref()
+            .is_some_and(|r| num(r, 3).is_ok_and(|f| f == 1.0));
+        let suppressor_shots = muzzle_option
+            .as_ref()
+            .filter(|_| suppressor)
+            .and_then(|r| num(r, 2).ok())
+            .filter(|&n| n >= 0.0)
+            .map(|n| n as u32);
         Ok(Self {
             weapon: weapon.to_string(),
             receiver: strip(receiver),
@@ -105,7 +131,37 @@ impl WeaponStats {
                 .unwrap_or_default(),
             lethal_damage: 0.0,
             sleep_damage: 0.0,
+            sound_set,
+            suppressor,
+            suppressor_shots,
         })
+    }
+
+    /// Whether this is a non-lethal weapon (sleep damage and no lethal
+    /// damage, e.g. a tranquilizer). The game calls these "non-active"
+    /// (`Player.IsNonActiveBySlot`) and plays their `_nonact` shots.
+    pub fn non_lethal(&self) -> bool {
+        self.lethal_damage <= 0.0 && self.sleep_damage > 0.0
+    }
+
+    /// MGSV's names for this weapon's player shot event, best first. The
+    /// game builds them as `sfx_w_p_` + sound set + `_sup` when suppressed
+    /// (else `_m`, which handguns leave out) + `_nonact` for non-lethal
+    /// weapons (else `_active`); weapons without a non-lethal version only
+    /// have `_active`. Use the first that the sound bank has.
+    pub fn shot_events(&self) -> Vec<String> {
+        if self.sound_set.is_empty() {
+            return Vec::new();
+        }
+        let mids: &[&str] = if self.suppressor { &["_sup"] } else { &["_m", ""] };
+        let acts: &[&str] = if self.non_lethal() { &["_nonact", "_active"] } else { &["_active"] };
+        let mut out = Vec::new();
+        for act in acts {
+            for mid in mids {
+                out.push(format!("sfx_w_p_{}{mid}{act}", self.sound_set));
+            }
+        }
+        out
     }
 
     /// Fill in the damage of this weapon's attack from the
@@ -390,10 +446,12 @@ mod tests {
     fn stats_follow_the_table_links() {
         // Same shape as EquipParameters.lua, trimmed to one weapon.
         let src = "this={}TppEquip.ReloadEquipParameterTables2{\
-            gunBasic={1,{TppEquip.WP_X,TppEquip.RC_1,TppEquip.BA_1,TppEquip.AM_1,TppEquip.SK_None,3}},\
+            gunBasic={1,{TppEquip.WP_X,TppEquip.RC_1,TppEquip.BA_1,TppEquip.AM_1,TppEquip.SK_None,TppEquip.MZ_None,TppEquip.MO_1,3}},\
             receiverParamSetsBase={{300,1},{720,46}},\
             receiverParamSetsSystem={{TppEquip.EQP_TYPE_Handgun,0,TppEquip.TRIGGER_SEMIAUTO},{TppEquip.EQP_TYPE_Assault,0,TppEquip.TRIGGER_FULLAUTO}},\
-            receiver={1,{TppEquip.RC_1,TppDamage.ATK_1,1,0,1,13}},\
+            receiverParamSetsSound={{\"hg00\"},{\"ar00\"}},\
+            receiver={1,{TppEquip.RC_1,TppDamage.ATK_1,1,0,1,1}},\
+            muzzleOption={1,{TppEquip.MO_1,1,30,1}},\
             magazine={1,{TppEquip.AM_1,TppEquip.EQP_AM_1,30,210,TppEquip.BL_Rf556x45mm}},\
             bullet={0,{TppEquip.BL_Rf556x45mm,450,450,18,7}}}";
         let s = WeaponStats::from_equip_parameters(src, "WP_X").unwrap();
@@ -401,6 +459,36 @@ mod tests {
         assert!(s.full_auto);
         assert_eq!((s.magazine, s.reserve), (30, 210));
         assert_eq!((s.bullet_speed, s.bullet_gravity), (450.0, 18.0));
+        assert_eq!(s.sound_set, "ar00");
+        assert!(s.suppressor);
+        assert_eq!(s.suppressor_shots, Some(30));
+    }
+
+    #[test]
+    fn shot_event_names() {
+        let mut s = WeaponStats {
+            weapon: "WP_X".into(),
+            receiver: String::new(),
+            rounds_per_minute: 0.0,
+            full_auto: false,
+            magazine: 0,
+            reserve: 0,
+            bullet: String::new(),
+            bullet_speed: 0.0,
+            bullet_gravity: 0.0,
+            attack: String::new(),
+            lethal_damage: 600.0,
+            sleep_damage: 0.0,
+            sound_set: "ar00".into(),
+            suppressor: false,
+            suppressor_shots: None,
+        };
+        assert_eq!(s.shot_events(), ["sfx_w_p_ar00_m_active", "sfx_w_p_ar00_active"]);
+        s.sound_set = "hg01".into();
+        s.suppressor = true;
+        s.lethal_damage = 0.0;
+        s.sleep_damage = 750.0;
+        assert_eq!(s.shot_events(), ["sfx_w_p_hg01_sup_nonact", "sfx_w_p_hg01_sup_active"]);
     }
 
     #[test]

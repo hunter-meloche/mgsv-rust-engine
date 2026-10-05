@@ -146,19 +146,6 @@ pub struct WeaponDef {
     /// Body connection point (and bone) it rides on when not in the hands.
     holster: Option<(&'static str, &'static str)>,
     color: [f32; 3],
-    /// The gunshot, from a sound bank.
-    shot_sound: Option<(&'static str, ShotSound)>,
-}
-
-/// Where a weapon's gunshot comes from.
-#[derive(Clone, Copy, Debug)]
-pub enum ShotSound {
-    /// MGSV's own shot event, mixed from its layers. The exe names player
-    /// shots `sfx_w_p_<set>` + `_m` / `_sup` + `_active` / `_nonact`, the
-    /// set from EquipParameters' `receiverParamSetsSound`.
-    Event(&'static str),
-    /// Single sounds (wem ids), one picked at random per shot.
-    Wems(&'static [u32]),
 }
 
 pub const WEAPONS: [WeaponDef; 2] = [
@@ -179,9 +166,6 @@ pub const WEAPONS: [WeaponDef; 2] = [
         },
         holster: Some(("SKL_300_ASRROOT", "CNP_ASRROOT")),
         color: [0.22, 0.22, 0.22],
-        // Chosen by ear from common_bank_01's gunshot-like sounds (one
-        // mixer's 48 kHz stereo shots).
-        shot_sound: Some((COMMON_BANK, ShotSound::Wems(&[144297022, 269696546, 380692384, 695595645]))),
     },
     // WU S.Pistol (tranquilizer).
     WeaponDef {
@@ -200,16 +184,14 @@ pub const WEAPONS: [WeaponDef; 2] = [
         },
         holster: None,
         color: [0.28, 0.27, 0.25],
-        // Sound set hg01, suppressed (the WU S.Pistol's suppressor is
-        // built in).
-        shot_sound: Some((COMMON_BANK, ShotSound::Event("sfx_w_p_hg01_sup_active"))),
     },
 ];
 
 /// Damage of every attack (`TppDamage.ReloadDamageParameter`).
 pub const DAMAGE_PARAMETERS: &str = "/Assets/tpp/level_asset/damage/ParameterTables/DamageParameterTables.lua";
 
-/// The always-loaded sound bank with TPP's common sound effects.
+/// The always-loaded sound bank with TPP's common sound effects, including
+/// every player weapon's shot events.
 pub const COMMON_BANK: &str = "/Assets/tpp/sound/asset/common_bank_01.sbp";
 
 pub const EQUIP_PARAMETERS: &str =

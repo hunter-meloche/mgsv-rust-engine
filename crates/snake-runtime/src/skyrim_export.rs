@@ -185,24 +185,44 @@ pub fn export_weapons(vfs: &Vfs, data_dir: &Path) -> Result<ExportReport> {
     for def in &WEAPONS {
         export_weapon(vfs, def.id, def.model, data_dir, &mut report)
             .with_context(|| format!("exporting {}", def.id))?;
-        match def.shot_sound {
-            Some((bank, crate::ShotSound::Wems(ids))) => {
-                for (k, &id) in ids.iter().enumerate() {
-                    let path = sound_path(data_dir, def.id, k);
-                    export_sound(vfs, bank, id, &path).with_context(|| format!("{} shot sound {id}", def.id))?;
-                    report.files.push(path);
-                }
-            }
-            Some((bank, crate::ShotSound::Event(name))) => {
-                let path = sound_path(data_dir, def.id, 0);
-                let layers = export_event(vfs, bank, name, &path).with_context(|| format!("{} shot event {name}", def.id))?;
-                report.notes.push(format!("{} shot: {name} ({layers} layers)", def.id));
-                report.files.push(path);
-            }
-            None => {}
-        }
+        export_shot(vfs, def.id, data_dir, &mut report).with_context(|| format!("{} shot sound", def.id))?;
     }
     Ok(report)
+}
+
+/// Weapon `id`'s gunshot: the shot event the game itself would post for the
+/// player, named from the weapon's tables (sound set, suppressor, lethal or
+/// not; see [`snake_core::WeaponStats::shot_events`]) and mixed from its
+/// layers. Older exports' extra variations are removed (the plugin plays
+/// every `<id>_shot*.wav` it finds).
+fn export_shot(vfs: &Vfs, id: &str, data_dir: &Path, report: &mut ExportReport) -> Result<()> {
+    let equip = String::from_utf8_lossy(&read_any(vfs, crate::EQUIP_PARAMETERS)?).into_owned();
+    let damage = String::from_utf8_lossy(&read_any(vfs, crate::DAMAGE_PARAMETERS)?).into_owned();
+    let mut stats = snake_core::WeaponStats::from_equip_parameters(&equip, id).map_err(anyhow::Error::msg)?;
+    stats.apply_damage_parameters(&damage).map_err(anyhow::Error::msg)?;
+    let bank = read_any(vfs, crate::COMMON_BANK)?;
+    let hirc = fox_data::wwise::Hirc::parse(&bank)?;
+    let candidates = stats.shot_events();
+    let name = candidates
+        .iter()
+        .find(|n| hirc.has_event(fox_data::wwise::short_id(n)))
+        .with_context(|| format!("none of {candidates:?} is in the sound bank"))?;
+    let path = sound_path(data_dir, id, 0);
+    let layers = export_event(vfs, crate::COMMON_BANK, name, &path)?;
+    for k in 1..16 {
+        let old = sound_path(data_dir, id, k);
+        if old.exists() {
+            std::fs::remove_file(&old)?;
+        }
+    }
+    report.notes.push(format!(
+        "{id} shot: {name} ({layers} layers; sound set {}, {}{})",
+        stats.sound_set,
+        if stats.non_lethal() { "non-lethal" } else { "lethal" },
+        if stats.suppressor { ", suppressed" } else { "" }
+    ));
+    report.files.push(path);
+    Ok(())
 }
 
 /// Where the plugin looks for variation `k` of weapon `id`'s gunshot:

@@ -416,6 +416,9 @@ constexpr uint32_t kIdLaunchDataVtable = 187478;  // VTABLE_Projectile__LaunchDa
 constexpr uint32_t kIdPlayerCamera = 400802;      // PlayerCamera* singleton (AE id)
 constexpr uint32_t kIdAttackBlockVtable = 208719; // VTABLE_AttackBlockHandler (AE id)
 constexpr uint32_t kIdModelDemand = 75782;        // BSModelDB::Demand (AE id)
+constexpr uint32_t kIdStringPoolGetEntry = 69161;  // BSStringPool::GetEntry<char> (AE id)
+constexpr size_t kModelPath = 0x48;                // BGSProjectile TESModel (+0x40) model path (BSFixedString)
+constexpr const char* kBulletModel = "snake\\bullet.nif";  // empty model written by mgsv skyrim-export
 constexpr uintptr_t kLookupFormByID = 0x001E5860;
 constexpr uint32_t kHuntingBow = 0x00013985, kIronArrow = 0x0001397D;
 constexpr size_t kFormType = 0x1A;
@@ -478,6 +481,7 @@ struct Firing {
     void** camera = nullptr;  // &PlayerCamera singleton
     void** attackBlockVtable = nullptr;
     void* modelDemand = nullptr;
+    void* getEntry = nullptr;  // BSStringPool::GetEntry
     void* weapon = nullptr;   // bullet copies
     void* ammo = nullptr;
     void* projectile = nullptr;
@@ -523,7 +527,7 @@ bool LoadAddressLibrary() {
     };
     uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     uintptr_t launch = read(kIdProjectileLaunch), vt = read(kIdLaunchDataVtable), cam = read(kIdPlayerCamera), ab = read(kIdAttackBlockVtable),
-              demand = read(kIdModelDemand);
+              demand = read(kIdModelDemand), entry = read(kIdStringPoolGetEntry);
     fclose(f);
     if (!launch || !vt) {
         Log("firing: ids missing from the database");
@@ -534,6 +538,7 @@ bool LoadAddressLibrary() {
     g_fire.camera = cam ? reinterpret_cast<void**>(base + cam) : nullptr;
     g_fire.attackBlockVtable = ab ? reinterpret_cast<void**>(base + ab) : nullptr;
     g_fire.modelDemand = demand ? reinterpret_cast<void*>(base + demand) : nullptr;
+    g_fire.getEntry = entry ? reinterpret_cast<void*>(base + entry) : nullptr;
     Log("firing: %u ids; Projectile::Launch +%llX, LaunchData vtable +%llX, PlayerCamera +%llX", count,
         (unsigned long long)launch, (unsigned long long)vt, (unsigned long long)cam);
     return true;
@@ -551,6 +556,45 @@ void* CopyForm(void* src, size_t size) {
 int IniInt(const wchar_t* key, int fallback) {
     std::wstring ini = PluginDir() + L"\\snake.ini";
     return GetPrivateProfileIntW(L"Snake", key, fallback, ini.c_str());
+}
+
+// A pooled string (BSFixedString data) for `text`, or null. GetEntry writes
+// the string's data pointer; it is checked against `known`, a string the pool
+// already holds, which must come back as the very same pointer.
+const char* SafePooled(const char* text, const char* known) {
+    using Fn = void (*)(const char**, const char*, bool);
+    auto get = reinterpret_cast<Fn>(g_fire.getEntry);
+    if (!get || !known) return nullptr;
+    __try {
+        const char* again = nullptr;
+        get(&again, known, false);
+        if (again != known) return nullptr;
+        const char* out = nullptr;
+        get(&out, text, false);
+        return out && _stricmp(out, text) == 0 ? out : nullptr;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+// Point the bullet projectile at the empty bullet model (bullets fly
+// unseen and leave no arrow stuck in what they hit).
+void SetBulletModel() {
+    const char* arrowModel = At<const char*>(g_fire.projectile, kModelPath);
+    bool plausible = arrowModel && Readable(arrowModel, 4) && strstr(arrowModel, ".nif");
+    Log("firing: arrow projectile model %s", plausible ? arrowModel : "(not a model path; layout differs)");
+    std::wstring file = PluginDir() + L"\\..\\..\\meshes\\snake\\bullet.nif";
+    if (!plausible || GetFileAttributesW(file.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        Log("firing: bullets keep the arrow model (no %s)", Narrow(file).c_str());
+        return;
+    }
+    const char* pooled = SafePooled(kBulletModel, arrowModel);
+    if (!pooled) {
+        Log("firing: string pool check failed; bullets keep the arrow model");
+        return;
+    }
+    At<const char*>(g_fire.projectile, kModelPath) = pooled;
+    Log("firing: bullet model %s", pooled);
 }
 
 bool SetUpFiring() {
@@ -598,6 +642,7 @@ bool SetUpFiring() {
     Log("firing: paralysis poison %p (type %02X)%s", tranq, FormType(tranq), g_fire.tranq ? "" : " -- sleep darts unavailable");
     At<float>(g_fire.ammo, kAmmoDamage) = 0.0f;
     At<void*>(g_fire.ammo, kAmmoProjectile) = g_fire.projectile;
+    SetBulletModel();
     Log("firing: bullet records ready (damage %d, no pick-up)", damage);
     return true;
 }
@@ -1014,6 +1059,7 @@ std::atomic<uint32_t> g_actorFlags{0};
 std::atomic<float> g_pitch{0.0f};  // camera (or actor) look pitch (radians, positive looks down)
 std::atomic<bool> g_running{false};
 std::atomic<uint32_t> g_hookCalls{0};  // player UpdateAnimation calls (for the status log)
+std::atomic<uint32_t> g_playerFrames{0};  // the same, never reset: tells the Snake thread the game is running
 std::thread g_snakeThread;
 
 struct PoseBuffer {
@@ -1122,6 +1168,9 @@ void SnakeThread() {
     double sinceSpeedChange = 10.0;
     bool handsDrawn = false;
     uint32_t lastFlags = 0xFFFFFFFF;
+    uint32_t lastFrames = 0;
+    int stalledTicks = 0;
+    bool paused = false;
     const double dt = 1.0 / 60.0;
     auto next = std::chrono::steady_clock::now();
     double logTimer = 0;
@@ -1152,6 +1201,17 @@ void SnakeThread() {
             if (base > 0 && g_speedMult > 0 && std::fabs(g_speedMult - base) > 0.01f) RequestSpeedMult(base);
             continue;
         }
+        // Hold Snake still while the game is not updating the player (menus,
+        // tutorial pop-ups, loading): otherwise his controller runs on and
+        // fires into a frozen world.
+        uint32_t frames = g_playerFrames.load(std::memory_order_relaxed);
+        stalledTicks = frames == lastFrames ? stalledTicks + 1 : 0;
+        lastFrames = frames;
+        if ((stalledTicks > 6) != paused) {
+            paused = stalledTicks > 6;
+            Log("game %s; Snake %s", paused ? "paused" : "running", paused ? "holds" : "resumes");
+        }
+        if (paused) continue;
 
         float speed = g_speed;
         uint32_t flags = g_actorFlags;
@@ -1963,6 +2023,7 @@ bool SafeApply(void* self, float delta) {
 void HookedUpdateAnimation(void* self, float delta) {
     g_originalUpdateAnimation(self, delta);
     g_hookCalls.fetch_add(1, std::memory_order_relaxed);
+    g_playerFrames.fetch_add(1, std::memory_order_relaxed);
     if (!g_enabled || !g_retarget || self != ThePlayer()) {
         g_havePos = false;
         if (self == ThePlayer() && (g_weaponNodes[0].hidden || g_weaponNodes[1].hidden)) {

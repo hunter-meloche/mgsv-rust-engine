@@ -24,8 +24,11 @@ reactions. Shots fly along the crosshair ray, starting at the depth of
 Snake's right hand, with MGSV's muzzle speed and drop (MRS-4 450 m/s).
 The bullet is a private in-memory copy of the vanilla Hunting Bow, Iron
 Arrow and arrow projectile records (no pick-up, `BulletDamage` in
-`snake.ini`, default 48: 4x the original 12, since it is a rifle round); the vanilla records are untouched. It still uses
-the arrow model, and hits count as Archery. Damage follows MGSV's own
+`snake.ini`, default 48: 4x the original 12, since it is a rifle round); the vanilla records are untouched. Its model is
+`meshes\snakeullet.nif`, an empty model from `mgsv skyrim-export` (the
+path is a Skyrim pooled string made with `BSStringPool::GetEntry`, AE id
+69161, checked by looking up the arrow's own model path first), so bullets
+fly unseen and leave nothing stuck in what they hit. Hits count as Archery. Damage follows MGSV's own
 damage table (`DamageParameterTables.lua`): each weapon's lethal damage is
 scaled so the MRS-4's 600 gives `BulletDamage`; the WU S.Pistol has none
 (sleep damage 750 instead), so its darts do no damage and carry Skyrim's
@@ -58,7 +61,9 @@ crosshair. The WU S.Pistol's textures ship without `.ftex` headers
 format from the slot). Keys **1** / **2** switch between the MRS-4 and the
 pistol (one mesh per weapon, all attached to the hand); the pistol has no
 holster point on Snake's body, so it is hidden when lowered, and has no
-gunshot sound chosen yet.
+gunshot sound chosen yet. Snake's body has connection points for the rifle
+(`CNP_ASRROOT`) and the sniper rifle (`CNP_SNRROOT`) but none for a
+handgun, so the pistol is not shown when lowered.
 
 Muzzle flash: `meshes\snake\muzzle_flash.nif`, built from MGSV's own flame
 flipbook (`fx_mzffir01`) as additive crossed quads, attached beside the gun
@@ -122,8 +127,15 @@ player's own `SpeedMult` is restored when Snake mode ends and before every
 save, and re-read after loading. Movement and gait come from Skyrim's input
 flags; while aiming, the flags are Snake's strafe stick.
 
+Verified in game: run (Snake 2.35 / Skyrim 2.3 m/s), sprint (4.2 / 4.3),
+aim strafe (2.0 / 1.9), crouch and prone. Skyrim keeps sprinting until the
+player stops, even after the sprint key is released, and its sprint still
+uses stamina.
+
 How it runs: Snake's controller and the retarget run on the plugin's own
-60 Hz thread; the hook on `PlayerCharacter::UpdateAnimation` (called from
+60 Hz thread, which holds still whenever the game stops updating the player
+(menus, tutorial pop-ups, loading), so Snake does not walk or fire into a
+paused world; the hook on `PlayerCharacter::UpdateAnimation` (called from
 Skyrim's job threads) only copies the latest pose into the bone nodes and
 never calls into `snake.dll` (calling Rust from the job threads froze the
 game). If anything faults, Snake mode switches itself off.

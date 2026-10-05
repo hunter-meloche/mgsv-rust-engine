@@ -176,6 +176,12 @@ pub fn export_weapons(vfs: &Vfs, data_dir: &Path) -> Result<ExportReport> {
         std::fs::write(&flash, &flash_nif)?;
         report.files.push(flash);
     }
+    // Bullets fly unseen (and leave nothing stuck in what they hit): the
+    // plugin points its bullet projectile at this empty model instead of
+    // the arrow's.
+    let bullet = data_dir.join("meshes").join("snake").join("bullet.nif");
+    std::fs::write(&bullet, nif_write::write_static_nif("bullet", &[]))?;
+    report.files.push(bullet);
     for def in &WEAPONS {
         export_weapon(vfs, def.id, def.model, data_dir, &mut report)
             .with_context(|| format!("exporting {}", def.id))?;

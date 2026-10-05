@@ -127,6 +127,22 @@ game standing, aiming, running, crouched and prone, and Skyrim's own body
 comes back when Snake mode ends. Meshes in mesh groups MGSV flags invisible
 (the face's wrinkle-map helper quads) are left out.
 
+Materials: MGSV shades physically based. Its specular map holds
+reflectance (R), roughness (G) and metalness (B), and each material's
+`MatParamIndex_0` picks a row of the global preset table
+`/Assets/fox/effect/gr_pic/material_params.fmtt`. Column 0 is the base
+reflectance: fatigues 0.012, skin 0.035, the bionic arm 0.16. Skyrim has
+one Phong lobe per shape, so the export bakes a per-pixel specular mask
+(the normal map's alpha). It is reflectance (bare steel's where metallic)
+times the peak of a normalised Blinn-Phong lobe of that pixel's roughness,
+doubled for the reflections Skyrim lacks. The shape's glossiness is the
+exponent of the mask-weighted mean roughness. Before this, a flat mask at
+gloss 30 made the rough fabric look like plastic. Materials without a
+normal map (the hair) get a flat one carrying their mask; otherwise
+Skyrim's default normal map gave the hair a full shine. Base textures that
+cut out with alpha (hair cards, eyelashes, the Diamond Dogs patch) are
+alpha-tested at 128 (`NiAlphaProperty` 0x12EC) and drawn double-sided.
+
 In first person the plugin attaches `meshes\snake\snake_arms_1p.nif` to the
 first-person skeleton the same way: the same parts cut down to the vertices
 weighted mostly below the clavicles, bound to the 46 first-person arm,

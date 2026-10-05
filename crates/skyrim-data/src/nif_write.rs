@@ -21,6 +21,10 @@ pub struct Shape {
     pub textures: Vec<String>,
     pub glossiness: f32,
     pub specular_strength: f32,
+    /// Cut out where the diffuse alpha is at or below this threshold
+    /// (`NiAlphaProperty` alpha test), drawn double-sided: hair cards,
+    /// eyelashes, patches.
+    pub alpha_test: Option<u8>,
     /// Draw as an unlit additive effect (`BSEffectShaderProperty` +
     /// additive `NiAlphaProperty`) with this source texture instead of the
     /// lit material, e.g. a muzzle flash.
@@ -142,7 +146,7 @@ fn lighting_shader(s: &Shape, texture_set: i32, skinned: bool) -> Vec<u8> {
     m.u32(0); // extra data
     m.i32(-1); // controller
     m.u32(SHADER_FLAGS_1 | if skinned { 0x2 } else { 0 });
-    m.u32(SHADER_FLAGS_2);
+    m.u32(SHADER_FLAGS_2 | if s.alpha_test.is_some() { 0x10 } else { 0 }); // double-sided
     for v in [0.0, 0.0, 1.0, 1.0] {
         m.f32(v); // uv offset, uv scale
     }
@@ -161,6 +165,19 @@ fn lighting_shader(s: &Shape, texture_set: i32, skinned: bool) -> Vec<u8> {
     m.f32(0.3); // lighting effect 1
     m.f32(2.0); // lighting effect 2
     m.0
+}
+
+/// `NiAlphaProperty` testing alpha > `threshold`, no blending (flags as
+/// vanilla hair: src alpha / inv src alpha set but blending off, test on,
+/// GREATER).
+fn alpha_test_property(threshold: u8) -> Vec<u8> {
+    let mut a = W::default();
+    a.i32(-1); // name
+    a.u32(0); // extra data
+    a.i32(-1); // controller
+    a.u16(0x12EC);
+    a.u8(threshold);
+    a.0
 }
 
 /// `BSShaderTextureSet` with 9 slots.
@@ -229,7 +246,7 @@ pub fn write_skinned_nif(root_name: &str, bones: &[SkinBone], shapes: &[SkinnedS
     let mut strings = vec![root_name.to_string()];
     strings.extend(bones.iter().map(|b| b.name.clone()));
     strings.extend(shapes.iter().map(|s| s.shape.name.clone()));
-    let types = [
+    let mut types = vec![
         "NiNode",
         "BSTriShape",
         "BSDismemberSkinInstance",
@@ -238,14 +255,23 @@ pub fn write_skinned_nif(root_name: &str, bones: &[SkinBone], shapes: &[SkinnedS
         "BSLightingShaderProperty",
         "BSShaderTextureSet",
     ];
-    let first_shape = 1 + bones.len() as i32;
+    if shapes.iter().any(|s| s.shape.alpha_test.is_some()) {
+        types.push("NiAlphaProperty");
+    }
+    // Each shape is six blocks, seven with an alpha property.
+    let mut bases = Vec::with_capacity(shapes.len());
+    let mut next = 1 + bones.len() as i32;
+    for s in shapes {
+        bases.push(next);
+        next += if s.shape.alpha_test.is_some() { 7 } else { 6 };
+    }
     let mut blocks: Vec<(u16, Vec<u8>)> = Vec::new();
 
     let mut root = W::default();
     root.av_object(0);
     root.u32((bones.len() + shapes.len()) as u32);
     for i in 0..bones.len() + shapes.len() {
-        root.i32(if i < bones.len() { 1 + i as i32 } else { first_shape + 6 * (i - bones.len()) as i32 });
+        root.i32(if i < bones.len() { 1 + i as i32 } else { bases[i - bones.len()] });
     }
     root.u32(0); // effects
     blocks.push((0, root.0));
@@ -273,7 +299,7 @@ pub fn write_skinned_nif(root_name: &str, bones: &[SkinBone], shapes: &[SkinnedS
 
     for (k, sk) in shapes.iter().enumerate() {
         let s = &sk.shape;
-        let base = first_shape + 6 * k as i32;
+        let base = bases[k];
         let nv = s.positions.len();
         // BSTriShape: geometry lives in the skin partition.
         let mut t = W::default();
@@ -285,7 +311,7 @@ pub fn write_skinned_nif(root_name: &str, bones: &[SkinBone], shapes: &[SkinnedS
         t.f32(r);
         t.i32(base + 1); // skin
         t.i32(base + 4); // shader
-        t.i32(-1); // alpha
+        t.i32(if s.alpha_test.is_some() { base + 6 } else { -1 }); // alpha
         t.0.extend_from_slice(&SKINNED_VERTEX_DESC.to_le_bytes());
         t.u16(0);
         t.u16(0);
@@ -426,6 +452,9 @@ pub fn write_skinned_nif(root_name: &str, bones: &[SkinBone], shapes: &[SkinnedS
 
         blocks.push((5, lighting_shader(s, base + 5, true)));
         blocks.push((6, texture_set(s)));
+        if let Some(threshold) = s.alpha_test {
+            blocks.push((7, alpha_test_property(threshold)));
+        }
     }
     finish_nif(&types, &blocks, &strings)
 }
@@ -618,6 +647,37 @@ mod tests {
         // partition: header 20 + 3 vertices x 40 + partition data
         let part = 10 + 2 * 2 + 1 + 3 * 2 + 1 + 3 * 4 * 4 + 1 + 6 + 1 + 3 * 4 + 2 + 8 + 6;
         assert_eq!(nif.blocks[6].1.len(), 20 + 3 * 40 + part);
+    }
+
+    #[test]
+    fn alpha_tested_shape_gets_its_property() {
+        let bone = SkinBone {
+            name: "NPC Head [Head]".into(),
+            rotation: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            translation: [0.0; 3],
+        };
+        let shape = |name: &str, alpha_test| SkinnedShape {
+            shape: Shape {
+                name: name.into(),
+                positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+                triangles: vec![[0, 1, 2]],
+                alpha_test,
+                ..Default::default()
+            },
+            weights: vec![[(0, 1.0), (0, 0.0), (0, 0.0), (0, 0.0)]; 3],
+        };
+        let data = write_skinned_nif("Snake", &[bone], &[shape("hair", Some(128)), shape("face", None)]);
+        let nif = crate::Nif::parse(&data).unwrap();
+        let kinds: Vec<&str> = nif.blocks.iter().map(|b| b.0.as_str()).collect();
+        assert_eq!(kinds[2..10], ["BSTriShape", "BSDismemberSkinInstance", "NiSkinData", "NiSkinPartition",
+            "BSLightingShaderProperty", "BSShaderTextureSet", "NiAlphaProperty", "BSTriShape"]);
+        assert_eq!(kinds.len(), 2 + 7 + 6);
+        // The hair links its alpha property (block 8), the face none.
+        let block = |b: usize| &data[nif.blocks[b].1.clone()];
+        let alpha_link = |b: usize| i32::from_le_bytes(block(b)[0x60..0x64].try_into().unwrap());
+        assert_eq!(alpha_link(2), 8);
+        assert_eq!(alpha_link(9), -1);
+        assert_eq!(block(8)[12..15], [0xEC, 0x12, 128]);
     }
 
     #[test]

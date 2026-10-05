@@ -160,6 +160,138 @@ pub(crate) fn normal_dds(normal: &Texture, specular: Option<&Texture>) -> Result
     Ok(dds::write_dds(DdsFormat::Bgra8, w, h, &mips))
 }
 
+/// MGSV's material presets (`material_params.fmtt`): 256 rows of eight
+/// floats, picked by a material's `MatParamIndex_0`. Column 0 is the
+/// specular reflectance at normal incidence (skin 0.035, Snake's fatigues
+/// 0.012, his bionic arm 0.16, gold 0.89) and columns 4..7 the specular
+/// tint (gold's is gold).
+pub(crate) const MATERIAL_PRESETS: &str = "/Assets/fox/effect/gr_pic/material_params.fmtt";
+
+/// The preset row of every material index (empty if the table is missing).
+pub(crate) fn material_presets(vfs: &Vfs) -> Vec<[f32; 8]> {
+    let Ok(data) = read_any(vfs, MATERIAL_PRESETS) else {
+        return Vec::new();
+    };
+    data.chunks_exact(32)
+        .map(|row| std::array::from_fn(|k| f32::from_le_bytes(row[k * 4..k * 4 + 4].try_into().unwrap())))
+        .collect()
+}
+
+/// Shader constant `name` of material `mi`.
+pub(crate) fn material_vector(m: &Fmdl, mi: usize, name: &str) -> Option<[f32; 4]> {
+    let want = fox_hash::str_code64(name.as_bytes()) & 0xFFFF_FFFF_FFFF;
+    let inst = m.material_instances.get(mi)?;
+    let param = m.material_parameters.get(inst.parameters.clone())?.iter().find(|p| {
+        m.str_code64s.get(p.name as usize).map(|h| h & 0xFFFF_FFFF_FFFF) == Some(want)
+            || m.strings.get(p.name as usize).map(String::as_str) == Some(name)
+    })?;
+    m.material_vectors.get(param.reference as usize).copied()
+}
+
+/// Specular reflectance of material `mi` from its preset (the default
+/// dielectric 0.04 without one).
+pub(crate) fn material_reflectance(m: &Fmdl, mi: usize, presets: &[[f32; 8]]) -> f32 {
+    material_vector(m, mi, "MatParamIndex_0")
+        .and_then(|v| presets.get(v[0] as usize))
+        .map_or(0.04, |row| row[0])
+}
+
+/// Normal DDS for Skyrim's single specular lobe from MGSV's physically based
+/// maps, and the shape glossiness to use with it.
+///
+/// MGSV's specular map holds reflectance (R, scaling the material preset's
+/// `reflectance`), roughness (G) and metalness (B). Skyrim has one Phong
+/// exponent per shape and a per-pixel mask, so each pixel's mask is its
+/// reflectance (metal: that of bare steel) times the peak of a normalised
+/// Blinn-Phong lobe of its own roughness, `(n + 8) / 8` with `n = 2 / a^2 -
+/// 2`, `a = roughness^2`; boosted because Skyrim has no image-based
+/// reflections to add the rest. Rough fatigues end up with almost none
+/// (roughness ~0.73: a uniform mask made them glossy), the metal arm with a
+/// strong one. The glossiness is the exponent of the mask-weighted mean
+/// roughness.
+///
+/// Without a normal map (Snake's hair) the normal is flat and the size is
+/// the specular map's: Skyrim's default normal map would give a material
+/// without one a full specular mask (his hair shone like a helmet).
+pub(crate) fn pbr_normal_dds(
+    normal: Option<&Texture>,
+    srm: Option<&Texture>,
+    reflectance: f32,
+) -> Result<(Vec<u8>, f32)> {
+    let Some(base) = normal.or(srm) else {
+        anyhow::bail!("neither a normal nor a specular map");
+    };
+    const STEEL: f32 = 0.56;
+    const BOOST: f32 = 2.0;
+    let exponent = |rough: f32| {
+        let a = rough.clamp(0.08, 1.0).powi(2);
+        (2.0 / (a * a) - 2.0).clamp(2.0, 500.0)
+    };
+    let mut mips = Vec::new();
+    let skip = (0..base.mips.len())
+        .find(|&i| base.ftex.mip_dims(i).0 <= 1024)
+        .unwrap_or(0);
+    let mut out_dims = None;
+    let (mut rough_sum, mut weight_sum) = (0.0f64, 0.0f64);
+    for (i, m) in base.mips.iter().enumerate().skip(skip) {
+        let (w, h) = base.ftex.mip_dims(i);
+        let first = out_dims.is_none();
+        out_dims.get_or_insert((w, h));
+        let mut px = match normal {
+            Some(n) => ftex::decode_rgba(n.ftex.format, w, h, m)?,
+            // Flat: x = y = 0.
+            None => vec![[128, 128, 128, 128]; (w * h) as usize],
+        };
+        let level_srm = srm.and_then(|s| {
+            let level = s.mips.len().min(i + 1) - 1;
+            let (sw, sh) = s.ftex.mip_dims(level);
+            ftex::decode_rgba(s.ftex.format, sw, sh, &s.mips[level])
+                .ok()
+                .map(|p| (p, sw, sh))
+        });
+        for (k, p) in px.iter_mut().enumerate() {
+            let x = p[3] as f32 / 127.5 - 1.0;
+            let y = p[1] as f32 / 127.5 - 1.0;
+            let z = (1.0 - x * x - y * y).max(0.0).sqrt();
+            let [spec, rough, metal] = match &level_srm {
+                Some((s, sw, sh)) => {
+                    let (sx, sy) = ((k as u32 % w) * sw / w, (k as u32 / w) * sh / h);
+                    let t = s[(sy * sw + sx) as usize];
+                    [t[0] as f32 / 255.0, t[1] as f32 / 255.0, t[2] as f32 / 255.0]
+                }
+                None => [0.5, 0.6, 0.0],
+            };
+            let dielectric = spec * reflectance;
+            let f0 = dielectric + (STEEL - dielectric) * metal;
+            let mask = (f0 * (exponent(rough) + 8.0) / 8.0 * BOOST).min(1.0);
+            if first {
+                rough_sum += (rough * mask) as f64;
+                weight_sum += mask as f64;
+            }
+            let b = |v: f32| ((v.clamp(-1.0, 1.0) + 1.0) * 127.5).round() as u8;
+            *p = [b(x), b(y), b(z), (mask * 255.0).round() as u8];
+        }
+        mips.push(dds::rgba_to_bgra(&px));
+    }
+    let (w, h) = out_dims.unwrap_or((base.ftex.width, base.ftex.height));
+    let rough = if weight_sum > 0.0 { (rough_sum / weight_sum) as f32 } else { 0.6 };
+    Ok((dds::write_dds(DdsFormat::Bgra8, w, h, &mips), exponent(rough)))
+}
+
+/// Whether a base colour texture cuts out with its alpha (hair cards,
+/// eyelashes, patches): a format with alpha and texels at or below half.
+pub(crate) fn has_cutout(t: &Texture) -> bool {
+    if !matches!(t.ftex.format, PixelFormat::Bc2 | PixelFormat::Bc3) {
+        return false;
+    }
+    // A small mip is enough to tell.
+    let level = (0..t.mips.len()).find(|&i| t.ftex.mip_dims(i).0 <= 128).unwrap_or(t.mips.len() - 1);
+    let (w, h) = t.ftex.mip_dims(level);
+    ftex::decode_rgba(t.ftex.format, w, h, &t.mips[level])
+        .map(|px| px.iter().filter(|p| p[3] <= 128).count() * 50 > px.len())
+        .unwrap_or(false)
+}
+
 /// What [`export_weapons`] wrote.
 #[derive(Debug, Default)]
 pub struct ExportReport {
@@ -473,6 +605,7 @@ fn export_weapon(
                 .unwrap_or_default(),
             glossiness: 80.0,
             specular_strength: 1.0,
+            alpha_test: None,
             effect: None,
         });
     }

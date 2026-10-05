@@ -513,6 +513,11 @@ fn run() -> Result<()> {
                     mi.textures,
                     mi.parameters
                 )?;
+                // Shader constants: entries whose reference indexes the vector table.
+                for prm in m.material_parameters.get(mi.parameters.clone()).unwrap_or_default() {
+                    let v = m.material_vectors.get(prm.reference as usize).copied().unwrap_or_default();
+                    writeln!(out, "  param {:<22} {:?}", m.name(prm.name, &names), v)?;
+                }
                 // A material's texture slots are entries of the parameter
                 // table whose reference indexes the texture table.
                 for slot in m.material_parameters.get(mi.textures.clone()).unwrap_or_default() {
@@ -2714,7 +2719,7 @@ fn skyrim_body_check(vfs: &Vfs, skyrim: &Path) -> Result<()> {
         skyrim,
         // The full body: its vertices match the source meshes one to one.
         snake_runtime::skyrim_body::BodyView::ThirdPerson,
-        &mut |f| Ok(vec![Vec::new(); f.material_instances.len()]),
+        &mut |f| Ok(vec![Default::default(); f.material_instances.len()]),
         &mut notes,
     )?;
     let assets = snake_runtime::SnakeAssets::load(vfs)?;

@@ -21,7 +21,8 @@ use skyrim_data::nif_write::{self, Shape, SkinBone, SkinnedShape};
 
 use crate::skyrim::SkyrimRetarget;
 use crate::skyrim_export::{
-    cross, diffuse_dds, material_texture, material_texture_code, normal_dds, normalize, to_sky, ExportReport,
+    cross, diffuse_dds, has_cutout, material_presets, material_reflectance, material_texture, material_texture_code,
+    normalize, pbr_normal_dds, to_sky, ExportReport,
 };
 use crate::{read_any, snake_rig, SNAKE_ARM, SNAKE_BODY, SNAKE_FACE};
 
@@ -75,6 +76,29 @@ const CORE_BONES: [&str; 20] = [
     "NPC R Foot [Rft ]",
 ];
 
+/// A material's Skyrim texture paths (diffuse, normal), glossiness and
+/// whether it cuts out with the diffuse alpha.
+#[derive(Clone, Debug)]
+pub struct BodyMaterial {
+    pub textures: Vec<String>,
+    pub glossiness: f32,
+    pub cutout: bool,
+}
+
+impl Default for BodyMaterial {
+    fn default() -> Self {
+        Self { textures: Vec::new(), glossiness: 30.0, cutout: false }
+    }
+}
+
+/// What was learnt about each texture file written (they are shared by
+/// materials and parts): a normal map's glossiness, a diffuse's cutout.
+#[derive(Default)]
+struct TextureInfo {
+    glossiness: HashMap<std::path::PathBuf, f32>,
+    cutout: HashMap<std::path::PathBuf, bool>,
+}
+
 /// Snake's body bound to the Skyrim skeleton.
 pub struct Body {
     pub retarget: SkyrimRetarget,
@@ -93,6 +117,7 @@ pub fn export_snake_body(vfs: &Vfs, skyrim_dir: &Path, data_dir: &Path, report: 
     let mesh_dir = data_dir.join("meshes").join("snake");
     std::fs::create_dir_all(&tex_dir)?;
     std::fs::create_dir_all(&mesh_dir)?;
+    let mut info = TextureInfo::default();
     for (view, file, root) in [
         (BodyView::ThirdPerson, "snake_body.nif", "snake_body"),
         (BodyView::FirstPersonArms, "snake_arms_1p.nif", "snake_arms_1p"),
@@ -102,7 +127,7 @@ pub fn export_snake_body(vfs: &Vfs, skyrim_dir: &Path, data_dir: &Path, report: 
             vfs,
             skyrim_dir,
             view,
-            &mut |fmdl| material_textures(vfs, fmdl, "snake", &tex_dir, report),
+            &mut |fmdl| material_textures(vfs, fmdl, "snake", &tex_dir, report, &mut info),
             &mut notes,
         )?;
         report.notes.extend(notes);
@@ -115,6 +140,16 @@ pub fn export_snake_body(vfs: &Vfs, skyrim_dir: &Path, data_dir: &Path, report: 
             body.bones.len()
         ));
         report.files.push(path);
+    }
+    // Body textures of earlier exports that are no longer used (they are
+    // named after their contents' settings).
+    for entry in std::fs::read_dir(&tex_dir)?.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with("snake_") && name.ends_with(".dds") && !report.files.contains(&path) {
+            std::fs::remove_file(&path)?;
+            report.notes.push(format!("removed old {name}"));
+        }
     }
     Ok(())
 }
@@ -129,7 +164,7 @@ pub fn build_body(
     vfs: &Vfs,
     skyrim_dir: &Path,
     view: BodyView,
-    textures: &mut dyn FnMut(&Fmdl) -> Result<Vec<Vec<String>>>,
+    textures: &mut dyn FnMut(&Fmdl) -> Result<Vec<BodyMaterial>>,
     notes: &mut Vec<String>,
 ) -> Result<Body> {
     let (skel, _) = snake_rig(vfs)?;
@@ -308,6 +343,7 @@ pub fn build_body(
                     next += 1;
                 }
             }
+            let material = textures.get(mesh.material_instance as usize).cloned().unwrap_or_default();
             fn pick<T: Copy>(v: &[T], used: &[bool]) -> Vec<T> {
                 v.iter().zip(used).filter(|(_, u)| **u).map(|(x, _)| *x).collect()
             }
@@ -320,9 +356,10 @@ pub fn build_body(
                     bitangents: pick(&bitangents, &used),
                     uvs: pick(&mesh.uvs[0], &used),
                     triangles: triangles.iter().map(|t| t.map(|k| remap[k as usize])).collect(),
-                    textures: textures.get(mesh.material_instance as usize).cloned().unwrap_or_default(),
-                    glossiness: 30.0,
+                    textures: material.textures,
+                    glossiness: material.glossiness,
                     specular_strength: 1.0,
+                    alpha_test: material.cutout.then_some(128),
                     effect: None,
                 },
                 weights: pick(&weights, &used),
@@ -340,19 +377,26 @@ pub fn build_body(
 }
 
 /// Base colour and normal map DDS for every material of `fmdl`; returns the
-/// texture paths per material (diffuse, normal). Files are named after the
-/// MGSV texture (its path code), so textures shared by several materials or
-/// parts are written once.
+/// texture paths (diffuse, normal) and glossiness per material. Files are
+/// named after the MGSV textures (path codes) and reflectance, so textures
+/// shared by several materials or parts are written once (`info` remembers
+/// what each one gives its materials).
 fn material_textures(
     vfs: &Vfs,
     fmdl: &Fmdl,
     stem: &str,
     tex_dir: &Path,
     report: &mut ExportReport,
-) -> Result<Vec<Vec<String>>> {
+    info: &mut TextureInfo,
+) -> Result<Vec<BodyMaterial>> {
+    let presets = material_presets(vfs);
+    if presets.is_empty() {
+        report.notes.push("material presets not found; default reflectance used".into());
+    }
     let mut out = Vec::new();
     for mi in 0..fmdl.material_instances.len() {
         let mut slots = vec![String::new(); 2];
+        let mut material = BodyMaterial::default();
         if let Some(pc) = material_texture_code(fmdl, mi, "Base_Tex_SRGB") {
             let name = format!("{stem}_{:012x}_d.dds", pc & 0xFFFF_FFFF_FFFF);
             let path = tex_dir.join(&name);
@@ -361,6 +405,7 @@ fn material_textures(
                     Some(Ok(base)) => {
                         std::fs::write(&path, diffuse_dds(&base)?)?;
                         report.files.push(path.clone());
+                        info.cutout.insert(path.clone(), has_cutout(&base));
                     }
                     Some(Err(e)) => report.notes.push(format!("{stem} material {mi} base colour: {e}")),
                     None => {}
@@ -368,28 +413,47 @@ fn material_textures(
             }
             if report.files.contains(&path) {
                 slots[0] = format!("textures\\snake\\{name}");
+                material.cutout = info.cutout.get(&path).copied().unwrap_or(false);
             }
         }
-        if let Some(pc) = material_texture_code(fmdl, mi, "NormalMap_Tex_NRM") {
-            let spec_pc = material_texture_code(fmdl, mi, "SpecularMap_Tex_LIN").unwrap_or(0);
-            let name = format!("{stem}_{:012x}_{:04x}_n.dds", pc & 0xFFFF_FFFF_FFFF, spec_pc & 0xFFFF);
+        // The normal map carries the specular mask; a material with only a
+        // specular map gets a flat one.
+        let normal_pc = material_texture_code(fmdl, mi, "NormalMap_Tex_NRM");
+        let spec_pc = material_texture_code(fmdl, mi, "SpecularMap_Tex_LIN");
+        if let Some(pc) = normal_pc.or(spec_pc) {
+            let spec_pc = spec_pc.unwrap_or(0);
+            let reflectance = material_reflectance(fmdl, mi, &presets);
+            let name = format!(
+                "{stem}_{}{:012x}_{:04x}_{:03}_n.dds",
+                if normal_pc.is_some() { "" } else { "flat_" },
+                pc & 0xFFFF_FFFF_FFFF,
+                spec_pc & 0xFFFF,
+                (reflectance * 1000.0).round() as u32
+            );
             let path = tex_dir.join(&name);
             if !report.files.contains(&path) {
-                match material_texture(vfs, fmdl, mi, "NormalMap_Tex_NRM") {
-                    Some(Ok(normal)) => {
-                        let spec = material_texture(vfs, fmdl, mi, "SpecularMap_Tex_LIN").and_then(Result::ok);
-                        std::fs::write(&path, normal_dds(&normal, spec.as_ref())?)?;
+                let normal = material_texture(vfs, fmdl, mi, "NormalMap_Tex_NRM");
+                let spec = material_texture(vfs, fmdl, mi, "SpecularMap_Tex_LIN");
+                match (normal.transpose(), spec.transpose()) {
+                    (Ok(normal), Ok(spec)) => {
+                        let (dds, g) = pbr_normal_dds(normal.as_ref(), spec.as_ref(), reflectance)?;
+                        std::fs::write(&path, dds)?;
                         report.files.push(path.clone());
+                        info.glossiness.insert(path.clone(), g);
+                        report.notes.push(format!("{name}: reflectance {reflectance:.3}, glossiness {g:.0}"));
                     }
-                    Some(Err(e)) => report.notes.push(format!("{stem} material {mi} normal map: {e}")),
-                    None => {}
+                    (Err(e), _) | (_, Err(e)) => {
+                        report.notes.push(format!("{stem} material {mi} normal/specular map: {e}"))
+                    }
                 }
             }
             if report.files.contains(&path) {
                 slots[1] = format!("textures\\snake\\{name}");
+                material.glossiness = info.glossiness.get(&path).copied().unwrap_or(material.glossiness);
             }
         }
-        out.push(slots);
+        material.textures = slots;
+        out.push(material);
     }
     Ok(out)
 }

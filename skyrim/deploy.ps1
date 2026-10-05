@@ -41,6 +41,8 @@ ShotVolume=70
 AimCamera=1
 AimCameraX=120
 AimCameraZ=0
+; Reloads never run out (1), or use the weapon's reserve as in MGSV (0).
+UnlimitedMagazines=1
 "@
 Set-Content -Path (Join-Path $plugins "snake.ini") -Value $ini -Encoding ASCII
 

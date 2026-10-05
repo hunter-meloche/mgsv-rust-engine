@@ -32,6 +32,8 @@ pub fn open_game(game_dir: &Path, dictionaries: &Path) -> Result<Vfs> {
 pub struct LoadedWeapon {
     /// Equipment id, e.g. `WP_West_ar_010`.
     pub id: &'static str,
+    /// Display name, e.g. `AM MRS-4`.
+    pub name: &'static str,
     pub model: fox_anim::SkinnedModel,
     pub rest: fox_anim::Pose,
     pub stats: snake_core::WeaponStats,
@@ -139,7 +141,12 @@ pub const PLAYER_RESIDENT: &str = "/Assets/tpp/pack/player/motion/player2_reside
 /// receiver motion archive and clip names.
 pub struct WeaponDef {
     id: &'static str,
+    /// Display name, as MGSV's HUD shows it.
+    name: &'static str,
     model: &'static str,
+    /// The magazine's own model (MGSV keeps it separate; it sits on the
+    /// gun's `CNP_AMMO` and comes out during reloads).
+    magazine: Option<&'static str>,
     cnp: &'static str,
     motion: &'static str,
     clips: snake_core::WeaponClips<'static>,
@@ -152,7 +159,9 @@ pub const WEAPONS: [WeaponDef; 2] = [
     // AM MRS-4 assault rifle.
     WeaponDef {
         id: "WP_West_ar_010",
+        name: "AM MRS-4",
         model: "/Assets/tpp/pack/collectible/primary/EQP_WP_West_ar_010.fpk:/Assets/tpp/weapon/asw/Scenes/ar00_main0_aw6.fmdl",
+        magazine: Some("/Assets/tpp/pack/collectible/common/col_common_tpp.fpk:/Assets/tpp/weapon/amo/Scenes/am00_main0_def.fmdl"),
         cnp: "/Assets/tpp/pack/collectible/primary/EQP_WP_West_ar_010.fpk:/Assets/tpp/weapon/asw/Scenes/ar00_main0_aw6.fcnp",
         motion: "/Assets/tpp/pack/player/motion/equip/receiver/pl_rcvr_ar00.fpk:/Assets/tpp/motion/mtar/player2/Receiver/pl_rcvr_ar00.mtar",
         clips: snake_core::WeaponClips {
@@ -161,7 +170,12 @@ pub const WEAPONS: [WeaponDef; 2] = [
                 Some("snapasr_q_fre_pose_25"),
                 Some("snapasr_c_fre_pose_35"),
             ],
-            reload: "snapar00_0_s_mag_chg",
+            // A quick magazine change with rounds left; the full reload
+            // (with the charging handle) when empty.
+            reload: snake_core::ReloadNames {
+                partial: [Some("snapar00_0_s_mag_chg"), None],
+                empty: [Some("snapar00_aw0_s_fre_rld"), Some("snapar00_aw0_c_fre_rld_std")],
+            },
             fire: Some("snapar00_aw1_s_fre"),
         },
         holster: Some(("SKL_300_ASRROOT", "CNP_ASRROOT")),
@@ -170,7 +184,9 @@ pub const WEAPONS: [WeaponDef; 2] = [
     // WU S.Pistol (tranquilizer).
     WeaponDef {
         id: "WP_West_thg_010",
+        name: "WU S.PISTOL",
         model: "/Assets/tpp/pack/collectible/secondary/EQP_WP_West_thg_010.fpk:/Assets/tpp/weapon/asw/Scenes/hg01_main3_aw0.fmdl",
+        magazine: Some("/Assets/tpp/pack/collectible/secondary/EQP_WP_West_thg_010.fpk:/Assets/tpp/weapon/hag/Scenes/hg01_ammo0_def.fmdl"),
         cnp: "/Assets/tpp/pack/collectible/secondary/EQP_WP_West_thg_010.fpk:/Assets/tpp/weapon/asw/Scenes/hg01_main3_aw0.fcnp",
         motion: "/Assets/tpp/pack/player/motion/equip/receiver/pl_rcvr_hg01.fpk:/Assets/tpp/motion/mtar/player2/Receiver/pl_rcvr_hg01.mtar",
         clips: snake_core::WeaponClips {
@@ -179,7 +195,11 @@ pub const WEAPONS: [WeaponDef; 2] = [
                 Some("snaphg01_q_fre_pose_25"),
                 Some("snaphg01_c_fre_pose_35"),
             ],
-            reload: "snaphg01_s_fre_rld",
+            // Slide locked back when empty.
+            reload: snake_core::ReloadNames {
+                partial: [Some("snaphg01_s_fre_rld"), Some("snaphg01_c_fre_rld_std")],
+                empty: [Some("snaphg01_s_fre_emp_rld"), Some("snaphg01_c_fre_emp_rld")],
+            },
             fire: Some("snaphg01_s_fre1"),
         },
         holster: None,
@@ -239,7 +259,7 @@ pub fn load_weapon(
             .with_context(|| format!("no bone {n}"))
     };
     let (_, muzzle) = cnp(&gun_cnp, "CNP_MUZZLE_FLASH")?;
-    let weapon_rig = snake_core::WeaponRig::calibrate(
+    let mut weapon_rig = snake_core::WeaponRig::calibrate(
         rig,
         skel,
         clips,
@@ -249,6 +269,14 @@ pub fn load_weapon(
         muzzle,
     )
     .map_err(anyhow::Error::msg)?;
+    if def.magazine.is_some() {
+        if let Ok(ammo) = cnp(&gun_cnp, "CNP_AMMO") {
+            weapon_rig.magazine = Some(snake_core::MagazineRig {
+                cnp: ammo,
+                left_hand_bone: bone("SKL_013_LHAND")?,
+            });
+        }
+    }
     let model = fox_data::Fmdl::parse(&read_any(vfs, def.model)?)?;
     let gun_skel = fox_anim::Skeleton::from_fmdl(&model);
     let skinned = fox_anim::SkinnedModel::bind(&model, &gun_skel).map_err(anyhow::Error::msg)?;
@@ -258,6 +286,7 @@ pub fn load_weapon(
     };
     Ok(LoadedWeapon {
         id: def.id,
+        name: def.name,
         model: skinned,
         rest: fox_anim::Pose::rest(&gun_skel),
         stats,

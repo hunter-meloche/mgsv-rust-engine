@@ -35,6 +35,8 @@
 
 #include "skse64/PluginAPI.h"
 #include "skse64/gamethreads.h"
+#include "skse64/Hooks_UI.h"
+#include "skse64/ScaleformMovie.h"
 #include "skse64_common/skse_version.h"
 
 #include "snake.h"
@@ -101,6 +103,10 @@ struct SnakeApi {
     decltype(&snake_weapon_count) weapon_count = nullptr;
     decltype(&snake_weapon_mesh) weapon_mesh = nullptr;
     decltype(&snake_weapon_muzzle) weapon_muzzle = nullptr;
+    decltype(&snake_weapon_name) weapon_name = nullptr;
+    decltype(&snake_weapon_magazine_mesh) weapon_magazine_mesh = nullptr;
+    decltype(&snake_player_set_unlimited_magazines) player_set_unlimited_magazines = nullptr;
+    decltype(&snake_retarget_magazine_place) retarget_magazine_place = nullptr;
     decltype(&snake_player_new) player_new = nullptr;
     decltype(&snake_player_update) player_update = nullptr;
     decltype(&snake_player_status) player_status = nullptr;
@@ -138,6 +144,10 @@ bool LoadSnakeDll() {
     RESOLVE(weapon_count, "snake_weapon_count");
     RESOLVE(weapon_mesh, "snake_weapon_mesh");
     RESOLVE(weapon_muzzle, "snake_weapon_muzzle");
+    RESOLVE(weapon_name, "snake_weapon_name");
+    RESOLVE(weapon_magazine_mesh, "snake_weapon_magazine_mesh");
+    RESOLVE(player_set_unlimited_magazines, "snake_player_set_unlimited_magazines");
+    RESOLVE(retarget_magazine_place, "snake_retarget_magazine_place");
     RESOLVE(player_new, "snake_player_new");
     RESOLVE(player_update, "snake_player_update");
     RESOLVE(player_status, "snake_player_status");
@@ -172,6 +182,10 @@ bool OpenRuntime() {
         Log("snake_player_new failed: %s", g_snake.last_error());
         return false;
     }
+    // snake.ini UnlimitedMagazines (default on): reloads never run out.
+    int unlimited = GetPrivateProfileIntW(L"Snake", L"UnlimitedMagazines", 1, ini.c_str());
+    g_snake.player_set_unlimited_magazines(g_player, unlimited);
+    Log("magazines: %s", unlimited ? "unlimited" : "from the reserve");
     // Plugins live in <Skyrim>/Data/SKSE/Plugins.
     std::string skyrim = Narrow(Parent(Parent(Parent(PluginDir()))));
     g_retarget = g_snake.retarget_new(g_runtime, skyrim.c_str());
@@ -417,6 +431,7 @@ constexpr uint32_t kIdPlayerCamera = 400802;      // PlayerCamera* singleton (AE
 constexpr uint32_t kIdAttackBlockVtable = 208719; // VTABLE_AttackBlockHandler (AE id)
 constexpr uint32_t kIdModelDemand = 75782;        // BSModelDB::Demand (AE id)
 constexpr uint32_t kIdStringPoolGetEntry = 69161;  // BSStringPool::GetEntry<char> (AE id)
+constexpr uint32_t kIdPlayerControls = 400864;     // PlayerControls singleton (AE id; checked before use)
 constexpr size_t kModelPath = 0x48;                // BGSProjectile TESModel (+0x40) model path (BSFixedString)
 constexpr const char* kBulletModel = "snake\\bullet.nif";  // empty model written by mgsv skyrim-export
 constexpr uintptr_t kLookupFormByID = 0x001E5860;
@@ -482,6 +497,7 @@ struct Firing {
     void** attackBlockVtable = nullptr;
     void* modelDemand = nullptr;
     void* getEntry = nullptr;  // BSStringPool::GetEntry
+    void** playerControls = nullptr;  // &PlayerControls singleton
     void* weapon = nullptr;   // bullet copies
     void* ammo = nullptr;
     void* projectile = nullptr;
@@ -527,7 +543,7 @@ bool LoadAddressLibrary() {
     };
     uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     uintptr_t launch = read(kIdProjectileLaunch), vt = read(kIdLaunchDataVtable), cam = read(kIdPlayerCamera), ab = read(kIdAttackBlockVtable),
-              demand = read(kIdModelDemand), entry = read(kIdStringPoolGetEntry);
+              demand = read(kIdModelDemand), entry = read(kIdStringPoolGetEntry), controls = read(kIdPlayerControls);
     fclose(f);
     if (!launch || !vt) {
         Log("firing: ids missing from the database");
@@ -539,6 +555,7 @@ bool LoadAddressLibrary() {
     g_fire.attackBlockVtable = ab ? reinterpret_cast<void**>(base + ab) : nullptr;
     g_fire.modelDemand = demand ? reinterpret_cast<void*>(base + demand) : nullptr;
     g_fire.getEntry = entry ? reinterpret_cast<void*>(base + entry) : nullptr;
+    g_fire.playerControls = controls ? reinterpret_cast<void**>(base + controls) : nullptr;
     Log("firing: %u ids; Projectile::Launch +%llX, LaunchData vtable +%llX, PlayerCamera +%llX", count,
         (unsigned long long)launch, (unsigned long long)vt, (unsigned long long)cam);
     return true;
@@ -1076,6 +1093,10 @@ struct PoseBuffer {
     int gunPlace[4] = {};
     SnakeVec3 gunPos[4] = {};
     SnakeQuat gunRot[4] = {{0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}};
+    // The same for each weapon's magazine (in the gun or Snake's left hand).
+    int magPlace[4] = {};
+    SnakeVec3 magPos[4] = {};
+    SnakeQuat magRot[4] = {{0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}};
     uint64_t seq = 0;
 } g_pose;
 
@@ -1113,6 +1134,7 @@ struct Control {
     int weapon = -1;     // switch to this weapon once
     int speed = 1;       // match Skyrim's movement speed to Snake's
     int body = 1;        // show Snake's own body
+    int reload = 0;      // reload once
     bool dump = false;   // log the camera once (diagnostics)
 };
 Control g_control;
@@ -1144,11 +1166,132 @@ void PollControl(int curStance) {
         else if (k == "weapon") g_control.weapon = std::atoi(v.c_str());
         else if (k == "speed") g_control.speed = std::atoi(v.c_str());
         else if (k == "body") g_control.body = std::atoi(v.c_str());
+        else if (k == "reload") g_control.reload = std::atoi(v.c_str());
         else if (k == "dump") g_control.dump = v == "1";
     }
     fclose(f);
     Log("control: enabled %d mode %d move %s aim %d stance %s (current %d)", (int)g_enabled, (int)g_mode,
         g_control.move.c_str(), g_control.aim, g_control.stance.c_str(), curStance);
+}
+
+// ---- ammo HUD -----------------------------------------------------------------------
+//
+// Snake mode shows the weapon and its magazine on Skyrim's own HUD (bottom
+// right, like MGSV's weapon panel): "AM MRS-4  27 / --" (no reserve count
+// with unlimited magazines; the HUD font has no infinity sign). Skyrim's own
+// arrow counter beside it is hidden meanwhile. SKSE calls
+// RegisterScaleform for every menu movie; in the HUD's, a text field is
+// created with the HUD's own font, and UI tasks update it when the text
+// changes. Values are passed in GVal, which has GFxValue's layout (SKSE's
+// GFxValue methods need its game addresses compiled in; the movie's
+// virtual calls do not).
+
+struct GVal {
+    void* objectInterface = nullptr;
+    uint32_t type = 0;  // 0 undefined, 2 bool, 3 number, 4 string
+    uint32_t pad = 0;
+    union {
+        double number;
+        const char* string;
+        bool boolean;
+        void* object;
+    } data{};
+};
+static_assert(sizeof(GVal) == 0x18, "GFxValue layout");
+GVal GNum(double v) { GVal g; g.type = 3; g.data.number = v; return g; }
+GVal GStr(const char* v) { GVal g; g.type = 4; g.data.string = v; return g; }
+GVal GBool(bool v) { GVal g; g.type = 2; g.data.boolean = v; return g; }
+GFxValue* GF(GVal* v) { return reinterpret_cast<GFxValue*>(v); }
+
+SKSEScaleformInterface* g_scaleform = nullptr;
+std::atomic<GFxMovieView*> g_hudView{nullptr};
+std::mutex g_hudMutex;
+std::string g_hudText;      // last text sent
+bool g_hudShown = false;
+
+bool RegisterScaleform(GFxMovieView* view, GFxValue*) {
+    if (!view) return true;
+    GVal probe;
+    if (!view->GetVariable(GF(&probe), "_root.HUDMovieBaseInstance") || probe.type == 0) return true;
+    GRectF r = view->GetVisibleFrameRect();
+    double w = 420, h = 40;
+    double x = r.right - w - 60, y = r.bottom - h - 92;
+    GVal args[6] = {GStr("snakeAmmo"), GNum(4040), GNum(x), GNum(y), GNum(w), GNum(h)};
+    GVal field;
+    view->Invoke("_root.createTextField", GF(&field), GF(args), 6);
+    GVal fmtArgs[9] = {GStr("$EverywhereMediumFont"), GNum(24), GNum(0xFFFFFF), GBool(false), GBool(false),
+                       GBool(false), GVal{}, GVal{}, GStr("right")};
+    GVal fmt;
+    view->CreateObject(GF(&fmt), "TextFormat", GF(fmtArgs), 9);
+    view->Invoke("_root.snakeAmmo.setNewTextFormat", nullptr, GF(&fmt), 1);
+    GVal t = GBool(true), f = GBool(false), empty = GStr("");
+    view->SetVariable("_root.snakeAmmo.embedFonts", GF(&t), 0);
+    view->SetVariable("_root.snakeAmmo.selectable", GF(&f), 0);
+    view->SetVariable("_root.snakeAmmo.text", GF(&empty), 0);
+    view->SetVariable("_root.snakeAmmo._visible", GF(&f), 0);
+    g_hudView = view;
+    {
+        std::lock_guard<std::mutex> lock(g_hudMutex);
+        g_hudText.clear();
+        g_hudShown = false;
+    }
+    GVal arrows;
+    bool haveArrows = view->GetVariable(GF(&arrows), "_root.HUDMovieBaseInstance.ArrowInfoInstance") && arrows.type != 0;
+    Log("ammo HUD: text field on the HUD movie (visible %.0f,%.0f - %.0f,%.0f); Skyrim's arrow counter %s", r.left, r.top,
+        r.right, r.bottom, haveArrows ? "found" : "not found");
+    return true;
+}
+
+class HudTask : public UIDelegate_v1 {
+public:
+    HudTask(std::string text, bool show, uint32_t color) : text_(std::move(text)), show_(show), color_(color) {}
+    void Run() override {
+        GFxMovieView* view = g_hudView;
+        if (!view) return;
+        GVal t = GStr(text_.c_str()), v = GBool(show_), c = GNum(color_);
+        view->SetVariable("_root.snakeAmmo.text", GF(&t), 0);
+        view->SetVariable("_root.snakeAmmo.textColor", GF(&c), 0);
+        view->SetVariable("_root.snakeAmmo._visible", GF(&v), 0);
+        // Skyrim's arrow counter (it shows "(0)" for the drawn hands).
+        GVal arrows = GBool(!show_);
+        view->SetVariable("_root.HUDMovieBaseInstance.ArrowInfoInstance._visible", GF(&arrows), 0);
+    }
+    void Dispose() override { delete this; }
+
+private:
+    std::string text_;
+    bool show_;
+    uint32_t color_;
+};
+
+// Called on the Snake thread each tick: queue a HUD update when the text or
+// visibility changes.
+void UpdateHud() {
+    if (!g_hudView || !g_tasks) return;
+    SnakeStatus st{};
+    g_snake.player_status(g_player, &st);
+    bool show = g_enabled && st.weapon >= 0;
+    std::string text;
+    uint32_t color = 0xFFFFFF;
+    if (show) {
+        const char* name = g_snake.weapon_name(g_runtime, st.weapon);
+        char buf[96];
+        if (st.unlimited)
+            snprintf(buf, sizeof buf, "%s    %d / --", name ? name : "", st.ammo);
+        else
+            snprintf(buf, sizeof buf, "%s    %d / %d", name ? name : "", st.ammo, st.reserve);
+        text = buf;
+        if (st.ammo == 0) color = 0xFF5040;               // empty
+        else if (st.ammo * 4 <= st.magazine) color = 0xFFC040;  // a quarter left
+    }
+    std::lock_guard<std::mutex> lock(g_hudMutex);
+    // Re-sent twice a second while shown: Skyrim re-shows its arrow counter.
+    static int ticks = 0;
+    bool refresh = show && ++ticks % 30 == 0;
+    if (text == g_hudText && show == g_hudShown && !refresh) return;
+    g_hudText = text;
+    g_hudShown = show;
+    g_tasks->AddUITask(new HudTask(text, show, color));
 }
 
 // ---- aim camera -------------------------------------------------------------------
@@ -1239,6 +1382,8 @@ void SnakeThread() {
     // 1 / 2 switch Snake's weapon (MRS-4 / WU S.Pistol), as in MGSV's
     // primary/secondary slots.
     Key weaponKeys[2] = {{'1'}, {'2'}};
+    // R reloads, as in MGSV (Skyrim's ready-weapon on R is off in Snake mode).
+    Key reloadKey{'R'};
     bool proneToggled = false;
     double sinceAim = 10.0;  // seconds since Snake last aimed
     float snakeAvg = 0, skyAvg = 0;  // smoothed ground speeds (m/s): Snake's, Skyrim's
@@ -1347,6 +1492,8 @@ void SnakeThread() {
         }
         in.aim = g_control.aim >= 0 ? g_control.aim == 1 : focused && (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
         in.fire = in.aim && (g_control.fire >= 0 ? g_control.fire == 1 : focused && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
+        in.reload = reloadKey.Pressed(focused) || g_control.reload != 0;
+        g_control.reload = 0;
         in.aim_pitch = -g_pitch.load();
         // Direction: while aiming the actor faces the camera and strafes, so
         // Skyrim's movement flags (back / forward / right / left) are Snake's
@@ -1477,8 +1624,13 @@ void SnakeThread() {
         SnakeVec3 gunPos[4] = {};
         SnakeQuat gunRot[4] = {{0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}};
         uint32_t weapons = (std::min)(g_snake.weapon_count(g_runtime), 4u);
-        for (uint32_t i = 0; i < weapons; ++i)
+        int magPlace[4] = {};
+        SnakeVec3 magPos[4] = {};
+        SnakeQuat magRot[4] = {{0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}};
+        for (uint32_t i = 0; i < weapons; ++i) {
             gunPlace[i] = g_snake.retarget_weapon_place(g_retarget, g_player, i, &gunPos[i], &gunRot[i]);
+            magPlace[i] = g_snake.retarget_magazine_place(g_retarget, g_player, i, &magPos[i], &magRot[i]);
+        }
         {
             std::lock_guard<std::mutex> lock(g_pose.m);
             g_pose.rot = rot;
@@ -1487,8 +1639,12 @@ void SnakeThread() {
             memcpy(g_pose.gunPlace, gunPlace, sizeof gunPlace);
             memcpy(g_pose.gunPos, gunPos, sizeof gunPos);
             memcpy(g_pose.gunRot, gunRot, sizeof gunRot);
+            memcpy(g_pose.magPlace, magPlace, sizeof magPlace);
+            memcpy(g_pose.magPos, magPos, sizeof magPos);
+            memcpy(g_pose.magRot, magRot, sizeof magRot);
             ++g_pose.seq;
         }
+        UpdateHud();
         logTimer += dt;
         if (logTimer > 2.0) {
             logTimer = 0;
@@ -1517,6 +1673,9 @@ int g_hookFrames = 0;
 int g_hookGunPlace[4] = {};
 SnakeVec3 g_hookGunPos[4] = {};
 SnakeQuat g_hookGunRot[4] = {{0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}};
+int g_hookMagPlace[4] = {};
+SnakeVec3 g_hookMagPos[4] = {};
+SnakeQuat g_hookMagRot[4] = {{0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}};
 
 // ---- Snake's gun model ---------------------------------------------------------
 //
@@ -1548,6 +1707,10 @@ struct GunSlot {
     bool failed[2] = {false, false};                    // no mesh (run `mgsv skyrim-export`)
 };
 GunSlot g_guns[kMaxGuns];
+// Each weapon's magazine: MGSV keeps it a separate model on the gun's
+// CNP_AMMO, and it comes out in Snake's left hand during a reload. Attached
+// under the same hand as the guns and placed the same way.
+GunSlot g_mags[kMaxGuns];
 std::atomic<int> g_gunCount{0};  // set once every mesh has been tried
 // The muzzle flash is a separate mesh beside the gun (inside the gun's node
 // its additive shapes made Skyrim draw the whole gun unlit).
@@ -1606,10 +1769,14 @@ public:
             void* root = Get3D(player, view == 1);
             void* hand = root ? FindNode(root, kRightHand) : nullptr;
             if (!hand) continue;
-            for (int i = 0; i < count; ++i) {
-                GunSlot& g = g_guns[i];
+            for (int i = 0; i < 2 * count; ++i) {
+                bool magazine = i >= count;
+                int w = magazine ? i - count : i;
+                GunSlot& g = magazine ? g_mags[w] : g_guns[w];
+                const char* source = magazine ? g_snake.weapon_magazine_mesh(g_runtime, w) : g_snake.weapon_mesh(g_runtime, w);
+                if (!source) g.failed[view] = true;
                 if (!g.node[view] && !g.failed[view]) {
-                    std::string mesh = ViewMesh(g_snake.weapon_mesh(g_runtime, i), view);
+                    std::string mesh = ViewMesh(source, view);
                     void* node = nullptr;
                     uint32_t err = SafeDemand(mesh.c_str(), &node);
                     Log("gun model %s: error %u, node %p", mesh.c_str(), err, node);
@@ -1624,10 +1791,11 @@ public:
                 if (gun && g.parent[view] != hand) {
                     if (SafeAttach(hand, gun)) {
                         g.parent[view] = hand;
-                        Log("gun model %d attached to the %s-person %s (%p)", i, view ? "first" : "third", kRightHand, hand);
+                        Log("%s model %d attached to the %s-person %s (%p)", magazine ? "magazine" : "gun", w,
+                            view ? "first" : "third", kRightHand, hand);
                     } else {
                         g.failed[view] = true;
-                        Log("attaching gun model %d faulted", i);
+                        Log("attaching %s model %d faulted", magazine ? "magazine" : "gun", w);
                     }
                 }
             }
@@ -1687,8 +1855,10 @@ void PlaceGun(int view, void* hand, void* spine) {
     if (!hand) return;
     int count = g_gunCount;
     bool attached = count > 0;
-    for (int i = 0; i < count; ++i)
+    for (int i = 0; i < count; ++i) {
         if (!g_guns[i].failed[view] && g_guns[i].parent[view] != hand) attached = false;
+        if (!g_mags[i].failed[view] && g_mags[i].parent[view] != hand) attached = false;
+    }
     if (!attached) {
         if (g_tasks && !g_gunQueued.exchange(true)) g_tasks->AddTask(new AttachGunTask());
         return;
@@ -1706,6 +1876,18 @@ void PlaceGun(int view, void* hand, void* spine) {
         HandLocal(place, g_hookGunPos[i], g_hookGunRot[i], hand, spine, &At<float>(gun, kLocalRot),
                   &At<float>(gun, kLocalPos));
         if (place == 1) inHand = i;
+    }
+    for (int i = 0; i < count; ++i) {
+        void* mag = g_mags[i].node[view];
+        if (!mag) continue;
+        int place = g_hookMagPlace[i];
+        if (place == 0 || (place == 2 && (!spine || view == 1))) {
+            SetHidden(mag, true);
+            continue;
+        }
+        SetHidden(mag, false);
+        HandLocal(place, g_hookMagPos[i], g_hookMagRot[i], hand, spine, &At<float>(mag, kLocalRot),
+                  &At<float>(mag, kLocalPos));
     }
     // Flash: same rotation as the gun in the hands, at its muzzle; one
     // random cell.
@@ -2031,6 +2213,9 @@ void ApplySnake(void* player, float delta) {
             memcpy(g_hookGunPlace, g_pose.gunPlace, sizeof g_hookGunPlace);
             memcpy(g_hookGunPos, g_pose.gunPos, sizeof g_hookGunPos);
             memcpy(g_hookGunRot, g_pose.gunRot, sizeof g_hookGunRot);
+            memcpy(g_hookMagPlace, g_pose.magPlace, sizeof g_hookMagPlace);
+            memcpy(g_hookMagPos, g_pose.magPos, sizeof g_hookMagPos);
+            memcpy(g_hookMagRot, g_pose.magRot, sizeof g_hookMagRot);
             g_appliedSeq = g_pose.seq;
         }
     }
@@ -2122,6 +2307,8 @@ void HookedUpdateAnimation(void* self, float delta) {
                 for (int view = 0; view < 2; ++view) {
                     for (GunSlot& g : g_guns)
                         if (void* gun = g.node[view]) SetHidden(gun, true);
+                    for (GunSlot& g : g_mags)
+                        if (void* mag = g.node[view]) SetHidden(mag, true);
                     if (void* flash = g_flashNode[view]) SetHidden(flash, true);
                 }
             }
@@ -2167,7 +2354,44 @@ bool InstallHook() {
 using CanProcessFn = bool (*)(void* self, void* event);
 CanProcessFn g_originalAttackCanProcess = nullptr;
 
+// R is MGSV's reload key and Skyrim's ready-weapon key: Skyrim's
+// ReadyWeaponHandler is switched off in Snake mode the same way. Its vtable
+// comes from PlayerControls, which holds every input handler: the
+// ready-weapon handler six slots before the attack/block handler (found by
+// looking for the attack handler this hook is called on).
+CanProcessFn g_originalReadyCanProcess = nullptr;
+std::atomic<bool> g_readySearched{false};
+
+bool HookedReadyCanProcess(void* self, void* event) {
+    if (g_enabled) return false;
+    return g_originalReadyCanProcess(self, event);
+}
+
+void HookReadyWeapon(void* attackHandler) {
+    void* controls = g_fire.playerControls && Readable(g_fire.playerControls, 8) ? *g_fire.playerControls : nullptr;
+    if (!controls || !Readable(controls, 0x400)) {
+        Log("ready weapon: no PlayerControls; R also readies Skyrim's weapon");
+        return;
+    }
+    int slot = -1;
+    for (int k = 6; k < 0x80; ++k)
+        if (At<void*>(controls, k * 8) == attackHandler) slot = k;
+    void* ready = slot > 0 ? At<void*>(controls, (slot - 6) * 8) : nullptr;
+    if (!ready || !Readable(ready, 16) || !Readable(Vtable(ready), 16)) {
+        Log("ready weapon: handler not found (attack handler at slot %d); R also readies Skyrim's weapon", slot);
+        return;
+    }
+    void** vt = Vtable(ready);
+    DWORD old;
+    if (!VirtualProtect(&vt[1], sizeof(void*), PAGE_EXECUTE_READWRITE, &old)) return;
+    g_originalReadyCanProcess = reinterpret_cast<CanProcessFn>(vt[1]);
+    vt[1] = reinterpret_cast<void*>(&HookedReadyCanProcess);
+    VirtualProtect(&vt[1], sizeof(void*), old, &old);
+    Log("hooked ReadyWeaponHandler::CanProcess (vtable %p, PlayerControls slot %d): R reloads in Snake mode", vt, slot - 6);
+}
+
 bool HookedAttackCanProcess(void* self, void* event) {
+    if (!g_readySearched.exchange(true)) HookReadyWeapon(self);
     if (g_enabled) return false;
     return g_originalAttackCanProcess(self, event);
 }
@@ -2245,6 +2469,8 @@ __declspec(dllexport) bool SKSEPlugin_Load(const SKSEInterface* skse) {
     g_messaging->RegisterListener(g_handle, "SKSE", OnMessage);
     g_tasks = static_cast<SKSETaskInterface*>(skse->QueryInterface(kInterface_Task));
     if (!g_tasks) Log("no task interface (firing disabled)");
+    g_scaleform = static_cast<SKSEScaleformInterface*>(skse->QueryInterface(kInterface_Scaleform));
+    if (!g_scaleform || !g_scaleform->Register("SnakeSKSE", RegisterScaleform)) Log("no Scaleform interface (no ammo HUD)");
     return true;
 }
 

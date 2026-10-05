@@ -160,8 +160,34 @@ Skyrim's job threads) only copies the latest pose into the bone nodes and
 never calls into `snake.dll` (calling Rust from the job threads froze the
 game). If anything faults, Snake mode switches itself off.
 
+Ammo and reloads: **R** reloads (Skyrim's ready-weapon action, also on R,
+is switched off in Snake mode like its attacks: the ReadyWeaponHandler is
+found in PlayerControls six slots before the attack/block handler). Snake
+reloads by himself when the trigger is pulled on an empty magazine.
+Magazines are unlimited by default (`UnlimitedMagazines` in snake.ini; 0
+uses the weapon's reserve from MGSV's tables). The HUD shows the weapon and
+its magazine at the bottom right, on Skyrim's own HUD movie (an SKSE
+Scaleform text field in the HUD font): `AM MRS-4    27 / --`, amber at a
+quarter left and red when empty; Skyrim's arrow counter is hidden meanwhile.
+
+The reloads are MGSV's own clips, picked like the game does: a quick
+magazine change when rounds are left, the full reload (with the charging
+handle or slide) when empty, and crouched versions where they exist. The
+clip is applied as its change from its first frame (every reload clip starts
+and ends in its stance's aim pose), so it starts and ends exactly on the
+current pose, at any aim angle and also prone, where MGSV has no clip of its
+own; when not aiming, Snake first raises the gun. The clips' motion events
+mark the magazine leaving the gun and going back in: the rounds go in at
+that frame, and the magazine (MGSV keeps it a separate model on the gun's
+`CNP_AMMO`; exported as `<weapon>_mag.nif`, and the gun's built-in copy,
+mesh group `MESH_AMO`, is left out of the gun) rides in Snake's left hand in
+between. Measured with `mgsv reload-probe`: no joint turns faster per tick
+than in the clips themselves (MRS-4 quick change 2.9 s, rounds in at 1.8 s;
+full reload 6 s, rounds in at 3.3 s). Mesh groups the game hides (the MRS-4's
+rail light) are no longer exported.
+
 Testing hooks: `Data/SKSE/Plugins/snake_control.txt` (`enabled=1`, `mode=2`,
-`stance=prone`, `move=run`, `aim=1`, `fire=1`, `weapon=1`, `speed=0`, `flash=0`, `launch=0`, `draw=0` to keep hands
+`stance=prone`, `move=run`, `aim=1`, `fire=1`, `reload=1`, `weapon=1`, `speed=0`, `flash=0`, `launch=0`, `draw=0` to keep hands
 sheathed, `dump=1` to log the camera) drives the plugin without key presses.
 Log: `Documents/My Games/Skyrim Special Edition/SKSE/SnakeSKSE.log`.
 

@@ -201,6 +201,31 @@ impl Fmdl {
         false
     }
 
+    /// Whether mesh `mesh` is in the mesh group called `name` (or under it).
+    /// TPP models store group names as `StrCode64` hashes, e.g. `MESH_AMO`
+    /// (a gun's magazine) or `MESH_SUP` (its suppressor).
+    pub fn mesh_in_group(&self, mesh: usize, name: &str) -> bool {
+        const MASK: u64 = 0xFFFF_FFFF_FFFF;
+        let wanted = fox_hash::str_code64(name.as_bytes()) & MASK;
+        let mut cur = self.mesh_group_of(mesh).map(usize::from);
+        let mut depth = 0;
+        while let Some(g) = cur {
+            let Some(mg) = self.mesh_groups.get(g) else { break };
+            let i = mg.name as usize;
+            let hit = if self.strings.is_empty() {
+                self.str_code64s.get(i).is_some_and(|&h| h & MASK == wanted)
+            } else {
+                self.strings.get(i).is_some_and(|s| s == name)
+            };
+            if hit {
+                return true;
+            }
+            depth += 1;
+            cur = (mg.parent >= 0 && depth < 16).then_some(mg.parent as usize);
+        }
+        false
+    }
+
     /// The names (`names(name id)`) of mesh group `group` and its
     /// ancestors, innermost first.
     pub fn mesh_group_path(&self, group: u16, names: &dyn Fn(u16) -> String) -> Vec<String> {

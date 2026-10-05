@@ -21,7 +21,7 @@ pub mod world;
 
 pub use controller::{Armed, ClipNames, Controller, Foot, Gait, Input, Shot, Stance};
 pub use motion::{ClipLibrary, MotionPlayer};
-pub use weapon::{AimGrid, Ballistics, WeaponClips, WeaponRig, WeaponStats};
+pub use weapon::{AimGrid, Ballistics, MagazineRig, ReloadNames, ReloadSet, WeaponClips, WeaponRig, WeaponStats};
 pub use world::{Aabb, BoxWorld, Collision, FlatGround, Hit};
 
 /// Animation frames per second.

@@ -99,19 +99,95 @@ pub struct Armed {
     pub reserve: u32,
     /// Aim grid clips for stand, crouch, prone.
     grids: [Option<Arc<Clip>>; 3],
-    reload_clip: Arc<Clip>,
+    /// Reload clips: partial / empty magazine, stand / crouch.
+    reload_partial: [Option<Arc<Clip>>; 2],
+    reload_empty: [Option<Arc<Clip>>; 2],
     fire_clip: Option<Arc<Clip>>,
     cooldown: f32,
-    /// Seconds into the reload clip, while reloading.
-    reloading: Option<f32>,
+    reloading: Option<Reload>,
+    /// The magazine's place relative to the left hand while it is out of
+    /// the gun (taken when it comes out).
+    magazine_in_hand: Option<(Quat, Vec3)>,
     /// Seconds into the fire clip, after a shot.
     firing: Option<f32>,
     fire_held: bool,
 }
 
+/// A reload in progress: its clip and the times (seconds) of its magazine
+/// events.
+struct Reload {
+    clip: Arc<Clip>,
+    t: f32,
+    length: f32,
+    magazine_out: f32,
+    magazine_in: f32,
+    refilled: bool,
+}
+
+impl Reload {
+    fn new(clip: Arc<Clip>) -> Self {
+        let length = clip.frame_count as f32 / crate::FPS;
+        let at = |name: u32| {
+            clip.events
+                .iter()
+                .find(|e| e.name == name)
+                .and_then(|e| e.frames.first())
+                .map(|&f| f as f32 / crate::FPS)
+        };
+        let magazine_in = at(crate::weapon::EVENT_MAGAZINE_IN).unwrap_or(length * 0.6);
+        let magazine_out = at(crate::weapon::EVENT_MAGAZINE_OUT)
+            .unwrap_or(magazine_in * 0.4)
+            .min(magazine_in);
+        Self {
+            clip,
+            t: 0.0,
+            length,
+            magazine_out,
+            magazine_in,
+            refilled: false,
+        }
+    }
+
+    /// Weight of the reload motion: eased in and out at the clip's ends.
+    fn weight(&self) -> f32 {
+        let edge = (self.t / 0.2).min((self.length - self.t) / 0.25).clamp(0.0, 1.0);
+        edge * edge * (3.0 - 2.0 * edge)
+    }
+}
+
 impl Armed {
     pub fn reloading(&self) -> bool {
         self.reloading.is_some()
+    }
+
+    /// Reload progress 0..1, if reloading.
+    pub fn reload_progress(&self) -> Option<f32> {
+        self.reloading.as_ref().map(|r| (r.t / r.length).clamp(0.0, 1.0))
+    }
+
+    /// The reload clip for the current magazine and stance.
+    fn reload_clip(&self, stance: Stance) -> Option<Arc<Clip>> {
+        let slot = if stance == Stance::Crouch { 1 } else { 0 };
+        let (first, second) = if self.ammo == 0 {
+            (&self.reload_empty, &self.reload_partial)
+        } else {
+            (&self.reload_partial, &self.reload_empty)
+        };
+        first[slot]
+            .clone()
+            .or_else(|| first[0].clone())
+            .or_else(|| second[slot].clone())
+            .or_else(|| second[0].clone())
+    }
+
+    /// Put rounds in the magazine (from the reserve unless `unlimited`).
+    fn refill(&mut self, unlimited: bool) {
+        let mut take = self.stats.magazine.saturating_sub(self.ammo);
+        if !unlimited {
+            take = take.min(self.reserve);
+            self.reserve -= take;
+        }
+        self.ammo += take;
     }
 }
 
@@ -291,6 +367,13 @@ pub struct Controller {
     /// Accumulated recoil (radians of camera pitch) for the host to apply.
     pub recoil: f32,
     pending_shots: u32,
+    /// 0..1 blend of the weapon raised for a reload while not aiming.
+    ready_weight: f32,
+    /// Reloads never use up the reserve.
+    pub unlimited_magazines: bool,
+    /// The current weapon's magazine (root space) and whether it is in the
+    /// left hand; see [`Controller::track_magazine`].
+    magazine: Option<(Quat, Vec3, bool)>,
 }
 
 impl Controller {
@@ -320,6 +403,9 @@ impl Controller {
             aim_pitch: 0.0,
             recoil: 0.0,
             pending_shots: 0,
+            ready_weight: 0.0,
+            unlimited_magazines: false,
+            magazine: None,
         })
     }
 
@@ -334,9 +420,17 @@ impl Controller {
         let grid = |slot: usize| -> Result<Option<Arc<Clip>>, String> {
             rig.grids[slot].as_ref().map(|g| get(&g.clip)).transpose()
         };
+        let reload = |names: &[Option<String>; 2]| -> Result<[Option<Arc<Clip>>; 2], String> {
+            Ok([
+                names[0].as_deref().map(get).transpose()?,
+                names[1].as_deref().map(get).transpose()?,
+            ])
+        };
         let armed = Armed {
             grids: [grid(0)?, grid(1)?, grid(2)?],
-            reload_clip: get(&rig.reload)?,
+            reload_partial: reload(&rig.reload.partial)?,
+            reload_empty: reload(&rig.reload.empty)?,
+            magazine_in_hand: None,
             fire_clip: rig.fire.as_deref().map(get).transpose()?,
             ammo: stats.magazine,
             reserve: stats.reserve,
@@ -449,6 +543,7 @@ impl Controller {
             if self.current != Some(i) {
                 if let Some(w) = self.weapon_mut() {
                     w.reloading = None;
+                    w.magazine_in_hand = None;
                     w.firing = None;
                 }
                 self.current = Some(i);
@@ -474,6 +569,16 @@ impl Controller {
         }
         let target_w = if self.state == State::Aim { 1.0 } else { 0.0 };
         self.aim_weight += (target_w - self.aim_weight).clamp(-6.0 * dt, 6.0 * dt);
+        // A reload raises the weapon even when not aiming (to the aim grid's
+        // centre: the aim angles relax to straight ahead).
+        let reloading = self.weapon().is_some_and(Armed::reloading);
+        let ready = if reloading { 1.0 } else { 0.0 };
+        self.ready_weight += (ready - self.ready_weight).clamp(-5.0 * dt, 5.0 * dt);
+        if self.state != State::Aim {
+            let relax = (-6.0 * dt).exp();
+            self.aim_yaw *= relax;
+            self.aim_pitch *= relax;
+        }
 
         match self.state {
             State::Aim => {
@@ -646,6 +751,10 @@ impl Controller {
         self.recoil *= (-8.0 * dt).exp();
         let mut shots = 0;
         let mut kick = 0.0;
+        let unlimited = self.unlimited_magazines;
+        let stance = self.stance;
+        // The weapon comes up before the reload motion starts.
+        let raised = self.aim_weight.max(self.ready_weight) > 0.9;
         if let Some(w) = self.weapon_mut() {
             w.cooldown -= dt;
             if let Some(t) = w.firing.as_mut() {
@@ -658,16 +767,26 @@ impl Controller {
                     w.firing = None;
                 }
             }
-            if let Some(t) = w.reloading.as_mut() {
-                *t += dt;
-                if *t >= w.reload_clip.frame_count as f32 / crate::FPS {
-                    let take = (w.stats.magazine - w.ammo).min(w.reserve);
-                    w.ammo += take;
-                    w.reserve -= take;
-                    w.reloading = None;
+            let can_reload = |w: &Armed| w.ammo < w.stats.magazine && (unlimited || w.reserve > 0);
+            if let Some(r) = w.reloading.as_mut() {
+                if raised || r.t > 0.0 {
+                    r.t += dt;
                 }
-            } else if input.reload && w.ammo < w.stats.magazine && w.reserve > 0 {
-                w.reloading = Some(0.0);
+                // Rounds go in with the magazine (the clip's MAGAZINE_IN).
+                let refill = !r.refilled && r.t >= r.magazine_in;
+                let done = r.t >= r.length;
+                if refill {
+                    r.refilled = true;
+                }
+                if refill || (done && !r.refilled) {
+                    w.refill(unlimited);
+                }
+                if done {
+                    w.reloading = None;
+                    w.magazine_in_hand = None;
+                }
+            } else if input.reload && can_reload(w) {
+                w.reloading = w.reload_clip(stance).map(Reload::new);
             }
             let trigger = input.fire && (w.stats.full_auto || !w.fire_held);
             w.fire_held = input.fire;
@@ -679,8 +798,8 @@ impl Controller {
                     shots += 1;
                     // Placeholder kick until the receiver wobble fields are decoded.
                     kick += 0.6f32.to_radians();
-                } else if w.reserve > 0 {
-                    w.reloading = Some(0.0);
+                } else if unlimited || w.reserve > 0 {
+                    w.reloading = w.reload_clip(stance).map(Reload::new);
                 }
             }
         }
@@ -724,12 +843,48 @@ impl Controller {
             .is_some_and(|w| self.aim_weight > 0.05 || w.reloading())
     }
 
+    /// Follow the current weapon's magazine for `pose` (call after each
+    /// [`Controller::pose`]): in the gun at its `CNP_AMMO`, or, between the
+    /// reload's magazine-out and magazine-in events, in the left hand where
+    /// it was when it came out.
+    pub fn track_magazine(&mut self, pose: &Pose) {
+        self.magazine = None;
+        let Some(w) = self.current.and_then(|i| self.weapons.get_mut(i)) else {
+            return;
+        };
+        let Some(m) = w.rig.magazine else { return };
+        let (gr, gp) = w.rig.gun_transform(pose);
+        let in_gun = (gr * m.cnp.0, gp + gr * m.cnp.1);
+        let out = w
+            .reloading
+            .as_ref()
+            .is_some_and(|r| r.t >= r.magazine_out && r.t < r.magazine_in);
+        if !out {
+            w.magazine_in_hand = None;
+            self.magazine = Some((in_gun.0, in_gun.1, false));
+            return;
+        }
+        let (lr, lp) = (pose.rotations[m.left_hand_bone], pose.positions[m.left_hand_bone]);
+        let off = *w.magazine_in_hand.get_or_insert_with(|| {
+            let li = lr.inverse();
+            (li * in_gun.0, li * (in_gun.1 - lp))
+        });
+        self.magazine = Some((lr * off.0, lp + lr * off.1, true));
+    }
+
+    /// The current weapon's magazine in root space and whether it is in the
+    /// left hand (from the last [`Controller::track_magazine`]).
+    pub fn magazine(&self) -> Option<(Quat, Vec3, bool)> {
+        self.magazine
+    }
+
     /// Skeleton pose in the character's root space.
     pub fn pose(&self, rig: &HumanRig, skel: &Skeleton) -> Result<Pose, String> {
         let mut frame = self.player.frame(rig)?;
         if let (Some(w), Some(upper)) = (self.weapon(), rig.mask("Upper")) {
             let slot = stance_slot(self.stance);
-            if self.aim_weight > 0.0 {
+            let raised = self.aim_weight.max(self.ready_weight);
+            if raised > 0.0 {
                 if let (Some(grid), Some(clip)) = (&w.rig.grids[slot], &w.grids[slot]) {
                     let aim = w.rig.aim_frame(
                         rig,
@@ -738,7 +893,7 @@ impl Controller {
                         self.aim_yaw,
                         self.aim_pitch + self.recoil * 0.5,
                     )?;
-                    frame = rig.layer(&frame, &aim, upper, self.aim_weight);
+                    frame = rig.layer(&frame, &aim, upper, raised);
                 }
             }
             // Per-shot motion, applied as a change from the clip's first
@@ -748,11 +903,14 @@ impl Controller {
                 let now = rig.sample_frame(fire, t * crate::FPS)?;
                 frame = rig.add_delta(&frame, &reference, &now, upper, self.aim_weight);
             }
-            if let Some(t) = w.reloading {
-                let len = w.reload_clip.frame_count as f32 / crate::FPS;
-                let ramp = (t / 0.15).min((len - t) / 0.15).clamp(0.0, 1.0);
-                let reload = rig.sample_frame(&w.reload_clip, t * crate::FPS)?;
-                frame = rig.layer(&frame, &reload, upper, ramp);
+            // The reload, applied as its change from its first frame (every
+            // reload clip starts and ends in its stance's aim pose): it
+            // starts and ends exactly on the current pose, at any aim angle
+            // and in stances without their own clip.
+            if let Some(r) = &w.reloading {
+                let reference = rig.sample_frame(&r.clip, 0.0)?;
+                let now = rig.sample_frame(&r.clip, r.t * crate::FPS)?;
+                frame = rig.add_delta(&frame, &reference, &now, upper, r.weight());
             }
         }
         Ok(rig.solve(skel, &frame))

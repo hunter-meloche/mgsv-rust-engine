@@ -175,6 +175,14 @@ enum Cmd {
     /// Check Snake's Skyrim body binding: skin it with the retargeted Skyrim
     /// skeleton for poses from a scripted run and compare with Snake's own
     /// skinning (mean / max vertex distance per pose).
+    /// Development probe: run reloads through the player controller (full,
+    /// tactical, not aiming, crouched, prone) and report ammo, where the
+    /// magazine is, and the largest per-tick joint rotation (pops).
+    ReloadProbe {
+        /// Weapon slot (0 MRS-4, 1 WU S.Pistol).
+        #[arg(long, default_value_t = 0)]
+        weapon: usize,
+    },
     SkyrimBodyCheck {
         #[arg(long)]
         skyrim: PathBuf,
@@ -472,6 +480,13 @@ fn run() -> Result<()> {
                     mesh.material_instance
                 )?;
             }
+            for (i, (min, max)) in m.bounding_boxes.iter().enumerate() {
+                writeln!(
+                    out,
+                    "  bounds {i}: ({:.3}, {:.3}, {:.3}) - ({:.3}, {:.3}, {:.3})",
+                    min[0], min[1], min[2], max[0], max[1], max[2]
+                )?;
+            }
             match m.validate() {
                 Ok(()) => writeln!(out, "valid")?,
                 Err(e) => writeln!(out, "INVALID: {e}")?,
@@ -687,6 +702,7 @@ fn run() -> Result<()> {
             Ok(())
         }
         Cmd::SkyrimBodyCheck { skyrim } => skyrim_body_check(&vfs, &skyrim),
+        Cmd::ReloadProbe { weapon } => reload_probe(&vfs, weapon),
         Cmd::FmdlCheck => fmdl_check(&vfs),
         Cmd::Mtar { path } => {
             let data = read_any(&vfs, &path)?;
@@ -1653,6 +1669,137 @@ fn skyrim_skeleton(skyrim: &Path, inner: &str) -> Result<()> {
             root.block,
             0,
             (Mat3::IDENTITY, Vec3::ZERO, Mat3::IDENTITY, Vec3::ZERO),
+        );
+    }
+    Ok(())
+}
+
+fn reload_probe(vfs: &Vfs, weapon: usize) -> Result<()> {
+    use snake_core::Input;
+    let assets = snake_runtime::SnakeAssets::load(vfs)?;
+    let mut ctl = assets.controller()?;
+    ctl.unlimited_magazines = true;
+    let dt = 1.0 / 60.0;
+    let world = snake_core::FlatGround { height: 0.0 };
+    let base = Input {
+        switch_to: Some(weapon),
+        ..Default::default()
+    };
+    let aim = Input { aim: true, ..Default::default() };
+    // (label, setup ticks of input, then the reload input and how long to watch)
+    let mut prev: Option<fox_anim::Pose> = None;
+    let mut tick = |ctl: &mut snake_core::Controller, input: &Input| -> Result<(f32, fox_anim::Pose)> {
+        ctl.update(&assets.rig, &assets.clips, &world, dt, input);
+        let pose = ctl.pose(&assets.rig, &assets.skel).map_err(anyhow::Error::msg)?;
+        ctl.track_magazine(&pose);
+        let jump = prev.as_ref().map_or(0.0, |p: &fox_anim::Pose| {
+            p.rotations
+                .iter()
+                .zip(&pose.rotations)
+                .map(|(a, b)| a.angle_between(*b).to_degrees())
+                .fold(0.0f32, f32::max)
+        });
+        prev = Some(pose.clone());
+        Ok((jump, pose))
+    };
+    tick(&mut ctl, &base)?;
+    // Each: settle, fire a few rounds (single taps for semi-automatics),
+    // then reload.
+    let fire3 = |a: Input| -> Vec<(f32, Input)> {
+        let mut v = Vec::new();
+        for _ in 0..3 {
+            v.push((0.05, Input { fire: true, ..a }));
+            v.push((1.2, a));
+        }
+        v
+    };
+    let with = |mut v: Vec<(f32, Input)>, tail: Vec<(f32, Input)>| {
+        v.extend(tail);
+        v
+    };
+    let scenarios: Vec<(&str, Vec<(f32, Input)>)> = vec![
+        ("full reload, aiming (empty magazine)", vec![(1.0, aim), (6.0, Input { fire: true, ..aim })]),
+        ("tactical reload, aiming", with(fire3(aim), vec![(0.0, Input { reload: true, ..aim })])),
+        ("reload while not aiming", with(fire3(aim), vec![(1.0, Input::default()), (0.0, Input { reload: true, ..Default::default() })])),
+        ("crouched reload", with(with(vec![(0.05, Input { crouch: true, ..aim }), (1.5, aim)], fire3(aim)), vec![(0.0, Input { reload: true, ..aim })])),
+        ("prone reload", with(with(vec![(0.05, Input { prone: true, ..aim }), (3.0, aim)], fire3(aim)), vec![(0.0, Input { reload: true, ..aim })])),
+    ];
+    // The clips' own fastest motion, for comparison.
+    for name in ["snapar00_0_s_mag_chg", "snapar00_aw0_s_fre_rld", "snapar00_aw0_c_fre_rld_std", "snaphg01_s_fre_rld", "snaphg01_s_fre_emp_rld"] {
+        let Some(clip) = assets.clips.get(name) else { continue };
+        let mut prev: Option<fox_anim::Pose> = None;
+        let (mut max, mut at) = (0.0f32, 0.0f32);
+        let mut t = 0.0f32;
+        while t * snake_core::FPS < clip.frame_count as f32 - 1.0 {
+            let pose = assets.rig.pose(&assets.skel, &clip, t * snake_core::FPS).map_err(anyhow::Error::msg)?;
+            if let Some(p) = &prev {
+                let j = p.rotations.iter().zip(&pose.rotations).map(|(a, b)| a.angle_between(*b).to_degrees()).fold(0.0f32, f32::max);
+                if j > max {
+                    max = j;
+                    at = t;
+                }
+            }
+            prev = Some(pose);
+            t += dt;
+        }
+        println!("clip {name}: largest per-tick rotation {max:.1} deg at {at:.2}s");
+    }
+    for (label, steps) in scenarios {
+        let mut last = aim;
+        for (secs, input) in steps {
+            let n = ((secs / dt).round() as usize).max(1);
+            for k in 0..n {
+                let mut i = input;
+                if k > 0 {
+                    i.crouch = false;
+                    i.prone = false;
+                    i.reload = false;
+                }
+                tick(&mut ctl, &i)?;
+            }
+            last = Input { reload: false, crouch: false, prone: false, fire: false, ..input };
+        }
+        // Wait for the reload to finish (or 8 s).
+        let w = ctl.weapon().context("no weapon")?;
+        println!("== {label}: ammo {}/{}, reloading {}", w.ammo, w.stats.magazine, w.reloading());
+        let (mut max_jump, mut max_at) = (0.0f32, 0.0f32);
+        let mut in_hand_from: Option<f32> = None;
+        let mut in_hand_to: Option<f32> = None;
+        let mut refill_at: Option<f32> = None;
+        let start_ammo = w.ammo;
+        let mut t = 0.0;
+        while t < 8.0 {
+            let (jump, _) = tick(&mut ctl, &last)?;
+            t += dt;
+            let w = ctl.weapon().context("no weapon")?;
+            if jump > max_jump {
+                max_jump = jump;
+                max_at = t;
+            }
+            if let Some((_, _, hand)) = ctl.magazine() {
+                if hand && in_hand_from.is_none() {
+                    in_hand_from = Some(t);
+                }
+                if !hand && in_hand_from.is_some() && in_hand_to.is_none() {
+                    in_hand_to = Some(t);
+                }
+            }
+            if refill_at.is_none() && w.ammo != start_ammo {
+                refill_at = Some(t);
+            }
+            if !w.reloading() && t > 0.3 {
+                break;
+            }
+        }
+        let w = ctl.weapon().context("no weapon")?;
+        let f = |v: Option<f32>| v.map_or("-".to_string(), |v| format!("{v:.2}s"));
+        println!(
+            "   done after {t:.2}s: ammo {}/{}; magazine in left hand {} - {}; rounds in at {}; largest per-tick rotation {max_jump:.1} deg at {max_at:.2}s",
+            w.ammo,
+            w.stats.magazine,
+            f(in_hand_from),
+            f(in_hand_to),
+            f(refill_at)
         );
     }
     Ok(())

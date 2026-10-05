@@ -40,6 +40,12 @@ pub fn mesh_path(id: &str) -> String {
     format!("snake\\{}.nif", id.to_ascii_lowercase())
 }
 
+/// Skyrim mesh path of weapon `id`'s magazine (its frame is the gun's
+/// `CNP_AMMO`).
+pub fn magazine_mesh_path(id: &str) -> String {
+    mesh_path(&format!("{id}_mag"))
+}
+
 /// A texture of an `.fmdl` material slot: header and decoded-size mips.
 pub(crate) struct Texture {
     ftex: Ftex,
@@ -183,8 +189,15 @@ pub fn export_weapons(vfs: &Vfs, data_dir: &Path) -> Result<ExportReport> {
     std::fs::write(&bullet, nif_write::write_static_nif("bullet", &[]))?;
     report.files.push(bullet);
     for def in &WEAPONS {
-        export_weapon(vfs, def.id, def.model, data_dir, &mut report)
+        // With its own magazine model, the gun's built-in copy (mesh group
+        // MESH_AMO) is left out so the magazine can come out in reloads.
+        let skip: &[&str] = if def.magazine.is_some() { &["MESH_AMO"] } else { &[] };
+        export_weapon(vfs, def.id, def.model, skip, data_dir, &mut report)
             .with_context(|| format!("exporting {}", def.id))?;
+        if let Some(magazine) = def.magazine {
+            export_weapon(vfs, &format!("{}_mag", def.id), magazine, &[], data_dir, &mut report)
+                .with_context(|| format!("exporting {}'s magazine", def.id))?;
+        }
         export_shot(vfs, def.id, data_dir, &mut report).with_context(|| format!("{} shot sound", def.id))?;
     }
     Ok(report)
@@ -362,7 +375,16 @@ fn muzzle_flash_shapes(m: [f32; 3], axis: [f32; 3]) -> Vec<Shape> {
         .collect()
 }
 
-fn export_weapon(vfs: &Vfs, id: &str, model: &str, data_dir: &Path, report: &mut ExportReport) -> Result<()> {
+/// Export `model` as weapon mesh `id`, leaving out meshes in mesh groups the
+/// game hides and in the groups named in `skip`.
+fn export_weapon(
+    vfs: &Vfs,
+    id: &str,
+    model: &str,
+    skip: &[&str],
+    data_dir: &Path,
+    report: &mut ExportReport,
+) -> Result<()> {
     let m = Fmdl::parse(&read_any(vfs, model)?)?;
     let stem = id.to_ascii_lowercase();
     let tex_dir = data_dir.join("textures").join("snake");
@@ -401,6 +423,9 @@ fn export_weapon(vfs: &Vfs, id: &str, model: &str, data_dir: &Path, report: &mut
     // One shape per mesh, in Skyrim axes and units.
     let mut shapes = Vec::new();
     for (i, mesh) in m.meshes.iter().enumerate() {
+        if m.mesh_hidden(i) || skip.iter().any(|g| m.mesh_in_group(i, g)) {
+            continue;
+        }
         if mesh.positions.len() > u16::MAX as usize {
             report.notes.push(format!("{id}: mesh {i} has too many vertices; skipped"));
             continue;

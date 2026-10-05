@@ -153,6 +153,12 @@ pub struct SnakeStatus {
     pub reserve: i32,
     pub reloading: i32,
     pub recoil: f32,
+    /// Magazine capacity of the weapon in use.
+    pub magazine: i32,
+    /// Reload progress 0..1 (0 when not reloading).
+    pub reload_progress: f32,
+    /// Reloads do not use up the reserve.
+    pub unlimited: i32,
 }
 
 /// Loaded assets, shared by every player created from it.
@@ -161,6 +167,9 @@ pub struct SnakeRuntime {
     bone_names: Vec<Option<CString>>,
     /// Skyrim mesh path of each weapon (relative to `Data\meshes`).
     weapon_meshes: Vec<CString>,
+    /// Skyrim mesh path of each weapon's magazine (empty if none).
+    magazine_meshes: Vec<CString>,
+    weapon_names: Vec<CString>,
 }
 
 pub struct SnakePlayer {
@@ -239,10 +248,29 @@ pub unsafe extern "C" fn snake_runtime_open(
             .iter()
             .map(|w| CString::new(snake_runtime::skyrim_export::mesh_path(w.id)).unwrap_or_default())
             .collect();
+        let magazine_meshes = assets
+            .weapons
+            .iter()
+            .map(|w| {
+                let path = if w.rig.magazine.is_some() {
+                    snake_runtime::skyrim_export::magazine_mesh_path(w.id)
+                } else {
+                    String::new()
+                };
+                CString::new(path).unwrap_or_default()
+            })
+            .collect();
+        let weapon_names = assets
+            .weapons
+            .iter()
+            .map(|w| CString::new(w.name).unwrap_or_default())
+            .collect();
         Ok(Box::into_raw(Box::new(SnakeRuntime {
             assets: Arc::new(assets),
             bone_names,
             weapon_meshes,
+            magazine_meshes,
+            weapon_names,
         })))
     })
 }
@@ -295,6 +323,25 @@ pub unsafe extern "C" fn snake_weapon_mesh(rt: *const SnakeRuntime, i: u32) -> *
     // SAFETY: valid runtime pointer or null.
     unsafe { rt.as_ref() }
         .and_then(|r| r.weapon_meshes.get(i as usize))
+        .map_or(std::ptr::null(), |s| s.as_ptr())
+}
+
+/// Display name of weapon `i` (e.g. "AM MRS-4"), or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_weapon_name(rt: *const SnakeRuntime, i: u32) -> *const c_char {
+    // SAFETY: valid pointer or null.
+    unsafe { rt.as_ref() }
+        .and_then(|r| r.weapon_names.get(i as usize))
+        .map_or(std::ptr::null(), |s| s.as_ptr())
+}
+
+/// Skyrim mesh path of weapon `i`'s magazine, or null if it has none.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_weapon_magazine_mesh(rt: *const SnakeRuntime, i: u32) -> *const c_char {
+    // SAFETY: valid pointer or null.
+    unsafe { rt.as_ref() }
+        .and_then(|r| r.magazine_meshes.get(i as usize))
+        .filter(|s| !s.as_bytes().is_empty())
         .map_or(std::ptr::null(), |s| s.as_ptr())
 }
 
@@ -378,6 +425,7 @@ pub unsafe extern "C" fn snake_player_update(
         p.controller
             .update(&p.assets.rig, &p.assets.clips, collision, dt, &input);
         p.pose = p.controller.pose(&p.assets.rig, &p.assets.skel)?;
+        p.controller.track_magazine(&p.pose);
         let shots = p.controller.take_shots(&p.pose, collision);
         p.shots.extend(shots);
         Ok(1)
@@ -507,7 +555,67 @@ pub unsafe extern "C" fn snake_player_status(p: *const SnakePlayer, out: *mut Sn
         reserve: w.map_or(0, |w| w.reserve as i32),
         reloading: w.is_some_and(|w| w.reloading()) as i32,
         recoil: c.recoil,
+        magazine: w.map_or(0, |w| w.stats.magazine as i32),
+        reload_progress: w.and_then(|w| w.reload_progress()).unwrap_or(0.0),
+        unlimited: c.unlimited_magazines as i32,
     };
+}
+
+/// Unlimited magazines: reloads never use up the reserve.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_player_set_unlimited_magazines(p: *mut SnakePlayer, on: i32) {
+    // SAFETY: valid pointer or null.
+    if let Some(p) = unsafe { p.as_mut() } {
+        p.controller.unlimited_magazines = on != 0;
+    }
+}
+
+/// Where weapon `weapon`'s magazine goes this frame, like
+/// [`snake_retarget_weapon_place`]: 1 = relative to "NPC R Hand [RHnd]"
+/// (in the gun, or in Snake's left hand during a reload), 2 = relative to
+/// "NPC Spine2 [Spn2]" (in the holstered gun), 0 = not shown.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_retarget_magazine_place(
+    r: *const SnakeRetarget,
+    p: *const SnakePlayer,
+    weapon: u32,
+    translation: *mut SnakeVec3,
+    rotation: *mut SnakeQuat,
+) -> i32 {
+    guard(0, || {
+        // SAFETY: valid pointers or null.
+        let (r, p) = unsafe {
+            (
+                r.as_ref().ok_or("null retarget")?,
+                p.as_ref().ok_or("null player")?,
+            )
+        };
+        let w = p.assets.weapons.get(weapon as usize).ok_or("no such weapon")?;
+        let Some(m) = w.rig.magazine else { return Ok(0) };
+        let ctl = &p.controller;
+        let (place, bone, held) = if ctl.current == Some(weapon as usize) && ctl.weapon_in_hand() {
+            let Some((q, t, _)) = ctl.magazine() else { return Ok(0) };
+            (1, "NPC R Hand [RHnd]", (q, t))
+        } else if let Some((b, (hr, ht))) = w.back {
+            let (br, bp) = (p.pose.rotations[b], p.pose.positions[b]);
+            let (gr, gp) = (br * hr, bp + br * ht);
+            (2, "NPC Spine2 [Spn2]", (gr * m.cnp.0, gp + gr * m.cnp.1))
+        } else {
+            return Ok(0);
+        };
+        let Some((q, t)) = r.retarget.attach_local(&p.pose, bone, held) else {
+            return Ok(0);
+        };
+        unsafe {
+            if !translation.is_null() {
+                *translation = t.into();
+            }
+            if !rotation.is_null() {
+                *rotation = SnakeQuat { x: q.x, y: q.y, z: q.z, w: q.w };
+            }
+        }
+        Ok(place)
+    })
 }
 
 /// Retargeting onto Skyrim's character skeleton.

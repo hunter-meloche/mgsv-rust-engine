@@ -58,10 +58,15 @@ typedef struct {
 } SnakeShot;
 
 /* stance: 0 stand, 1 crouch, 2 prone. gait: 0 idle, 1 walk, 2 run, 3 dash.
- * weapon: slot in use or -1. recoil: camera pitch kick (radians) to add. */
+ * weapon: slot in use or -1. recoil: camera pitch kick (radians) to add.
+ * magazine: capacity of the weapon in use; reload_progress 0..1 while
+ * reloading; unlimited: reloads do not use up the reserve. */
 typedef struct {
     int32_t stance, gait, aiming, weapon, ammo, reserve, reloading;
     float recoil;
+    int32_t magazine;
+    float reload_progress;
+    int32_t unlimited;
 } SnakeStatus;
 
 /* Last error on this thread (empty string if none). */
@@ -79,6 +84,11 @@ uint32_t snake_weapon_count(const SnakeRuntime *rt);
 /* Skyrim mesh of weapon i (relative to Data\meshes, written by
  * `mgsv skyrim-export`), or NULL. */
 const char *snake_weapon_mesh(const SnakeRuntime *rt, uint32_t i);
+/* Display name of weapon i (e.g. "AM MRS-4"), or NULL. */
+const char *snake_weapon_name(const SnakeRuntime *rt, uint32_t i);
+/* Skyrim mesh path of weapon i's magazine (frame: the gun's CNP_AMMO), or
+ * NULL if it has none. */
+const char *snake_weapon_magazine_mesh(const SnakeRuntime *rt, uint32_t i);
 /* Muzzle of weapon i in its exported mesh's frame (Skyrim axes and units;
  * the barrel points along +Y). Returns 0 if there is no such weapon. */
 int32_t snake_weapon_muzzle(const SnakeRuntime *rt, uint32_t i, SnakeVec3 *out);
@@ -102,6 +112,8 @@ uint32_t snake_player_pose(const SnakePlayer *p, SnakeVec3 *positions, SnakeQuat
 uint32_t snake_player_take_shots(SnakePlayer *p, SnakeShot *out, uint32_t capacity);
 
 void snake_player_status(const SnakePlayer *p, SnakeStatus *out);
+/* Unlimited magazines: reloads never use up the reserve. */
+void snake_player_set_unlimited_magazines(SnakePlayer *p, int32_t on);
 
 /* Retargeting onto Skyrim's character skeleton (read from the Skyrim
  * install's BSAs). Output bones are in parent-first order. */
@@ -124,6 +136,12 @@ uint32_t snake_retarget_apply(const SnakeRetarget *r, const SnakePlayer *p, Snak
  * (relative to "NPC Spine2 [Spn2]"), 0 = not shown. Skyrim axes/units. */
 int32_t snake_retarget_weapon_place(const SnakeRetarget *r, const SnakePlayer *p, uint32_t weapon,
                                     SnakeVec3 *translation, SnakeQuat *rotation);
+
+/* Where weapon `weapon`'s magazine goes this frame: 1 = relative to
+ * "NPC R Hand [RHnd]" (in the gun, or in Snake's left hand during a
+ * reload), 2 = relative to "NPC Spine2 [Spn2]" (holstered), 0 = not shown. */
+int32_t snake_retarget_magazine_place(const SnakeRetarget *r, const SnakePlayer *p, uint32_t weapon,
+                                      SnakeVec3 *translation, SnakeQuat *rotation);
 
 int32_t snake_retarget_held_weapon(const SnakeRetarget *r, const SnakePlayer *p, SnakeVec3 *translation,
                                    SnakeQuat *rotation);

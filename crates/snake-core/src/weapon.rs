@@ -223,12 +223,44 @@ fn index_in(seq: &[f32], v: f32) -> f32 {
     (seq.len() - 1) as f32
 }
 
+/// Reload motion events (`StrCode32` names not resolved; identified by the
+/// hands: the left hand pulls the magazine away at `MAGAZINE_OUT` and is
+/// back at the magazine well at `MAGAZINE_IN`, in every TPP reload clip).
+pub const EVENT_MAGAZINE_OUT: u32 = 0xec0d_deb1;
+pub const EVENT_MAGAZINE_IN: u32 = 0xffe0_d53a;
+
+/// A weapon's reload clips: stand and crouch, for a magazine with rounds
+/// left (a quick change) and an empty one (with the bolt or slide). Prone
+/// and missing entries fall back to the standing clip.
+#[derive(Clone, Debug, Default)]
+pub struct ReloadSet {
+    pub partial: [Option<String>; 2],
+    pub empty: [Option<String>; 2],
+}
+
+/// Names of a weapon's reload clips (see [`ReloadSet`]).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ReloadNames<'a> {
+    pub partial: [Option<&'a str>; 2],
+    pub empty: [Option<&'a str>; 2],
+}
+
+/// Where the magazine sits: the gun's `CNP_AMMO` (in the gun frame), and
+/// the bone that carries it out during a reload (Snake's left hand).
+#[derive(Clone, Copy, Debug)]
+pub struct MagazineRig {
+    pub cnp: (Quat, Vec3),
+    pub left_hand_bone: usize,
+}
+
 /// Clips and attachment for one weapon on Snake's rig.
 #[derive(Clone, Debug)]
 pub struct WeaponRig {
     /// Aim grids for stand, crouch and prone (prone may be missing).
     pub grids: [Option<AimGrid>; 3],
-    pub reload: String,
+    pub reload: ReloadSet,
+    /// The magazine, if the weapon has a separate one.
+    pub magazine: Option<MagazineRig>,
     /// Played on the upper body for each shot (recoil / cycling), if any.
     pub fire: Option<String>,
     /// Skeleton bone the gun hangs from and the body's connection point on it.
@@ -245,7 +277,7 @@ pub struct WeaponRig {
 pub struct WeaponClips<'a> {
     /// Stand, crouch and prone aim grids.
     pub grids: [Option<&'a str>; 3],
-    pub reload: &'a str,
+    pub reload: ReloadNames<'a>,
     pub fire: Option<&'a str>,
 }
 
@@ -273,7 +305,11 @@ impl WeaponRig {
         let hand_to_gun = (centre.rotations[hand_bone] * hand_offset.0).inverse();
         let mut this = Self {
             grids: [None, None, None],
-            reload: names.reload.to_string(),
+            reload: ReloadSet {
+                partial: names.reload.partial.map(|n| n.map(str::to_string)),
+                empty: names.reload.empty.map(|n| n.map(str::to_string)),
+            },
+            magazine: None,
             fire: names.fire.map(str::to_string),
             hand_bone,
             hand_offset,

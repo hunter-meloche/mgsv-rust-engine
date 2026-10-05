@@ -106,6 +106,7 @@ struct SnakeApi {
     decltype(&snake_weapon_name) weapon_name = nullptr;
     decltype(&snake_weapon_magazine_mesh) weapon_magazine_mesh = nullptr;
     decltype(&snake_player_set_unlimited_magazines) player_set_unlimited_magazines = nullptr;
+    decltype(&snake_player_set_tempo) player_set_tempo = nullptr;
     decltype(&snake_player_clip) player_clip = nullptr;
     decltype(&snake_retarget_magazine_place) retarget_magazine_place = nullptr;
     decltype(&snake_player_new) player_new = nullptr;
@@ -148,6 +149,7 @@ bool LoadSnakeDll() {
     RESOLVE(weapon_name, "snake_weapon_name");
     RESOLVE(weapon_magazine_mesh, "snake_weapon_magazine_mesh");
     RESOLVE(player_set_unlimited_magazines, "snake_player_set_unlimited_magazines");
+    RESOLVE(player_set_tempo, "snake_player_set_tempo");
     RESOLVE(player_clip, "snake_player_clip");
     RESOLVE(retarget_magazine_place, "snake_retarget_magazine_place");
     RESOLVE(player_new, "snake_player_new");
@@ -188,6 +190,11 @@ bool OpenRuntime() {
     int unlimited = GetPrivateProfileIntW(L"Snake", L"UnlimitedMagazines", 1, ini.c_str());
     g_snake.player_set_unlimited_magazines(g_player, unlimited);
     Log("magazines: %s", unlimited ? "unlimited" : "from the reserve");
+    // snake.ini MoveSpeedScale (percent, default 150): the tempo of all of
+    // Snake's motion; moving, turning, stances and reloads speed up together.
+    float tempo = GetPrivateProfileIntW(L"Snake", L"MoveSpeedScale", 150, ini.c_str()) / 100.0f;
+    g_snake.player_set_tempo(g_player, tempo);
+    Log("tempo: %.0f%% of MGSV's", tempo * 100.0f);
     // Plugins live in <Skyrim>/Data/SKSE/Plugins.
     std::string skyrim = Narrow(Parent(Parent(Parent(PluginDir()))));
     g_retarget = g_snake.retarget_new(g_runtime, skyrim.c_str());
@@ -1663,8 +1670,6 @@ void SnakeThread() {
     // Skyrim ground speed at SpeedMult 100 per gait (walk, run, sprint; m/s):
     // run measured in game, the others first guesses, all refined in play.
     float skyBase[3] = {1.6f, 5.0f, 7.0f};
-    // snake.ini MoveSpeedScale (percent): 100 = MGSV's own speeds.
-    const float moveScale = IniInt(L"MoveSpeedScale", 100) / 100.0f;
     float snakeSpeedOf[12] = {};  // Snake's steady speed per stance x gait (0: not seen yet)
     int lastState = -1;
     uint32_t lastDir = 0;
@@ -1960,7 +1965,7 @@ void SnakeThread() {
                     // which reads as idle): keep the current value rather
                     // than jumping back to the player's own speed.
                     if (moving && target <= 0.1f) holdSpeed = true;
-                    float want = target > 0.1f ? 100.0f * moveScale * target / skyBase[sg] : g_baseSpeedMult.load();
+                    float want = target > 0.1f ? 100.0f * target / skyBase[sg] : g_baseSpeedMult.load();
                     // Skyrim will not start moving (or turn round) from a
                     // standstill below roughly SpeedMult 20, though it keeps
                     // moving at 15 (the prone crawl), so the idle preset

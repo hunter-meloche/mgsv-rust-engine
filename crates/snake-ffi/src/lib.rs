@@ -595,6 +595,16 @@ pub unsafe extern "C" fn snake_player_set_unlimited_magazines(p: *mut SnakePlaye
     }
 }
 
+/// Tempo of all of Snake's motion (1 = MGSV's; 1.5 = half again as fast,
+/// reloads included; the fire rate is unchanged).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_player_set_tempo(p: *mut SnakePlayer, tempo: f32) {
+    // SAFETY: valid pointer or null.
+    if let Some(p) = unsafe { p.as_mut() } {
+        p.controller.tempo = tempo.clamp(0.1, 4.0);
+    }
+}
+
 /// Where weapon `weapon`'s magazine goes this frame, like
 /// [`snake_retarget_weapon_place`]: 1 = relative to "NPC R Hand [RHnd]"
 /// (in the gun, or in Snake's left hand during a reload), 2 = relative to

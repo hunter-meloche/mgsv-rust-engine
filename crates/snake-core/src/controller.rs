@@ -371,6 +371,10 @@ pub struct Controller {
     ready_weight: f32,
     /// Reloads never use up the reserve.
     pub unlimited_magazines: bool,
+    /// Tempo of all of Snake's motion: 1.5 plays every animation (and so
+    /// moves, turns, changes stance, raises the gun and reloads) half again
+    /// as fast. The fire rate stays the weapon's rounds per minute.
+    pub tempo: f32,
     /// The current weapon's magazine (root space) and whether it is in the
     /// left hand; see [`Controller::track_magazine`].
     magazine: Option<(Quat, Vec3, bool)>,
@@ -405,6 +409,7 @@ impl Controller {
             pending_shots: 0,
             ready_weight: 0.0,
             unlimited_magazines: false,
+            tempo: 1.0,
             magazine: None,
         })
     }
@@ -522,6 +527,7 @@ impl Controller {
         dt: f32,
         input: &Input,
     ) {
+        let dt = dt * self.tempo;
         // Desired movement in world space. Fox space: Y up, a heading of 0
         // faces +Z, and the right-hand side of that heading is -X.
         let (s, c) = input.camera_yaw.sin_cos();
@@ -783,10 +789,12 @@ impl Controller {
         let mut kick = 0.0;
         let unlimited = self.unlimited_magazines;
         let stance = self.stance;
+        // Real seconds: the tempo does not change the fire rate.
+        let real_dt = dt / self.tempo.max(0.01);
         // The weapon comes up before the reload motion starts.
         let raised = self.aim_weight.max(self.ready_weight) > 0.9;
         if let Some(w) = self.weapon_mut() {
-            w.cooldown -= dt;
+            w.cooldown -= real_dt;
             if let Some(t) = w.firing.as_mut() {
                 *t += dt;
                 let len = w

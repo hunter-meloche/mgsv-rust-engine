@@ -165,9 +165,14 @@ player's controller is changed (the vtable is shared). Measured in game
 follows Snake's through the start (0 -> 0.6 -> 1.0 -> 1.8 -> 2.35 m/s), the
 stop and every stance, within about 0.05 m/s. If the controller is not found,
 the earlier SpeedMult matching takes over (Skyrim's run measured at 5.0 m/s,
-SpeedMult = 100 x Snake's speed / Skyrim's, `MoveSpeedScale` in snake.ini);
+SpeedMult = 100 x Snake's speed / Skyrim's);
 `drive=0` in the control file forces it. The player's own SpeedMult is left
-alone while driving. Facing: Snake decides where he faces, as in MGSV: without aiming he turns
+alone while driving. Tempo: `MoveSpeedScale` in snake.ini (percent, default 150) sets the
+tempo of all of Snake's motion: his controller advances by 1.5 x the real
+time step, so every animation plays half again as fast, and through root
+motion he moves 1.5x as fast (run 3.5 m/s). Turns, stance changes, raising
+the gun and reloads speed up with it. The fire rate stays the weapon's
+rounds per minute. 100 is MGSV's own tempo. Facing: Snake decides where he faces, as in MGSV: without aiming he turns
 toward camera heading + stick direction (his own turn rate and turn clips)
 and runs that way; aiming, he turns to the camera and the stick strafes.
 Skyrim's actor heading is left alone, because its third-person camera keeps

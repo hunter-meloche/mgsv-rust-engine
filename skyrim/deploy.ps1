@@ -30,9 +30,10 @@ MgsvDir=$mgsv
 DictionariesDir=$(Join-Path $repo "dictionaries")
 ; Damage of each bullet (Skyrim scale: a Hunting Bow does 7, a Daedric Bow 19).
 BulletDamage=48
-; Snake's movement speed in percent of MGSV's (run 2.35 m/s, crouch 1.6,
-; crawl 0.7); Skyrim's own run is about 5 m/s.
-MoveSpeedScale=100
+; Tempo of all of Snake's motion in percent of MGSV's: animations, and so
+; his speed (MGSV: run 2.35 m/s, crouch 1.6, crawl 0.7), turns, stance
+; changes and reloads. The fire rate is unchanged.
+MoveSpeedScale=150
 ; Gunshot volume in percent.
 ShotVolume=70
 ; Over-the-shoulder aim camera in Snake mode, as in MGSV (Skyrim's

@@ -117,6 +117,9 @@ void snake_player_status(const SnakePlayer *p, SnakeStatus *out);
 uint32_t snake_player_clip(const SnakePlayer *p, char *buf, uint32_t len);
 /* Unlimited magazines: reloads never use up the reserve. */
 void snake_player_set_unlimited_magazines(SnakePlayer *p, int32_t on);
+/* Tempo of all of Snake's motion (1 = MGSV's; 1.5 = half again as fast,
+ * reloads included; the fire rate is unchanged). */
+void snake_player_set_tempo(SnakePlayer *p, float tempo);
 
 /* Retargeting onto Skyrim's character skeleton (read from the Skyrim
  * install's BSAs). Output bones are in parent-first order. */

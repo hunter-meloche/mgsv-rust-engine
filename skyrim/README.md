@@ -85,17 +85,20 @@ Snake's body: `mgsv skyrim-export` also writes `meshes\snake\snake_body.nif`
 (body, face and bionic arm, 54 shapes) as a Skyrim SE skinned mesh in the
 layout of the vanilla body meshes (vertex-less BSTriShape,
 BSDismemberSkinInstance, NiSkinData, NiSkinPartition holding the vertices).
-It is bound to the 22 core skeleton bones the in-game third-person skeleton
-has; every Snake bone maps through the retarget table (fingers and twists
-fold into their parents). The retarget now also places every joint Snake
+It is bound to the 20 core skeleton bones the in-game third-person skeleton
+has; every Snake bone maps through the retarget table (fingers, toes and
+twists fold into their parents). The retarget now also places every joint Snake
 drives where Snake's is, so the skeleton takes his proportions and the
 mesh needs no joint fix-ups: `mgsv skyrim-body-check` skins the export with
 the retargeted skeleton over a scripted run and compares with Snake's own
 skinning, 0.2-0.4 cm mean error (max ~14 cm at the hands, whose fingers the
 third-person skeleton cannot move). The plugin loads it, points each skin
-instance's bones at the live skeleton and attaches it to the player's 3D
-root; in Snake mode it is shown and Skyrim's body, armour and head hidden
-(control `body=0` keeps Skyrim's).
+instance's bones at the live skeleton (the bone count comes from the skin
+data, +0x58: `numMatrices` stays 0 until the shape has rendered) and
+attaches it to the player's 3D root; in Snake mode it is shown and Skyrim's
+body, armour and head hidden (control `body=0` keeps Skyrim's). Verified in
+game standing, aiming, running, crouched and prone, and Skyrim's own body
+comes back when Snake mode ends. First person still shows Skyrim's arms.
 
 Movement speed: Skyrim's character controller still moves the player
 (collision, slopes, stairs) but at Snake's speed. Snake's controller runs

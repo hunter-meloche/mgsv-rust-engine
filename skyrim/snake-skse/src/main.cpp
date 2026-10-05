@@ -1657,7 +1657,16 @@ int RebindSkin(void* node, void* skeleton, void* rootParent) {
     if (void* geom = AsGeometry(node)) {
         void* skin = At<void*>(geom, kGeomSkinInstance);
         if (skin && Readable(skin, 0x40)) {
+            // numMatrices is only filled in once the shape renders; the
+            // skin data (+0x10) holds the bone count at +0x58 (after its
+            // root-to-skin transform and bone data pointer).
             uint32_t n = At<uint32_t>(skin, kSkinBoneCount);
+            void* data = At<void*>(skin, 0x10);
+            if (!n && data && Readable(data, 0x60)) n = At<uint32_t>(data, 0x58);
+            if (n > 64) {
+                Log("body: implausible bone count %u; skin left as loaded", n);
+                n = 0;
+            }
             void** bones = At<void**>(skin, kSkinBones);
             void** worlds = At<void**>(skin, kSkinBoneWorlds);
             for (uint32_t i = 0; i < n && bones && worlds && i < 64; ++i) {
@@ -1728,7 +1737,7 @@ void ShowBody(void* root, bool snake) {
         ForEachChild(root, [&](void* c) {
             if (c == body) return;
             const char* name = Name(c);
-            if (name && strcmp(name, "NPC Root [Root]") == 0) return;
+            if (name && (strcmp(name, "NPC") == 0 || strcmp(name, "NPC Root [Root]") == 0)) return;
             if (!(At<uint32_t>(c, 0xF4) & 1u)) {
                 SetHidden(c, true);
                 g_bodyHidden.push_back(c);

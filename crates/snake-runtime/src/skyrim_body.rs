@@ -31,8 +31,9 @@ const UNITS_PER_METER: f32 = 70.0;
 pub const BODY_MESH: &str = r"snake\snake_body.nif";
 
 /// Skyrim bones the body may be skinned to: the ones the in-game
-/// third-person skeleton has (and the plugin poses).
-const CORE_BONES: [&str; 22] = [
+/// third-person skeleton has (and the plugin poses). The toes are not in it
+/// at runtime, so Snake's toes fold into the feet.
+const CORE_BONES: [&str; 20] = [
     "NPC Pelvis [Pelv]",
     "NPC Spine [Spn0]",
     "NPC Spine1 [Spn1]",
@@ -50,11 +51,9 @@ const CORE_BONES: [&str; 22] = [
     "NPC L Thigh [LThg]",
     "NPC L Calf [LClf]",
     "NPC L Foot [Lft ]",
-    "NPC L Toe0 [LToe]",
     "NPC R Thigh [RThg]",
     "NPC R Calf [RClf]",
     "NPC R Foot [Rft ]",
-    "NPC R Toe0 [RToe]",
 ];
 
 /// Snake's body bound to the Skyrim skeleton.

@@ -106,7 +106,7 @@ impl<'a> SoundBank<'a> {
     }
 
     /// Sound `id` decoded, if it is stored as 16-bit PCM (most TPP sound
-    /// effects are; ADPCM and Vorbis ones are not supported).
+    /// effects are) or Wwise IMA ADPCM; Vorbis ones are not supported.
     pub fn pcm(&self, id: u32) -> Result<Pcm, SbpError> {
         let w = self.wem(id)?;
         let bad = |m: &str| SbpError::Format(id, m.to_string());
@@ -118,12 +118,21 @@ impl<'a> SoundBank<'a> {
         let channels = u16_at(w, fmt + 10).ok_or_else(|| bad("short fmt"))?;
         let sample_rate = u32_at(w, fmt + 12).ok_or_else(|| bad("short fmt"))?;
         let bits = u16_at(w, fmt + 22).ok_or_else(|| bad("short fmt"))?;
-        if !(tag == 1 || tag == 0xFFFE) || bits != 16 {
-            return Err(bad(&format!("codec {tag:#x}/{bits} bit is not 16-bit PCM")));
+        let adpcm = tag == 2 && bits == 4;
+        if !((tag == 1 || tag == 0xFFFE) && bits == 16) && !adpcm {
+            return Err(bad(&format!("codec {tag:#x}/{bits} bit is not 16-bit PCM or IMA ADPCM")));
         }
         let data = find(w, b"data", fmt).ok_or_else(|| bad("no data chunk"))?;
         let len = u32_at(w, data + 4).ok_or_else(|| bad("short data"))? as usize;
         let bytes = w.get(data + 8..data + 8 + len).ok_or_else(|| bad("truncated data"))?;
+        if adpcm {
+            let block = u16_at(w, fmt + 20).ok_or_else(|| bad("short fmt"))? as usize;
+            return Ok(Pcm {
+                channels,
+                sample_rate,
+                samples: decode_wwise_ima(bytes, channels.max(1) as usize, block),
+            });
+        }
         Ok(Pcm {
             channels,
             sample_rate,
@@ -135,9 +144,71 @@ impl<'a> SoundBank<'a> {
     }
 }
 
+const IMA_STEPS: [i32; 89] = [
+    7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107,
+    118, 130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963,
+    1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894,
+    6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794,
+    32767,
+];
+const IMA_INDEX: [i32; 8] = [-1, -1, -1, -1, 2, 4, 6, 8];
+
+/// Wwise IMA ADPCM: blocks of `block` bytes holding one sub-block per
+/// channel (`block / channels` bytes: i16 history sample, u8 step index,
+/// u8 padding, then 4-bit codes low nibble first), 64 samples each. The
+/// header sample only seeds the predictor.
+fn decode_wwise_ima(bytes: &[u8], channels: usize, block: usize) -> Vec<i16> {
+    let sub = block / channels;
+    if sub <= 4 {
+        return Vec::new();
+    }
+    let per_block = (sub - 4) * 2;
+    let mut out = Vec::new();
+    for frame in bytes.chunks_exact(block) {
+        let mut decoded = vec![0i16; per_block * channels];
+        for ch in 0..channels {
+            let b = &frame[ch * sub..(ch + 1) * sub];
+            let mut sample = i16::from_le_bytes([b[0], b[1]]) as i32;
+            let mut index = (b[2] as i32).clamp(0, 88);
+            for (k, byte) in b[4..].iter().enumerate() {
+                for (half, code) in [byte & 0x0F, byte >> 4].into_iter().enumerate() {
+                    let step = IMA_STEPS[index as usize];
+                    let mut diff = step >> 3;
+                    if code & 1 != 0 {
+                        diff += step >> 2;
+                    }
+                    if code & 2 != 0 {
+                        diff += step >> 1;
+                    }
+                    if code & 4 != 0 {
+                        diff += step;
+                    }
+                    sample = if code & 8 != 0 { sample - diff } else { sample + diff }.clamp(-32768, 32767);
+                    index = (index + IMA_INDEX[(code & 7) as usize]).clamp(0, 88);
+                    decoded[(k * 2 + half) * channels + ch] = sample as i16;
+                }
+            }
+        }
+        out.extend_from_slice(&decoded);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ima_block_decodes_64_samples() {
+        // One mono block: history 0, step index 0, codes 0x7 (largest
+        // positive step) then 0xF (largest negative).
+        let mut block = vec![0u8, 0, 0, 0];
+        block.extend(std::iter::repeat(0xF7).take(32));
+        let out = decode_wwise_ima(&block, 1, 36);
+        assert_eq!(out.len(), 64);
+        assert!(out[0] > 0, "first code steps up: {}", out[0]);
+        assert!(out[1] < out[0], "second code steps down");
+    }
 
     #[test]
     fn wav_round_trip_header() {

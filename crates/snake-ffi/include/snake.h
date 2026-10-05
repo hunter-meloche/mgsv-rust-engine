@@ -67,6 +67,7 @@ typedef struct {
     int32_t magazine;
     float reload_progress;
     int32_t unlimited;
+    float head_height; /* Snake's head above his feet (m) */
 } SnakeStatus;
 
 /* Last error on this thread (empty string if none). */

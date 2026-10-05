@@ -392,6 +392,35 @@ private:
     std::string label_;
 };
 
+float SafeGetAv(void* actor, uint32_t av);
+
+// Diagnostics: camera nodes in a 3D tree (name, parent, local position).
+void LogCameraNodes(void* obj, const char* view, int depth) {
+    if (!obj || depth > 40 || !Readable(obj, 0x140)) return;
+    const char* n = Name(obj);
+    if (n && Readable(n, 1) && (strstr(n, "Cam") || strstr(n, "cam"))) {
+        void* parent = At<void*>(obj, kParent);
+        const float* lp = &At<float>(obj, kLocalPos);
+        const float* wp = &At<float>(obj, kWorldPos);
+        Log("probe %s: node %s (parent %s) local %.1f %.1f %.1f world z %.1f", view, n,
+            parent && Name(parent) ? Name(parent) : "?", lp[0], lp[1], lp[2], wp[2]);
+    }
+    if (void* node = AsNode(obj)) ForEachChild(node, [&](void* c) { LogCameraNodes(c, view, depth + 1); });
+}
+
+class CameraProbeTask : public TaskDelegate {
+public:
+    void Run() override {
+        void* player = ThePlayer();
+        if (!player) return;
+        for (uint32_t av = 13; av <= 17; ++av) Log("probe: actor value %u = %.1f", av, SafeGetAv(player, av));
+        LogCameraNodes(Get3D(player, false), "3rd", 0);
+        LogCameraNodes(Get3D(player, true), "1st", 0);
+        Log("probe: player z %.1f", At<float>(player, kRefPosition + 8));
+    }
+    void Dispose() override { delete this; }
+};
+
 class ProbeTask : public TaskDelegate {
 public:
     void Run() override {
@@ -1166,6 +1195,8 @@ std::atomic<bool> g_enabled{false};
 std::atomic<int> g_mode{2};  // 0 compute only, 1 local transforms, 2 local + world (default)
 std::atomic<float> g_speed{0.0f};  // player speed (m/s), measured by the hook
 std::atomic<int> g_snakeStance{0};  // Snake's stance (0 stand, 1 crouch, 2 prone)
+std::atomic<int> g_wantSneak{-1};   // Skyrim's sneak flag to keep (-1: leave it alone)
+std::atomic<float> g_cameraDrop{0.0f};  // camera lowered by (game units) for Snake's head height
 std::atomic<float> g_moveForward{0.0f}, g_moveRight{0.0f};  // the same in the actor's frame (m/s)
 // Actor::ActorState::actorState1: the ActorState base is at actor + 0xC0 on
 // this runtime (vtable there, verified in game), flags follow at + 0xC8.
@@ -1472,6 +1503,55 @@ void UpdateDrive(void* player, float forward, float right) {
     g_driving = cc != nullptr;
 }
 
+// ---- crawling: Sneak bonus ----------------------------------------------------------
+//
+// Prone, Snake gets a hidden Sneak bonus (snake.ini CrawlSneakBonus, default
+// +20: MGSV keeps its stance camouflage values in code, not data, so the
+// requested fallback). It is an actor value modifier (Sneak = actor value
+// 15, checked in game), added on the main thread, taken off when he gets
+// up or Snake mode ends, and taken off before every save so it never ends
+// up in one.
+
+constexpr uint32_t kAvSneak = 15;
+std::atomic<bool> g_crawlBonusWanted{false};
+bool g_crawlBonusApplied = false;  // main thread
+std::atomic<bool> g_crawlBonusQueued{false};
+
+bool SafeModAv(void* actor, uint32_t av, float delta) {
+    __try {
+        void* owner = reinterpret_cast<char*>(actor) + kActorValueOwner;
+        using ModFn = void (*)(void*, uint32_t, float);
+        reinterpret_cast<ModFn>(Vtable(owner)[5])(owner, av, delta);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+void ApplyCrawlBonus(bool on) {
+    void* player = ThePlayer();
+    if (!player || on == g_crawlBonusApplied) return;
+    float bonus = static_cast<float>(IniInt(L"CrawlSneakBonus", 20));
+    if (SafeModAv(player, kAvSneak, on ? bonus : -bonus)) {
+        g_crawlBonusApplied = on;
+        Log("crawling: Sneak %+.0f (now %.0f)", on ? bonus : -bonus, SafeGetAv(player, kAvSneak));
+    }
+}
+
+class CrawlBonusTask : public TaskDelegate {
+public:
+    void Run() override {
+        g_crawlBonusQueued = false;
+        ApplyCrawlBonus(g_crawlBonusWanted);
+    }
+    void Dispose() override { delete this; }
+};
+
+void RequestCrawlBonus(bool on) {
+    g_crawlBonusWanted = on;
+    if (on != g_crawlBonusApplied && g_tasks && !g_crawlBonusQueued.exchange(true)) g_tasks->AddTask(new CrawlBonusTask());
+}
+
 // ---- aim camera -------------------------------------------------------------------
 //
 // MGSV aims over Snake's right shoulder. Skyrim's over-the-shoulder offsets
@@ -1556,13 +1636,21 @@ void ApplyAimCamera(bool snake) {
 void SnakeThread() {
     // Crouch follows Skyrim's sneak; X toggles prone (C is Skyrim's
     // auto-move, Z its shout key).
-    Key f8{VK_F8}, f9{VK_F10}, x{'X'};
+    Key f8{VK_F8}, f9{VK_F10};
     // 1 / 2 switch Snake's weapon (MRS-4 / WU S.Pistol), as in MGSV's
     // primary/secondary slots.
     Key weaponKeys[2] = {{'1'}, {'2'}};
     // R reloads, as in MGSV (Skyrim's ready-weapon on R is off in Snake mode).
     Key reloadKey{'R'};
-    bool proneToggled = false;
+    // Stance from Ctrl (Skyrim's sneak key), as in MGSV: a tap goes up one
+    // stance (prone -> crouch, crouch <-> stand); holding goes prone, or
+    // from prone stands up. Skyrim's own sneak toggle is off in Snake mode
+    // and its sneak flag follows Snake (crouched or prone = sneaking).
+    int wantStance = -1;  // -1: take Skyrim's sneak state when Snake mode starts
+    double ctrlHeld = -1;  // seconds Ctrl has been down (-1: up)
+    bool ctrlHoldDone = false;
+    constexpr double kHoldSeconds = 0.35;
+    float standHead = 1.6f;  // Snake's standing head height (m), learned
     double sinceAim = 10.0;  // seconds since Snake last aimed
     float snakeAvg = 0, skyAvg = 0;  // smoothed ground speeds (m/s): Snake's, Skyrim's
     double speedTimer = 0, movingTime = 0;
@@ -1606,6 +1694,11 @@ void SnakeThread() {
         }
         ApplyAimCamera(g_enabled);
         if (!g_enabled) {
+            // Skyrim's own sneak toggle, camera and Sneak again.
+            wantStance = -1;
+            g_wantSneak = -1;
+            g_cameraDrop = 0.0f;
+            RequestCrawlBonus(false);
             // Give the player their own speed back.
             float base = g_baseSpeedMult;
             if (base > 0 && g_speedMult > 0 && std::fabs(g_speedMult - base) > 0.01f) RequestSpeedMult(base);
@@ -1654,22 +1747,46 @@ void SnakeThread() {
         // when not speed matching).
         if (sprint || (!matching && !walkFlag && !runFlag && speed > 5.5f)) in.sprint = true;
         else if (walkFlag || (!matching && !runFlag && speed < 2.6f)) in.walk = true;
-        // Stance: X toggles prone; otherwise crouch while Skyrim sneaks.
-        if (x.Pressed(focused)) {
-            proneToggled = !proneToggled;
-            Log("prone %s", proneToggled ? "on" : "off");
+        if (wantStance < 0) wantStance = sneaking ? 1 : 0;
+        bool ctrlDown = focused && (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+        if (ctrlDown) {
+            if (ctrlHeld < 0) {
+                ctrlHeld = 0;
+                ctrlHoldDone = false;
+            } else {
+                ctrlHeld += dt;
+            }
+            if (!ctrlHoldDone && ctrlHeld >= kHoldSeconds) {
+                ctrlHoldDone = true;
+                wantStance = cur.stance == 2 ? 0 : 2;
+                Log("stance: Ctrl held -> %s", wantStance == 2 ? "prone" : "stand");
+            }
+        } else if (ctrlHeld >= 0) {
+            if (!ctrlHoldDone) {
+                wantStance = cur.stance == 2 ? 1 : cur.stance == 1 ? 0 : 1;
+                Log("stance: Ctrl tapped -> %s", wantStance == 1 ? "crouch" : "stand");
+            }
+            ctrlHeld = -1;
         }
-        int want = proneToggled ? 2 : sneaking ? 1 : 0;
-        // A stance from the control file is a one-off request: once reached,
-        // X and Skyrim's sneak decide again.
-        if (g_control.stance == "stand") want = 0;
-        else if (g_control.stance == "crouch") want = 1;
-        else if (g_control.stance == "prone") want = 2;
-        if (!g_control.stance.empty() && want == cur.stance) {
-            g_control.stance.clear();
-            proneToggled = want == 2;
+        // The control file's stance is a one-off request.
+        if (g_control.stance == "stand") wantStance = 0;
+        else if (g_control.stance == "crouch") wantStance = 1;
+        else if (g_control.stance == "prone") wantStance = 2;
+        g_control.stance.clear();
+        int want = wantStance;
+        g_snakeStance = want;
+        RequestCrawlBonus(cur.stance == 2);
+        g_wantSneak = want >= 1 ? 1 : 0;
+        // Camera follows Snake's head down (crouched, prone), smoothed.
+        {
+            SnakeStatus hs{};
+            g_snake.player_status(g_player, &hs);
+            if (hs.stance == 0 && hs.gait == 0 && !hs.aiming && hs.head_height > 1.0f)
+                standHead += (hs.head_height - standHead) * 0.02f;
+            float target = (std::min)(0.0f, (hs.head_height - standHead) * 70.0f);
+            float k = 1.0f - std::exp(-static_cast<float>(dt) / 0.15f);
+            g_cameraDrop = g_cameraDrop + (target - g_cameraDrop) * k;
         }
-        g_snakeStance = cur.stance;
         if (want != cur.stance) {
             if (want == 2) in.prone = true;                         // stand/crouch -> prone
             else if (cur.stance == 2) (want == 1 ? in.crouch : in.prone) = true;  // prone -> crouch / stand
@@ -1823,6 +1940,10 @@ void SnakeThread() {
             if (g_control.probe == 1 && g_tasks) {
                 g_control.probe = 0;
                 g_tasks->AddTask(new ProbeTask());
+            }
+            if (g_control.probe == 5 && g_tasks) {
+                g_control.probe = 0;
+                g_tasks->AddTask(new CameraProbeTask());
             }
             if (g_control.probe == 4) {  // PlayerControls floats (the movement input vector)
                 g_control.probe = 0;
@@ -2387,6 +2508,8 @@ bool IsArmBone(const std::string& n) {
     return false;
 }
 
+void PlaceCameras(void* player, float drop);
+
 void ApplySnake(void* player, float delta) {
     void* root = Get3D(player, false);
     if (!root) return;
@@ -2434,6 +2557,13 @@ void ApplySnake(void* player, float delta) {
         g_moveRight = (dx * std::cos(h) - dy * std::sin(h)) / delta / 70.0f;
     }
     {
+        // Skyrim's sneak flag (bit 9) follows Snake's stance.
+        int sneak = g_wantSneak;
+        if (sneak >= 0) {
+            uint32_t& state = At<uint32_t>(player, kActorState1);
+            state = (state & ~(1u << 9)) | (static_cast<uint32_t>(sneak) << 9);
+        }
+        PlaceCameras(player, g_cameraDrop);
         g_actorFlags = At<uint32_t>(player, kActorState1);
         // Aim pitch follows the camera (positive looks down), else the actor.
         float cam[3], dir[3];
@@ -2504,7 +2634,8 @@ void ApplySnake(void* player, float delta) {
                 // Two-handed pistol aim holds the gun at eye level, so in
                 // first person the hands would cover the crosshair: lower the
                 // shoulders (world -Z) for the pistol; the aim direction is kept.
-                float dropBy = g_hookGunPlace[1] == 1 ? kFirstPersonPistolDrop / At<float>(parent, kWorldScale) : 0.0f;
+                float dropBy = (g_hookGunPlace[1] == 1 ? kFirstPersonPistolDrop : 0.0f) - g_cameraDrop;
+                dropBy /= At<float>(parent, kWorldScale);
                 float drop[3] = {0, 0, -dropBy}, local[3];
                 float* lp = &At<float>(node, kLocalPos);
                 for (int a = 0; a < 3; ++a)  // local = pw^T drop
@@ -2534,12 +2665,58 @@ bool SafeApply(void* self, float delta) {
     }
 }
 
+// Camera nodes: Skyrim's third-person camera follows "Camera3rd [Cam3]"
+// (a root child, 121 units up) and the first-person one "Camera1st
+// [Cam1]" (under the first-person NPC Root, 120.5 up). In Snake mode both
+// are lowered with Snake's head (crouched, prone); their own heights come
+// back when it ends.
+struct CameraNode {
+    void* root = nullptr;
+    void* node = nullptr;
+    float baseZ = 0;
+};
+CameraNode g_cameraNodes[2];  // third person, first person
+
+void PlaceCameras(void* player, float drop) {
+    const char* names[2] = {"Camera3rd [Cam3]", "Camera1st [Cam1]"};
+    for (int v = 0; v < 2; ++v) {
+        CameraNode& c = g_cameraNodes[v];
+        void* root = Get3D(player, v == 1);
+        if (root != c.root) {
+            c = CameraNode{};
+            c.root = root;
+            c.node = root ? FindNode(root, names[v]) : nullptr;
+            if (c.node) c.baseZ = At<float>(c.node, kLocalPos + 8);
+        }
+        if (c.node) At<float>(c.node, kLocalPos + 8) = c.baseZ + drop;
+    }
+}
+
+void RestoreCameras() {
+    for (CameraNode& c : g_cameraNodes)
+        if (c.node) At<float>(c.node, kLocalPos + 8) = c.baseZ;
+}
+
+bool g_camerasLowered = false;  // hook thread
+
+void SafeRestoreCameras() {
+    __try {
+        RestoreCameras();
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+}
+
 void HookedUpdateAnimation(void* self, float delta) {
     g_originalUpdateAnimation(self, delta);
     g_hookCalls.fetch_add(1, std::memory_order_relaxed);
     g_playerFrames.fetch_add(1, std::memory_order_relaxed);
     if (!g_enabled || !g_retarget || self != ThePlayer()) {
         g_havePos = false;
+        if (self == ThePlayer() && g_camerasLowered) {
+            g_camerasLowered = false;
+            SafeRestoreCameras();
+        }
+
         if (self == ThePlayer() && (g_weaponNodes[0].hidden || g_weaponNodes[1].hidden)) {
             std::unique_lock<std::mutex> lock(g_hookMutex, std::try_to_lock);
             if (lock.owns_lock()) {
@@ -2557,6 +2734,7 @@ void HookedUpdateAnimation(void* self, float delta) {
         }
         return;
     }
+    g_camerasLowered = true;
     std::unique_lock<std::mutex> lock(g_hookMutex, std::try_to_lock);
     if (!lock.owns_lock()) return;
     static bool hideFailed = false;
@@ -2604,6 +2782,13 @@ CanProcessFn g_originalAttackCanProcess = nullptr;
 CanProcessFn g_originalReadyCanProcess = nullptr;
 // Jumping: off while Snake is crouched or prone (MGSV has no jump there).
 CanProcessFn g_originalJumpCanProcess = nullptr;
+// Sneaking: Snake's stance decides (Ctrl is read by the Snake thread).
+CanProcessFn g_originalSneakCanProcess = nullptr;
+
+bool HookedSneakCanProcess(void* self, void* event) {
+    if (g_enabled) return false;
+    return g_originalSneakCanProcess(self, event);
+}
 
 bool HookedJumpCanProcess(void* self, void* event) {
     if (g_enabled && g_snakeStance != 0) return false;
@@ -2657,6 +2842,14 @@ void HookReadyWeapon(void* attackHandler) {
         Log("hooked %s::CanProcess: no jumping while Snake is crouched or prone", jumpName);
     else
         Log("jump: handler not found (slot %d holds %s)", slot - 2, jumpName ? jumpName : "?");
+    // The sneak handler two slots after it.
+    void* sneak = At<void*>(controls, (slot + 2) * 8);
+    const char* sneakName = sneak ? RttiName(sneak) : nullptr;
+    if (sneakName && strstr(sneakName, "Sneak") &&
+        HookCanProcess(sneak, reinterpret_cast<void*>(&HookedSneakCanProcess), g_originalSneakCanProcess))
+        Log("hooked %s::CanProcess: Ctrl sets Snake's stance in Snake mode", sneakName);
+    else
+        Log("sneak: handler not found (slot %d holds %s)", slot + 2, sneakName ? sneakName : "?");
 }
 
 bool HookedAttackCanProcess(void* self, void* event) {
@@ -2681,6 +2874,8 @@ void OnMessage(SKSEMessagingInterface::Message* msg) {
     // SpeedMult: never save Snake's value into the player's save, and re-read
     // the player's own value after a load or new game.
     if (msg->type == SKSEMessagingInterface::kMessage_SaveGame) {
+        // Never save the crawl bonus (re-applied by the next tick).
+        ApplyCrawlBonus(false);
         void* player = ThePlayer();
         float base = g_baseSpeedMult;
         if (player && base > 0 && g_speedMult > 0 && std::fabs(g_speedMult - base) > 0.01f &&
@@ -2692,6 +2887,7 @@ void OnMessage(SKSEMessagingInterface::Message* msg) {
         msg->type == SKSEMessagingInterface::kMessage_NewGame) {
         g_baseSpeedMult = -1.0f;
         g_speedMult = -1.0f;
+        g_crawlBonusApplied = false;  // a save never holds it
         return;
     }
     if (msg->type == SKSEMessagingInterface::kMessage_DataLoaded) {

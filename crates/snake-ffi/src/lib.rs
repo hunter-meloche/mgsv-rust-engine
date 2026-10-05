@@ -159,6 +159,8 @@ pub struct SnakeStatus {
     pub reload_progress: f32,
     /// Reloads do not use up the reserve.
     pub unlimited: i32,
+    /// Height of Snake's head above his feet (metres; standing ~1.6, prone ~0.4).
+    pub head_height: f32,
 }
 
 /// Loaded assets, shared by every player created from it.
@@ -558,6 +560,12 @@ pub unsafe extern "C" fn snake_player_status(p: *const SnakePlayer, out: *mut Sn
         magazine: w.map_or(0, |w| w.stats.magazine as i32),
         reload_progress: w.and_then(|w| w.reload_progress()).unwrap_or(0.0),
         unlimited: c.unlimited_magazines as i32,
+        head_height: p
+            .assets
+            .skel
+            .find(fox_hash::str_code32(b"SKL_004_HEAD"))
+            .and_then(|i| p.pose.positions.get(i))
+            .map_or(0.0, |v| v.y),
     };
 }
 

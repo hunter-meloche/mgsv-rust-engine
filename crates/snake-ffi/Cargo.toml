@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 fox-data.workspace = true
 fox-anim.workspace = true
+fox-hash.workspace = true
 snake-core.workspace = true
 snake-runtime.workspace = true
 skyrim-data.workspace = true

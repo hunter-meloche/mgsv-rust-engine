@@ -7,8 +7,9 @@ systems from your own MGSV: TPP install. See `docs/BRIDGE.md` for the design.
 Status: **phase B works in game** — press **F8** to toggle Snake mode:
 Snake's animation drives the player's skeleton (retargeted onto Skyrim's
 bones). Skyrim still moves the character, and Snake follows Skyrim's own
-state: walk / run / sprint from the player's movement flags, **crouch while
-sneaking** (Skyrim's sneak key), **X** toggles prone, the **right mouse
+state: walk / run / sprint from the player's movement flags, stance from
+**Ctrl** as in MGSV (a tap goes up one stance: prone -> crouch, crouch <->
+stand; holding it 0.35 s goes prone, or from prone stands up), the **right mouse
 button** raises the weapon. While aiming, the player's (empty) hands are
 drawn, so the actor turns with the camera and strafes like Snake's aim walk;
 aim pitch follows the camera. Skyrim's own attack/block input is off in
@@ -170,6 +171,21 @@ paused world; the hook on `PlayerCharacter::UpdateAnimation` (called from
 Skyrim's job threads) only copies the latest pose into the bone nodes and
 never calls into `snake.dll` (calling Rust from the job threads froze the
 game). If anything faults, Snake mode switches itself off.
+
+Stance and stealth: in Snake mode Ctrl (read by the plugin; Skyrim's
+`SneakHandler`, found beside the attack handler and checked by RTTI, is off)
+sets Snake's stance, and Skyrim's sneak flag (actor state bit 9) follows it:
+crouched and prone count as sneaking (the HUD eye shows), standing does
+not. Prone, Snake gets a hidden +20 Sneak (`CrawlSneakBonus` in snake.ini;
+MGSV keeps its stance camouflage values in code rather than data, only the
+sight ranges and camouflage thresholds are in `Soldier2ParameterTables`, so
+this is the fallback), an actor value modifier (Sneak = 15) added on the
+main thread, removed on getting up, when Snake mode ends and before every
+save. The cameras follow Snake's head: Skyrim's third-person camera tracks
+`Camera3rd [Cam3]` and the first-person one `Camera1st [Cam1]`; both are
+lowered by Snake's head height below his standing height (smoothed), so the
+view drops crouched and to the ground prone, in both views, and the
+first-person arms move down with it.
 
 Ammo and reloads: **R** reloads (Skyrim's ready-weapon action, also on R,
 is switched off in Snake mode like its attacks: the ReadyWeaponHandler is

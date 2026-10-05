@@ -118,7 +118,7 @@ enum Cmd {
     },
     /// Print StrCode32/StrCode64, PathCode64 and Wwise FNV-1 hashes of each TEXT.
     Hash { text: Vec<String> },
-    /// Write a 16-bit PCM sound from an .sbp sound package as a .wav.
+    /// Write a sound (16-bit PCM or IMA ADPCM) from an .sbp sound package as a .wav.
     SoundExport {
         /// Archive path of the .sbp (e.g. /Assets/tpp/sound/asset/common_bank_01.sbp).
         #[arg(long)]
@@ -126,6 +126,18 @@ enum Cmd {
         /// Sound (wem) id inside the bank.
         #[arg(long)]
         wem: u32,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Mix a Wwise event of an .sbp from its layers (delays, volumes, pitches) and
+    /// write it as a .wav, e.g. a player shot such as sfx_w_p_hg01_sup_active.
+    SoundEvent {
+        /// Archive path of the .sbp (e.g. /Assets/tpp/sound/asset/common_bank_01.sbp).
+        #[arg(long)]
+        bank: String,
+        /// Event name.
+        #[arg(long)]
+        event: String,
         #[arg(long)]
         out: PathBuf,
     },
@@ -590,6 +602,11 @@ fn run() -> Result<()> {
         Cmd::SoundExport { bank, wem, out: path } => {
             snake_runtime::skyrim_export::export_sound(&vfs, &bank, wem, &path)?;
             writeln!(out, "wrote {}", path.display())?;
+            Ok(())
+        }
+        Cmd::SoundEvent { bank, event, out: path } => {
+            let layers = snake_runtime::skyrim_export::export_event(&vfs, &bank, &event, &path)?;
+            writeln!(out, "wrote {} ({layers} layers)", path.display())?;
             Ok(())
         }
         Cmd::TexPng { path, out: png } => {

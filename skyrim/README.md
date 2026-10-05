@@ -70,8 +70,7 @@ crosshair. The WU S.Pistol's textures ship without `.ftex` headers
 `.ftexs` parts (`Ftex::from_parts`: chunk table at offset 0, square size,
 format from the slot). Keys **1** / **2** switch between the MRS-4 and the
 pistol (one mesh per weapon, all attached to the hand); the pistol has no
-holster point on Snake's body, so it is hidden when lowered, and has no
-gunshot sound chosen yet. Snake's body has connection points for the rifle
+holster point on Snake's body, so it is hidden when lowered. Snake's body has connection points for the rifle
 (`CNP_ASRROOT`) and the sniper rifle (`CNP_SNRROOT`) but none for a
 handgun, so the pistol is not shown when lowered.
 
@@ -85,12 +84,19 @@ fog-coloured silhouette on some frames).
 
 Gunshot sound: played with XAudio2 from
 `Data\SKSE\Plugins\snake_sounds\<weapon>_shot.wav` (`ShotVolume` in
-`snake.ini`). MGSV's Wwise event names are hashed, so the MRS-4's shot is
-picked by ear from `common_bank_01.sbp` (most of its sounds are plain PCM;
-`mgsv sound-export` writes one as a `.wav`) and recorded in the weapon table
-(`shot_sound`). The MRS-4 uses four 48 kHz stereo variations from one mixer
-in `common_bank_01` (exported as `_shot.wav`, `_shot1.wav`, ...), one picked
-at random per shot.
+`snake.ini`). The shots come from MGSV's `common_bank_01.sbp`. Wwise event
+names are hashed (FNV-1 of the lower-case name), and the game builds the
+player's shot event names in code from pieces stored as plain strings in the
+exe: `sfx_w_p_` + the weapon's sound set (EquipParameters'
+`receiverParamSetsSound`, e.g. `hg01`) + `_m` (unsuppressed) or `_sup` +
+`_active` / `_nonact`. With those, all 100+ player shot events in the bank
+resolve. An event plays several layers (transient, body, low thump, tails),
+each with its own delay, volume and pitch, so `mgsv skyrim-export` mixes the
+event from its layers (`fox_data::wwise`; `mgsv sound-event` writes any
+event as a `.wav`). The WU S.Pistol uses `sfx_w_p_hg01_sup_active` (its
+suppressor is built in). The MRS-4 still uses the four single sounds picked
+by ear earlier (`wp_west_ar_010_shot*.wav`, one at random per shot); its
+own events are `sfx_w_p_ar00_m_active` / `_nonact`.
 
 Exported meshes: Fox triangles wind the other way from Skyrim's, so the
 export reverses them (checked against vanilla meshes, whose triangles face

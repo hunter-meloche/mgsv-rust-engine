@@ -146,10 +146,19 @@ pub struct WeaponDef {
     /// Body connection point (and bone) it rides on when not in the hands.
     holster: Option<(&'static str, &'static str)>,
     color: [f32; 3],
-    /// The gunshot: a sound bank and the ids of 16-bit PCM variations in it
-    /// (one is picked at random per shot). Wwise event names are hashed, so
-    /// these were matched by ear.
-    shot_sound: Option<(&'static str, &'static [u32])>,
+    /// The gunshot, from a sound bank.
+    shot_sound: Option<(&'static str, ShotSound)>,
+}
+
+/// Where a weapon's gunshot comes from.
+#[derive(Clone, Copy, Debug)]
+pub enum ShotSound {
+    /// MGSV's own shot event, mixed from its layers. The exe names player
+    /// shots `sfx_w_p_<set>` + `_m` / `_sup` + `_active` / `_nonact`, the
+    /// set from EquipParameters' `receiverParamSetsSound`.
+    Event(&'static str),
+    /// Single sounds (wem ids), one picked at random per shot.
+    Wems(&'static [u32]),
 }
 
 pub const WEAPONS: [WeaponDef; 2] = [
@@ -172,7 +181,7 @@ pub const WEAPONS: [WeaponDef; 2] = [
         color: [0.22, 0.22, 0.22],
         // Chosen by ear from common_bank_01's gunshot-like sounds (one
         // mixer's 48 kHz stereo shots).
-        shot_sound: Some((COMMON_BANK, &[144297022, 269696546, 380692384, 695595645])),
+        shot_sound: Some((COMMON_BANK, ShotSound::Wems(&[144297022, 269696546, 380692384, 695595645]))),
     },
     // WU S.Pistol (tranquilizer).
     WeaponDef {
@@ -191,7 +200,9 @@ pub const WEAPONS: [WeaponDef; 2] = [
         },
         holster: None,
         color: [0.28, 0.27, 0.25],
-        shot_sound: None,
+        // Sound set hg01, suppressed (the WU S.Pistol's suppressor is
+        // built in).
+        shot_sound: Some((COMMON_BANK, ShotSound::Event("sfx_w_p_hg01_sup_active"))),
     },
 ];
 

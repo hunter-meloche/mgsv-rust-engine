@@ -185,12 +185,21 @@ pub fn export_weapons(vfs: &Vfs, data_dir: &Path) -> Result<ExportReport> {
     for def in &WEAPONS {
         export_weapon(vfs, def.id, def.model, data_dir, &mut report)
             .with_context(|| format!("exporting {}", def.id))?;
-        if let Some((bank, ids)) = def.shot_sound {
-            for (k, &id) in ids.iter().enumerate() {
-                let path = sound_path(data_dir, def.id, k);
-                export_sound(vfs, bank, id, &path).with_context(|| format!("{} shot sound {id}", def.id))?;
+        match def.shot_sound {
+            Some((bank, crate::ShotSound::Wems(ids))) => {
+                for (k, &id) in ids.iter().enumerate() {
+                    let path = sound_path(data_dir, def.id, k);
+                    export_sound(vfs, bank, id, &path).with_context(|| format!("{} shot sound {id}", def.id))?;
+                    report.files.push(path);
+                }
+            }
+            Some((bank, crate::ShotSound::Event(name))) => {
+                let path = sound_path(data_dir, def.id, 0);
+                let layers = export_event(vfs, bank, name, &path).with_context(|| format!("{} shot event {name}", def.id))?;
+                report.notes.push(format!("{} shot: {name} ({layers} layers)", def.id));
                 report.files.push(path);
             }
+            None => {}
         }
     }
     Ok(report)
@@ -205,6 +214,23 @@ pub fn sound_path(data_dir: &Path, id: &str, k: usize) -> PathBuf {
         .join("Plugins")
         .join("snake_sounds")
         .join(format!("{}_shot{suffix}.wav", id.to_ascii_lowercase()))
+}
+
+/// Mix event `name` of the `.sbp` at `bank` (an archive path) from its
+/// layers and write it as a `.wav`; returns the number of layers.
+pub fn export_event(vfs: &Vfs, bank: &str, name: &str, out: &Path) -> Result<usize> {
+    let data = read_any(vfs, bank)?;
+    let hirc = fox_data::wwise::Hirc::parse(&data)?;
+    let layers = hirc
+        .event_layers(fox_data::wwise::short_id(name))
+        .with_context(|| format!("no event {name} in {bank}"))?;
+    anyhow::ensure!(!layers.is_empty(), "event {name} plays no single sounds");
+    let pcm = fox_data::wwise::mix(&fox_data::sbp::SoundBank::parse(&data)?, &layers)?;
+    if let Some(dir) = out.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(out, pcm.to_wav())?;
+    Ok(layers.len())
 }
 
 /// Write sound `id` of the `.sbp` at `bank` (an archive path) as a `.wav`.

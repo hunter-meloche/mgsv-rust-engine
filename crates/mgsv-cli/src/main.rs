@@ -431,7 +431,26 @@ fn run() -> Result<()> {
                 )?;
             }
             for (i, g) in m.mesh_groups.iter().enumerate() {
-                writeln!(out, "  group {i:>3} {}", m.name(g.name, &names))?;
+                writeln!(
+                    out,
+                    "  group {i:>3} {} parent {}{}",
+                    m.name(g.name, &names),
+                    g.parent,
+                    if g.invisible { " invisible" } else { "" }
+                )?;
+            }
+            let group_name = |n: u16| m.name(n, &names).to_string();
+            for (i, mesh) in m.meshes.iter().enumerate() {
+                let group = m
+                    .mesh_group_of(i)
+                    .map(|g| m.mesh_group_path(g, &group_name).join(" < "))
+                    .unwrap_or_else(|| "?".into());
+                writeln!(
+                    out,
+                    "  mesh {i:>3} {:>6} vertices, material {:>2}, group {group}",
+                    mesh.positions.len(),
+                    mesh.material_instance
+                )?;
             }
             match m.validate() {
                 Ok(()) => writeln!(out, "valid")?,
@@ -2433,6 +2452,8 @@ fn skyrim_body_check(vfs: &Vfs, skyrim: &Path) -> Result<()> {
     let body = snake_runtime::skyrim_body::build_body(
         vfs,
         skyrim,
+        // The full body: its vertices match the source meshes one to one.
+        snake_runtime::skyrim_body::BodyView::ThirdPerson,
         &mut |f| Ok(vec![Vec::new(); f.material_instances.len()]),
         &mut notes,
     )?;

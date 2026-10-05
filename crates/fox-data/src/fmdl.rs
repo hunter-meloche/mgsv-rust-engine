@@ -42,6 +42,13 @@ pub struct MeshGroup {
     pub parent: i16,
 }
 
+/// Meshes `meshes` belong to mesh group `group` (section 0 block 2).
+#[derive(Clone, Debug)]
+pub struct MeshGroupEntry {
+    pub group: u16,
+    pub meshes: std::ops::Range<usize>,
+}
+
 #[derive(Clone, Debug)]
 pub struct MaterialInstance {
     pub name: u16,
@@ -80,6 +87,7 @@ pub struct Fmdl {
     pub version: f32,
     pub bones: Vec<Bone>,
     pub mesh_groups: Vec<MeshGroup>,
+    pub mesh_group_entries: Vec<MeshGroupEntry>,
     pub material_instances: Vec<MaterialInstance>,
     pub bone_groups: Vec<Vec<u16>>,
     pub textures: Vec<NamePair>,
@@ -169,6 +177,43 @@ mod attr {
 }
 
 impl Fmdl {
+    /// The mesh group mesh `mesh` belongs to.
+    pub fn mesh_group_of(&self, mesh: usize) -> Option<u16> {
+        self.mesh_group_entries
+            .iter()
+            .find(|e| e.meshes.contains(&mesh))
+            .map(|e| e.group)
+    }
+
+    /// Whether mesh `mesh` sits in a mesh group flagged invisible (or under
+    /// one): helper geometry the game does not draw.
+    pub fn mesh_hidden(&self, mesh: usize) -> bool {
+        let mut cur = self.mesh_group_of(mesh).map(usize::from);
+        let mut depth = 0;
+        while let Some(g) = cur {
+            let Some(mg) = self.mesh_groups.get(g) else { break };
+            if mg.invisible {
+                return true;
+            }
+            depth += 1;
+            cur = (mg.parent >= 0 && depth < 16).then_some(mg.parent as usize);
+        }
+        false
+    }
+
+    /// The names (`names(name id)`) of mesh group `group` and its
+    /// ancestors, innermost first.
+    pub fn mesh_group_path(&self, group: u16, names: &dyn Fn(u16) -> String) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut cur = Some(group as usize);
+        while let Some(g) = cur {
+            let Some(mg) = self.mesh_groups.get(g) else { break };
+            out.push(names(mg.name));
+            cur = (mg.parent >= 0 && out.len() < 16).then_some(mg.parent as usize);
+        }
+        out
+    }
+
     pub fn parse(data: &[u8]) -> Result<Self> {
         let r = R(data);
         if r.b::<4>(0)? != *b"FMDL" {
@@ -223,6 +268,13 @@ impl Fmdl {
                 name: r.u16(at)?,
                 invisible: r.u16(at + 2)? != 0,
                 parent: r.i16(at + 4)?,
+            });
+        }
+        for at in table(2, 32) {
+            let (count, first) = (r.u16(at + 6)? as usize, r.u16(at + 8)? as usize);
+            m.mesh_group_entries.push(MeshGroupEntry {
+                group: r.u16(at + 4)?,
+                meshes: first..first + count,
             });
         }
         for at in table(4, 16) {

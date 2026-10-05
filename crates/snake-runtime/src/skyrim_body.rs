@@ -29,6 +29,25 @@ const UNITS_PER_METER: f32 = 70.0;
 
 /// Skyrim mesh path of Snake's body (relative to `Data\meshes`).
 pub const BODY_MESH: &str = r"snake\snake_body.nif";
+/// Snake's arms for the first-person skeleton.
+pub const ARMS_MESH: &str = r"snake\snake_arms_1p.nif";
+
+/// Which skeleton a body mesh is bound to.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BodyView {
+    /// The whole body on the third-person skeleton's core bones.
+    ThirdPerson,
+    /// The arms (clavicles down to the fingers) on the first-person
+    /// skeleton, which has finger and twist bones; the rest is cut away.
+    FirstPersonArms,
+}
+
+/// Bones the first-person view poses (the plugin's `IsArmBone`).
+fn is_arm_bone(name: &str) -> bool {
+    ["Clavicle", "UpperArm", "Upperarm", "Forearm", "Hand", "Finger"]
+        .iter()
+        .any(|p| name.contains(p))
+}
 
 /// Skyrim bones the body may be skinned to: the ones the in-game
 /// third-person skeleton has (and the plugin poses). The toes are not in it
@@ -74,26 +93,42 @@ pub fn export_snake_body(vfs: &Vfs, skyrim_dir: &Path, data_dir: &Path, report: 
     let mesh_dir = data_dir.join("meshes").join("snake");
     std::fs::create_dir_all(&tex_dir)?;
     std::fs::create_dir_all(&mesh_dir)?;
-    let mut notes = Vec::new();
-    let body = build_body(vfs, skyrim_dir, &mut |fmdl| material_textures(vfs, fmdl, "snake", &tex_dir, report), &mut notes)?;
-    report.notes.extend(notes);
-    let path = mesh_dir.join("snake_body.nif");
-    std::fs::write(&path, nif_write::write_skinned_nif("snake_body", &body.bones, &body.shapes))?;
-    report.notes.push(format!(
-        "snake body: {} shapes, {} vertices, {} bones",
-        body.shapes.len(),
-        body.shapes.iter().map(|s| s.shape.positions.len()).sum::<usize>(),
-        body.bones.len()
-    ));
-    report.files.push(path);
+    for (view, file, root) in [
+        (BodyView::ThirdPerson, "snake_body.nif", "snake_body"),
+        (BodyView::FirstPersonArms, "snake_arms_1p.nif", "snake_arms_1p"),
+    ] {
+        let mut notes = Vec::new();
+        let body = build_body(
+            vfs,
+            skyrim_dir,
+            view,
+            &mut |fmdl| material_textures(vfs, fmdl, "snake", &tex_dir, report),
+            &mut notes,
+        )?;
+        report.notes.extend(notes);
+        let path = mesh_dir.join(file);
+        std::fs::write(&path, nif_write::write_skinned_nif(root, &body.bones, &body.shapes))?;
+        report.notes.push(format!(
+            "{root}: {} shapes, {} vertices, {} bones",
+            body.shapes.len(),
+            body.shapes.iter().map(|s| s.shape.positions.len()).sum::<usize>(),
+            body.bones.len()
+        ));
+        report.files.push(path);
+    }
     Ok(())
 }
 
 /// Bind Snake's body to the Skyrim skeleton of the install at `skyrim_dir`;
 /// `textures(fmdl)` returns each material's texture paths.
+///
+/// Both views use the bind pose of the retargeted third-person skeleton:
+/// the plugin writes the same local transforms to the first-person arm
+/// bones, so each vertex keeps its place relative to its bones.
 pub fn build_body(
     vfs: &Vfs,
     skyrim_dir: &Path,
+    view: BodyView,
     textures: &mut dyn FnMut(&Fmdl) -> Result<Vec<Vec<String>>>,
     notes: &mut Vec<String>,
 ) -> Result<Body> {
@@ -106,15 +141,22 @@ pub fn build_body(
     // The mesh's bones: the core bones, in retarget (parent-first) order.
     let mut core: Vec<usize> = Vec::new();
     for (i, (name, _, _)) in links.iter().enumerate() {
-        if CORE_BONES.contains(&name.as_str()) && !core.contains(&i) {
+        let wanted = match view {
+            BodyView::ThirdPerson => CORE_BONES.contains(&name.as_str()),
+            BodyView::FirstPersonArms => is_arm_bone(name),
+        };
+        if wanted && !core.contains(&i) {
             core.push(i);
         }
     }
     let nif_index: HashMap<usize, u8> = core.iter().enumerate().map(|(k, &i)| (i, k as u8)).collect();
-    let pelvis = core
-        .iter()
-        .position(|&i| links[i].0 == "NPC Pelvis [Pelv]")
-        .context("no pelvis in the retarget table")? as u8;
+    let pelvis = match view {
+        BodyView::ThirdPerson => core
+            .iter()
+            .position(|&i| links[i].0 == "NPC Pelvis [Pelv]")
+            .context("no pelvis in the retarget table")? as u8,
+        BodyView::FirstPersonArms => 0,
+    };
     // Snake bone -> first retarget bone it drives.
     let mut by_source: HashMap<usize, usize> = HashMap::new();
     for (i, (_, _, source)) in links.iter().enumerate() {
@@ -122,23 +164,31 @@ pub fn build_body(
             by_source.entry(*s).or_insert(i);
         }
     }
-    let to_mesh_bone = |snake_bone: usize| -> u8 {
+    // Snake bone -> mesh bone (None: no mesh bone above it, i.e. outside
+    // the arms in the first-person view).
+    let fallback = match view {
+        BodyView::ThirdPerson => Some(pelvis),
+        BodyView::FirstPersonArms => None,
+    };
+    let to_mesh_bone = |snake_bone: usize| -> Option<u8> {
         let mut cur = Some(snake_bone);
         while let Some(s) = cur {
             if let Some(&o) = by_source.get(&s) {
                 let mut out = Some(o);
                 while let Some(b) = out {
                     if let Some(&k) = nif_index.get(&b) {
-                        return k;
+                        return Some(k);
                     }
                     out = links[b].1;
                 }
-                return pelvis;
+                return fallback;
             }
             cur = skel.bones[s].parent;
         }
-        pelvis
+        fallback
     };
+    // First person keeps the vertices weighted mostly below the clavicles.
+    let limb: Vec<bool> = core.iter().map(|&i| !links[i].0.contains("Clavicle")).collect();
 
     let bones: Vec<SkinBone> = core
         .iter()
@@ -156,6 +206,9 @@ pub fn build_body(
     let mut shapes = Vec::new();
     let mut sources = Vec::new();
     for (path, part) in [(SNAKE_BODY, "body"), (SNAKE_FACE, "face"), (SNAKE_ARM, "arm")] {
+        if view == BodyView::FirstPersonArms && part == "face" {
+            continue;
+        }
         let fmdl = Fmdl::parse(&read_any(vfs, path)?)?;
         let skinned = fox_anim::SkinnedModel::bind(&fmdl, &skel).map_err(anyhow::Error::msg)?;
         // Rest positions in the skeleton's space: the face and arm models are
@@ -164,6 +217,9 @@ pub fn build_body(
         let rest = skinned.skin(&fox_anim::Pose::rest(&skel));
         let textures = textures(&fmdl)?;
         for (i, ((mesh, sm), rest_positions)) in fmdl.meshes.iter().zip(&skinned.meshes).zip(&rest).enumerate() {
+            if fmdl.mesh_hidden(i) {
+                continue;
+            }
             if mesh.positions.len() > u16::MAX as usize {
                 notes.push(format!("snake {part} mesh {i}: too many vertices; skipped"));
                 continue;
@@ -183,14 +239,22 @@ pub fn build_body(
                 tangents.push(t);
                 bitangents.push([b[0] * sign, b[1] * sign, b[2] * sign]);
             }
-            // Up to four (mesh bone, weight), merged per bone, normalised.
+            // Up to four (mesh bone, weight), merged per bone, normalised;
+            // `keep` marks the vertices this view shows.
+            let mut keep = vec![true; sm.influences.len()];
             let weights: Vec<[(u8, f32); 4]> = sm
                 .influences
                 .iter()
-                .map(|inf| {
+                .enumerate()
+                .map(|(v, inf)| {
                     let mut acc: Vec<(u8, f32)> = Vec::new();
+                    let total: f32 = inf.iter().map(|x| x.weight).sum();
+                    let mut on_limb = 0.0;
                     for x in inf {
-                        let b = to_mesh_bone(x.bone as usize);
+                        let Some(b) = to_mesh_bone(x.bone as usize) else { continue };
+                        if limb[b as usize] {
+                            on_limb += x.weight;
+                        }
                         match acc.iter_mut().find(|(k, _)| *k == b) {
                             Some(e) => e.1 += x.weight,
                             None => acc.push((b, x.weight)),
@@ -206,31 +270,62 @@ pub fn build_body(
                     if sum <= 0.0 {
                         out[0] = (pelvis, 1.0);
                     }
+                    if view == BodyView::FirstPersonArms && (sum <= 0.0 || on_limb < 0.5 * total) {
+                        keep[v] = false;
+                    }
                     out
                 })
                 .collect();
+            let positions: Vec<[f32; 3]> = rest_positions
+                .iter()
+                .map(|p| {
+                    let s = to_sky(p.to_array());
+                    [s[0] * UNITS_PER_METER, s[1] * UNITS_PER_METER, s[2] * UNITS_PER_METER]
+                })
+                .collect();
+            // Fox front faces wind the other way from Skyrim's.
+            let triangles: Vec<[u16; 3]> = mesh
+                .indices
+                .chunks_exact(3)
+                .map(|t| [t[0], t[2], t[1]])
+                .filter(|t| t.iter().all(|&k| keep[k as usize]))
+                .collect();
+            if triangles.is_empty() {
+                continue;
+            }
+            // Only the vertices the kept triangles use.
+            let mut used = vec![false; positions.len()];
+            for t in &triangles {
+                for &k in t {
+                    used[k as usize] = true;
+                }
+            }
+            let mut remap = vec![u16::MAX; positions.len()];
+            let mut next = 0u16;
+            for (k, u) in used.iter().enumerate() {
+                if *u {
+                    remap[k] = next;
+                    next += 1;
+                }
+            }
+            fn pick<T: Copy>(v: &[T], used: &[bool]) -> Vec<T> {
+                v.iter().zip(used).filter(|(_, u)| **u).map(|(x, _)| *x).collect()
+            }
             shapes.push(SkinnedShape {
                 shape: Shape {
                     name: format!("snake_{part}:{i}"),
-                    positions: rest_positions
-                        .iter()
-                        .map(|p| {
-                            let s = to_sky(p.to_array());
-                            [s[0] * UNITS_PER_METER, s[1] * UNITS_PER_METER, s[2] * UNITS_PER_METER]
-                        })
-                        .collect(),
-                    normals,
-                    tangents,
-                    bitangents,
-                    uvs: mesh.uvs[0].clone(),
-                    // Fox front faces wind the other way from Skyrim's.
-                    triangles: mesh.indices.chunks_exact(3).map(|t| [t[0], t[2], t[1]]).collect(),
+                    positions: pick(&positions, &used),
+                    normals: pick(&normals, &used),
+                    tangents: pick(&tangents, &used),
+                    bitangents: pick(&bitangents, &used),
+                    uvs: pick(&mesh.uvs[0], &used),
+                    triangles: triangles.iter().map(|t| t.map(|k| remap[k as usize])).collect(),
                     textures: textures.get(mesh.material_instance as usize).cloned().unwrap_or_default(),
                     glossiness: 30.0,
                     specular_strength: 1.0,
                     effect: None,
                 },
-                weights,
+                weights: pick(&weights, &used),
             });
             sources.push((path, i));
         }

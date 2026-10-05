@@ -49,10 +49,10 @@ first-person skeleton too, while its spine and head stay Skyrim's so the
 camera is untouched. Each clavicle takes the world orientation of its
 third-person counterpart (Skyrim's first-person spine is posed very
 differently), so the rifle points where you look, held low on the right.
-Guns and flash attach to the first-person hand as separate copies of the
-meshes (`*_1p.nif`; Skyrim caches models by path). With the pistol the
+Snake's own arms replace Skyrim's (see Snake's body below). Guns and flash
+attach to the first-person hand as separate copies of the meshes (`*_1p.nif`; Skyrim caches models by path). With the pistol the
 shoulders drop 10 units so the two-handed grip does not cover the
-crosshair; the pistol itself is still hard to see behind the gauntlets. The WU S.Pistol's textures ship without `.ftex` headers
+crosshair. The WU S.Pistol's textures ship without `.ftex` headers
 (only the two largest mips exist); the export rebuilds them from the
 `.ftexs` parts (`Ftex::from_parts`: chunk table at offset 0, square size,
 format from the slot). Keys **1** / **2** switch between the MRS-4 and the
@@ -98,7 +98,16 @@ data, +0x58: `numMatrices` stays 0 until the shape has rendered) and
 attaches it to the player's 3D root; in Snake mode it is shown and Skyrim's
 body, armour and head hidden (control `body=0` keeps Skyrim's). Verified in
 game standing, aiming, running, crouched and prone, and Skyrim's own body
-comes back when Snake mode ends. First person still shows Skyrim's arms.
+comes back when Snake mode ends. Meshes in mesh groups MGSV flags invisible
+(the face's wrinkle-map helper quads) are left out.
+
+In first person the plugin attaches `meshes\snake\snake_arms_1p.nif` to the
+first-person skeleton the same way: the same parts cut down to the vertices
+weighted mostly below the clavicles, bound to the 46 first-person arm,
+twist and finger bones (all in the bind pose of the retargeted third-person
+skeleton, since the plugin writes the same locals to both). Skyrim's
+first-person arms are hidden while it shows, so you see Snake's gloved right
+hand and bionic left arm on the gun.
 
 Movement speed: Skyrim's character controller still moves the player
 (collision, slopes, stairs) but at Snake's speed. Snake's controller runs

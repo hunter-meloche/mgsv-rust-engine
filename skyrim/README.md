@@ -25,7 +25,7 @@ Snake's right hand, with MGSV's muzzle speed and drop (MRS-4 450 m/s).
 The bullet is a private in-memory copy of the vanilla Hunting Bow, Iron
 Arrow and arrow projectile records (no pick-up, `BulletDamage` in
 `snake.ini`, default 48: 4x the original 12, since it is a rifle round); the vanilla records are untouched. Its model is
-`meshes\snakeullet.nif`, an empty model from `mgsv skyrim-export` (the
+`meshes\snake\bullet.nif`, an empty model from `mgsv skyrim-export` (the
 path is a Skyrim pooled string made with `BSStringPool::GetEntry`, AE id
 69161, checked by looking up the arrow's own model path first), so bullets
 fly unseen and leave nothing stuck in what they hit. Hits count as Archery. Damage follows MGSV's own

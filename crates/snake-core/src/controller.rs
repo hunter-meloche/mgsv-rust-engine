@@ -466,6 +466,11 @@ impl Controller {
         self.player.current_name()
     }
 
+    /// Normalised progress of the current clip (for debugging).
+    pub fn clip_progress(&self) -> f32 {
+        self.player.progress()
+    }
+
     /// The character's world rotation.
     pub fn rotation(&self) -> Quat {
         Quat::from_rotation_y(self.yaw)
@@ -481,6 +486,31 @@ impl Controller {
             }
             None => false,
         }
+    }
+
+    /// Enter a locomotion loop at the frame whose limb positions best match
+    /// the current pose (a start or another loop rarely ends where the loop
+    /// begins; entering at frame 0 rewinds the stride, visibly).
+    fn play_loop_matched(&mut self, rig: &HumanRig, clips: &ClipLibrary, name: &str) -> bool {
+        let Some(clip) = clips.get(name) else { return false };
+        if name == self.player.current_name() {
+            return true;
+        }
+        let mut start = 0.0;
+        if let Ok(cur) = self.player.frame(rig) {
+            let mut best = f32::MAX;
+            for f in 0..clip.frame_count {
+                if let Ok(frame) = rig.sample_frame(&clip, f as f32) {
+                    let d = rig.target_distance(&cur, &frame);
+                    if d < best {
+                        best = d;
+                        start = f as f32;
+                    }
+                }
+            }
+        }
+        self.player.play_at(name, clip, true, FADE, start);
+        true
     }
 
     /// Advance one tick. Movement slides along `world`'s obstacles.
@@ -559,7 +589,7 @@ impl Controller {
             // Lower the weapon: back to plain locomotion.
             if moving {
                 let name = self.names.looping(self.stance, gait);
-                self.play(clips, &name, true, FADE);
+                self.play_loop_matched(rig, clips, &name);
                 self.gait = gait;
                 self.state = State::Loop;
             } else {
@@ -639,7 +669,7 @@ impl Controller {
                     self.begin_stop(rig, clips);
                 } else if self.player.finished() || self.player.progress() > 0.9 {
                     let name = self.names.looping(self.stance, gait);
-                    self.play(clips, &name, true, FADE);
+                    self.play_loop_matched(rig, clips, &name);
                     self.gait = gait;
                     self.state = State::Loop;
                 }
@@ -650,7 +680,7 @@ impl Controller {
                 } else {
                     if gait != self.gait {
                         let name = self.names.looping(self.stance, gait);
-                        self.play(clips, &name, true, FADE);
+                        self.play_loop_matched(rig, clips, &name);
                         self.gait = gait;
                     }
                     let rate = match self.stance {

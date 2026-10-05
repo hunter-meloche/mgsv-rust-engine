@@ -106,6 +106,7 @@ struct SnakeApi {
     decltype(&snake_weapon_name) weapon_name = nullptr;
     decltype(&snake_weapon_magazine_mesh) weapon_magazine_mesh = nullptr;
     decltype(&snake_player_set_unlimited_magazines) player_set_unlimited_magazines = nullptr;
+    decltype(&snake_player_clip) player_clip = nullptr;
     decltype(&snake_retarget_magazine_place) retarget_magazine_place = nullptr;
     decltype(&snake_player_new) player_new = nullptr;
     decltype(&snake_player_update) player_update = nullptr;
@@ -147,6 +148,7 @@ bool LoadSnakeDll() {
     RESOLVE(weapon_name, "snake_weapon_name");
     RESOLVE(weapon_magazine_mesh, "snake_weapon_magazine_mesh");
     RESOLVE(player_set_unlimited_magazines, "snake_player_set_unlimited_magazines");
+    RESOLVE(player_clip, "snake_player_clip");
     RESOLVE(retarget_magazine_place, "snake_retarget_magazine_place");
     RESOLVE(player_new, "snake_player_new");
     RESOLVE(player_update, "snake_player_update");
@@ -1721,6 +1723,16 @@ void SnakeThread() {
             else g_driving = false;
             bool driven = g_driving && g_originalSetVelocity;
             static int traceTick = 0;
+            if (g_control.trace) {
+                static std::string lastClip;
+                char clip[96] = {};
+                g_snake.player_clip(g_player, clip, sizeof clip);
+                if (lastClip != clip) {
+                    Log("trace: clip %s (flags %x, moving %d, walk %d run %d sprint %d)", clip, flags & 0xF, (int)moving,
+                        (int)in.walk, (int)!in.walk && !in.sprint, (int)in.sprint);
+                    lastClip = clip;
+                }
+            }
             if (g_control.trace && ++traceTick % 6 == 0)
                 Log("trace: snake %.2f fwd %.2f right %.2f | skyrim %.2f fwd %.2f right %.2f m/s (stance %d, moving %d, driven %d)",
                     snakeSpeed, fwd, rgt, speed, g_moveForward.load(), g_moveRight.load(), (int)cur.stance, (int)moving,

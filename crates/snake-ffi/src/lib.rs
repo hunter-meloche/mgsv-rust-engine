@@ -561,6 +561,23 @@ pub unsafe extern "C" fn snake_player_status(p: *const SnakePlayer, out: *mut Sn
     };
 }
 
+/// Name of the clip Snake's controller is playing (diagnostics), copied into
+/// `buf` (NUL-terminated, truncated to `len`). Returns the full length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_player_clip(p: *const SnakePlayer, buf: *mut c_char, len: u32) -> u32 {
+    // SAFETY: valid pointers or null; `buf` holds `len` bytes.
+    let Some(p) = (unsafe { p.as_ref() }) else { return 0 };
+    let name = p.controller.current_clip().as_bytes();
+    if !buf.is_null() && len > 0 {
+        let n = name.len().min(len as usize - 1);
+        unsafe {
+            std::ptr::copy_nonoverlapping(name.as_ptr(), buf as *mut u8, n);
+            *buf.add(n) = 0;
+        }
+    }
+    name.len() as u32
+}
+
 /// Unlimited magazines: reloads never use up the reserve.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snake_player_set_unlimited_magazines(p: *mut SnakePlayer, on: i32) {

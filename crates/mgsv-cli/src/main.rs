@@ -178,6 +178,14 @@ enum Cmd {
     /// Development probe: run reloads through the player controller (full,
     /// tactical, not aiming, crouched, prone) and report ammo, where the
     /// magazine is, and the largest per-tick joint rotation (pops).
+    /// Development probe: settle in a stance, start moving forward (the input
+    /// the Skyrim plugin sends) and print, per tick, the clip, its progress,
+    /// the speed and the largest joint rotation.
+    StartProbe {
+        /// stand, crouch or prone.
+        #[arg(long, default_value = "prone")]
+        stance: String,
+    },
     ReloadProbe {
         /// Weapon slot (0 MRS-4, 1 WU S.Pistol).
         #[arg(long, default_value_t = 0)]
@@ -703,6 +711,7 @@ fn run() -> Result<()> {
         }
         Cmd::SkyrimBodyCheck { skyrim } => skyrim_body_check(&vfs, &skyrim),
         Cmd::ReloadProbe { weapon } => reload_probe(&vfs, weapon),
+        Cmd::StartProbe { stance } => start_probe(&vfs, &stance),
         Cmd::FmdlCheck => fmdl_check(&vfs),
         Cmd::Mtar { path } => {
             let data = read_any(&vfs, &path)?;
@@ -1670,6 +1679,53 @@ fn skyrim_skeleton(skyrim: &Path, inner: &str) -> Result<()> {
             0,
             (Mat3::IDENTITY, Vec3::ZERO, Mat3::IDENTITY, Vec3::ZERO),
         );
+    }
+    Ok(())
+}
+
+fn start_probe(vfs: &Vfs, stance: &str) -> Result<()> {
+    use snake_core::Input;
+    let assets = snake_runtime::SnakeAssets::load(vfs)?;
+    let mut ctl = assets.controller()?;
+    let dt = 1.0 / 60.0;
+    let world = snake_core::FlatGround { height: 0.0 };
+    let mut prev: Option<fox_anim::Pose> = None;
+    let mut t = 0.0f32;
+    let mut step = |ctl: &mut snake_core::Controller, i: &Input, print: bool, t: &mut f32| -> Result<()> {
+        let before = ctl.position;
+        ctl.update(&assets.rig, &assets.clips, &world, dt, i);
+        let pose = ctl.pose(&assets.rig, &assets.skel).map_err(anyhow::Error::msg)?;
+        let jump = prev.as_ref().map_or(0.0, |p: &fox_anim::Pose| {
+            p.rotations.iter().zip(&pose.rotations).map(|(a, b)| a.angle_between(*b).to_degrees()).fold(0.0f32, f32::max)
+        });
+        prev = Some(pose);
+        *t += dt;
+        if print {
+            let d = ctl.position - before;
+            println!(
+                "t={:5.2} {:<34} {:4.2}  speed {:4.2} m/s  max joint turn {:5.1} deg",
+                *t,
+                ctl.current_clip(),
+                ctl.clip_progress(),
+                d.x.hypot(d.z) / dt,
+                jump
+            );
+        }
+        Ok(())
+    };
+    let first = match stance {
+        "crouch" => Input { crouch: true, ..Default::default() },
+        "prone" => Input { prone: true, ..Default::default() },
+        _ => Input::default(),
+    };
+    step(&mut ctl, &first, false, &mut t)?;
+    for _ in 0..240 {
+        step(&mut ctl, &Input::default(), false, &mut t)?;
+    }
+    println!("settled: {:?}, clip {}", ctl.stance, ctl.current_clip());
+    let go = Input { move_y: 1.0, ..Default::default() };
+    for _ in 0..240 {
+        step(&mut ctl, &go, true, &mut t)?;
     }
     Ok(())
 }

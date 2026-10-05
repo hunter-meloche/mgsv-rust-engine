@@ -115,6 +115,12 @@ impl MotionPlayer {
         self.previous = (fade > 0.0).then_some((prev, 0.0, fade));
     }
 
+    /// Like [`MotionPlayer::play`], starting `time` (frames) into the clip.
+    pub fn play_at(&mut self, name: &str, clip: Arc<Clip>, looping: bool, fade: f32, time: f32) {
+        self.play(name, clip, looping, fade);
+        self.current.time = time;
+    }
+
     pub fn current_name(&self) -> &str {
         &self.current.name
     }

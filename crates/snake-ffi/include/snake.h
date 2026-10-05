@@ -112,6 +112,8 @@ uint32_t snake_player_pose(const SnakePlayer *p, SnakeVec3 *positions, SnakeQuat
 uint32_t snake_player_take_shots(SnakePlayer *p, SnakeShot *out, uint32_t capacity);
 
 void snake_player_status(const SnakePlayer *p, SnakeStatus *out);
+/* Name of the clip Snake's controller plays (diagnostics); returns its length. */
+uint32_t snake_player_clip(const SnakePlayer *p, char *buf, uint32_t len);
 /* Unlimited magazines: reloads never use up the reserve. */
 void snake_player_set_unlimited_magazines(SnakePlayer *p, int32_t on);
 

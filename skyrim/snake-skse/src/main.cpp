@@ -1271,10 +1271,15 @@ void SnakeThread() {
                 } else {
                     // Standing still: preset the value for running in this
                     // stance, or the player's own until it is known.
+                    bool holdSpeed = false;
                     int st = moving ? state : std::clamp(now.stance, 0, 2) * 4 + 2;
                     int sg = moving ? skyGait : 1;
                     float target = snakeSpeedOf[st];
                     if (moving && target <= 0 && movingTime > 0.5) target = snakeAvg;
+                    // Unknown while moving (e.g. during a stance transition,
+                    // which reads as idle): keep the current value rather
+                    // than jumping back to the player's own speed.
+                    if (moving && target <= 0.1f) holdSpeed = true;
                     float want = target > 0.1f ? 100.0f * target / skyBase[sg] : g_baseSpeedMult.load();
                     // Skyrim will not start moving (or turn round) from a
                     // standstill below roughly SpeedMult 20, though it keeps
@@ -1282,7 +1287,7 @@ void SnakeThread() {
                     // stays at 35 or more.
                     if (!moving) want = (std::max)(want, 35.0f);
                     want = std::clamp(want, 5.0f, 400.0f);
-                    if (std::fabs(want - cur) > cur * 0.04f) {
+                    if (!holdSpeed && std::fabs(want - cur) > cur * 0.04f) {
                         RequestSpeedMult(want);
                         sinceSpeedChange = 0;
                     }

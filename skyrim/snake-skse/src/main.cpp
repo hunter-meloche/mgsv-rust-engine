@@ -914,6 +914,86 @@ void PlayShot(int weapon) {
     if (SUCCEEDED(v->SubmitSourceBuffer(&buf))) v->Start();
 }
 
+// ---- movement speed ---------------------------------------------------------------
+//
+// Skyrim's character controller still moves the player (collision, slopes,
+// stairs), but at Snake's speed: Snake's controller runs MGSV's locomotion
+// internally, and the player's SpeedMult actor value is steered until
+// Skyrim's measured ground speed matches Snake's. So walk, run, dash,
+// crouch-walk and the prone crawl move at MGSV speeds and his feet do not
+// slide. ActorValueOwner is at actor + 0xB8 on this runtime (8 bytes after
+// SE, like ActorState); slots 1 GetActorValue, 4 SetBaseActorValue,
+// 5 ModActorValue. SpeedMult = 30, CarryWeight = 32 (nudging CarryWeight
+// makes Skyrim pick up the new speed).
+
+constexpr size_t kActorValueOwner = 0xB8;
+constexpr uint32_t kAvSpeedMult = 30, kAvCarryWeight = 32;
+
+std::atomic<float> g_speedMult{-1.0f};    // current SpeedMult we set (-1: not read yet)
+std::atomic<float> g_baseSpeedMult{-1.0f};  // the player's own, restored when Snake mode ends
+std::atomic<float> g_wantSpeedMult{-1.0f};
+std::atomic<bool> g_speedQueued{false};
+std::atomic<bool> g_speedBroken{false};
+
+float SafeGetAv(void* actor, uint32_t av) {
+    __try {
+        void* owner = reinterpret_cast<char*>(actor) + kActorValueOwner;
+        using Fn = float (*)(void*, uint32_t);
+        return reinterpret_cast<Fn>(Vtable(owner)[1])(owner, av);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1.0f;
+    }
+}
+
+bool SafeSetSpeedMult(void* actor, float value) {
+    __try {
+        void* owner = reinterpret_cast<char*>(actor) + kActorValueOwner;
+        using SetFn = void (*)(void*, uint32_t, float);
+        void** vt = Vtable(owner);
+        reinterpret_cast<SetFn>(vt[4])(owner, kAvSpeedMult, value);
+        reinterpret_cast<SetFn>(vt[5])(owner, kAvCarryWeight, 0.01f);
+        reinterpret_cast<SetFn>(vt[5])(owner, kAvCarryWeight, -0.01f);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+class SpeedTask : public TaskDelegate {
+public:
+    void Run() override {
+        g_speedQueued = false;
+        void* player = ThePlayer();
+        if (!player || g_speedBroken) return;
+        if (g_baseSpeedMult < 0) {
+            float base = SafeGetAv(player, kAvSpeedMult);
+            Log("movement: player SpeedMult %.1f", base);
+            if (!(base > 1.0f && base < 1000.0f)) {
+                g_speedBroken = true;  // not the actor value interface we expect
+                Log("movement: unexpected SpeedMult; speed matching disabled");
+                return;
+            }
+            g_baseSpeedMult = base;
+            g_speedMult = base;
+        }
+        float want = g_wantSpeedMult;
+        if (want <= 0 || std::fabs(want - g_speedMult) < 0.01f) return;
+        if (!SafeSetSpeedMult(player, want)) {
+            g_speedBroken = true;
+            Log("movement: setting SpeedMult faulted; speed matching disabled");
+            return;
+        }
+        g_speedMult = want;
+        if (want == g_baseSpeedMult) Log("movement: SpeedMult restored to %.1f", want);
+    }
+    void Dispose() override { delete this; }
+};
+
+void RequestSpeedMult(float value) {
+    g_wantSpeedMult = value;
+    if (g_tasks && !g_speedQueued.exchange(true)) g_tasks->AddTask(new SpeedTask());
+}
+
 // ---- Snake thread ---------------------------------------------------------------
 //
 // Snake's controller and the retarget run on this plugin's own thread at a
@@ -979,6 +1059,7 @@ struct Control {
     int flash = 1;       // muzzle flash (diagnostics)
     int launch = 1;      // launch projectiles (diagnostics)
     int weapon = -1;     // switch to this weapon once
+    int speed = 1;       // match Skyrim's movement speed to Snake's
     bool dump = false;   // log the camera once (diagnostics)
 };
 Control g_control;
@@ -1008,6 +1089,7 @@ void PollControl(int curStance) {
         else if (k == "flash") g_control.flash = std::atoi(v.c_str());
         else if (k == "launch") g_control.launch = std::atoi(v.c_str());
         else if (k == "weapon") g_control.weapon = std::atoi(v.c_str());
+        else if (k == "speed") g_control.speed = std::atoi(v.c_str());
         else if (k == "dump") g_control.dump = v == "1";
     }
     fclose(f);
@@ -1024,6 +1106,15 @@ void SnakeThread() {
     Key weaponKeys[2] = {{'1'}, {'2'}};
     bool proneToggled = false;
     double sinceAim = 10.0;  // seconds since Snake last aimed
+    float snakeAvg = 0, skyAvg = 0;  // smoothed ground speeds (m/s): Snake's, Skyrim's
+    double speedTimer = 0, movingTime = 0;
+    // Skyrim ground speed at SpeedMult 100 per gait (walk, run, sprint; m/s):
+    // run measured in game, the others first guesses, all refined in play.
+    float skyBase[3] = {1.6f, 5.0f, 7.0f};
+    float snakeSpeedOf[12] = {};  // Snake's steady speed per stance x gait (0: not seen yet)
+    int lastState = -1;
+    uint32_t lastDir = 0;
+    double sinceSpeedChange = 10.0;
     bool handsDrawn = false;
     uint32_t lastFlags = 0xFFFFFFFF;
     const double dt = 1.0 / 60.0;
@@ -1050,7 +1141,12 @@ void SnakeThread() {
             g_enabled = !g_enabled;
             Log("Snake mode %s", g_enabled ? "ON" : "OFF");
         }
-        if (!g_enabled) continue;
+        if (!g_enabled) {
+            // Give the player their own speed back.
+            float base = g_baseSpeedMult;
+            if (base > 0 && g_speedMult > 0 && std::fabs(g_speedMult - base) > 0.01f) RequestSpeedMult(base);
+            continue;
+        }
 
         float speed = g_speed;
         uint32_t flags = g_actorFlags;
@@ -1059,7 +1155,11 @@ void SnakeThread() {
                 (flags >> 7) & 1, (flags >> 8) & 1, (flags >> 9) & 1, speed);
             lastFlags = flags;
         }
-        bool moving = (flags & 0xF) != 0 || speed > 0.3f;
+        // While speed matching, the measured speed depends on SpeedMult, so
+        // movement and gait come from Skyrim's input flags alone (deriving
+        // them from the speed fed back on itself and stalled the player).
+        bool matching = g_control.speed && !g_speedBroken;
+        bool moving = (flags & 0xF) != 0 || (!matching && speed > 0.3f);
         bool sprint = (flags >> 8) & 1, walkFlag = (flags >> 6) & 1, runFlag = (flags >> 7) & 1;
         bool sneaking = (flags >> 9) & 1;
         const std::string& mv = g_control.move;
@@ -1075,10 +1175,10 @@ void SnakeThread() {
             in.switch_to = g_control.weapon;
             g_control.weapon = -1;
         }
-        in.move_y = moving ? 1.0f : 0.0f;
-        // Gait from Skyrim's own flags, falling back to the measured speed.
-        if (sprint || (!walkFlag && !runFlag && speed > 5.5f)) in.sprint = true;
-        else if (walkFlag || (!runFlag && speed < 2.6f)) in.walk = true;
+        // Gait from Skyrim's own flags (falling back to the measured speed
+        // when not speed matching).
+        if (sprint || (!matching && !walkFlag && !runFlag && speed > 5.5f)) in.sprint = true;
+        else if (walkFlag || (!matching && !runFlag && speed < 2.6f)) in.walk = true;
         // Stance: X toggles prone; otherwise crouch while Skyrim sneaks.
         if (x.Pressed(focused)) {
             proneToggled = !proneToggled;
@@ -1096,17 +1196,98 @@ void SnakeThread() {
         in.aim = g_control.aim >= 0 ? g_control.aim == 1 : focused && (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;
         in.fire = in.aim && (g_control.fire >= 0 ? g_control.fire == 1 : focused && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
         in.aim_pitch = -g_pitch.load();
+        // Direction: while aiming the actor faces the camera and strafes, so
+        // Skyrim's movement flags (back / forward / right / left) are Snake's
+        // stick; otherwise Skyrim turns the actor to its heading and Snake
+        // moves straight ahead.
+        if (moving) {
+            float mx = 0, my = 1;
+            if (in.aim && (flags & 0xF)) {
+                mx = float((flags >> 2) & 1) - float((flags >> 3) & 1);
+                my = float((flags >> 1) & 1) - float(flags & 1);
+                float len = std::sqrt(mx * mx + my * my);
+                mx /= len;
+                my /= len;
+            }
+            in.move_x = mx;
+            in.move_y = my;
+        }
         // Snake's own heading is "forward": Skyrim decides where the actor faces.
         SnakeVec3 snakePos{};
         float snakeYaw = 0;
         g_snake.player_transform(g_player, &snakePos, &snakeYaw);
         in.camera_yaw = snakeYaw;
+        SnakeVec3 before = snakePos;
         if (!g_snake.player_update(g_player, &in, nullptr, static_cast<float>(dt))) {
             Log("snake_player_update failed: %s", g_snake.last_error());
             g_enabled = false;
             continue;
         }
         {
+            // Speed matching: Snake's own ground speed vs Skyrim's.
+            SnakeVec3 after{};
+            float yawAfter = 0;
+            g_snake.player_transform(g_player, &after, &yawAfter);
+            float dx = after.x - before.x, dz = after.z - before.z;
+            float snakeSpeed = std::sqrt(dx * dx + dz * dz) / static_cast<float>(dt);
+            // SpeedMult = 100 x Snake's speed / Skyrim's speed at SpeedMult
+            // 100, both learned per state: Snake's per stance x gait (its
+            // controller is deterministic, so this settles quickly), Skyrim's
+            // per Skyrim gait from steady stretches only (moving for 1.5 s,
+            // SpeedMult unchanged for 1 s, speed close to its average). Direct
+            // feedback on the noisy measured speed oscillated.
+            SnakeStatus now{};
+            g_snake.player_status(g_player, &now);
+            int state = std::clamp(now.stance, 0, 2) * 4 + std::clamp(now.gait, 0, 3);
+            int skyGait = ((flags >> 8) & 1) ? 2 : ((flags >> 6) & 1) ? 0 : 1;  // sprint / walk / run
+            // A new direction (turning round) or state restarts the steady
+            // stretch.
+            if (moving && state == lastState && (flags & 0xF) == lastDir) {
+                movingTime += dt;
+                snakeAvg += (snakeSpeed - snakeAvg) * 0.1f;
+                skyAvg += (speed - skyAvg) * 0.1f;
+            } else {
+                movingTime = 0;
+                snakeAvg = skyAvg = 0;
+            }
+            lastState = state;
+            lastDir = flags & 0xF;
+            sinceSpeedChange += dt;
+            float cur = g_speedMult.load();
+            if (moving && movingTime > 1.0) snakeSpeedOf[state] = snakeAvg;
+            if (cur > 0 && moving && movingTime > 1.5 && sinceSpeedChange > 1.0 &&
+                std::fabs(speed - skyAvg) < 0.15f * skyAvg && skyAvg > 0.2f) {
+                // Outliers (running into a wall, turning) are ignored: the
+                // relation is linear, so true samples stay close to the base.
+                float est = skyAvg / (cur / 100.0f);
+                if (est > skyBase[skyGait] * 0.8f && est < skyBase[skyGait] * 1.25f)
+                    skyBase[skyGait] += (est - skyBase[skyGait]) * 0.05f;
+            }
+            speedTimer += dt;
+            if (speedTimer > 0.2 && g_control.speed && !g_speedBroken) {
+                speedTimer = 0;
+                if (cur < 0) {
+                    RequestSpeedMult(-1.0f);  // read the player's own value first
+                } else {
+                    // Standing still: preset the value for running in this
+                    // stance, or the player's own until it is known.
+                    int st = moving ? state : std::clamp(now.stance, 0, 2) * 4 + 2;
+                    int sg = moving ? skyGait : 1;
+                    float target = snakeSpeedOf[st];
+                    if (moving && target <= 0 && movingTime > 0.5) target = snakeAvg;
+                    float want = target > 0.1f ? 100.0f * target / skyBase[sg] : g_baseSpeedMult.load();
+                    // Skyrim will not start moving (or turn round) from a
+                    // standstill below roughly SpeedMult 20, though it keeps
+                    // moving at 15 (the prone crawl), so the idle preset
+                    // stays at 35 or more.
+                    if (!moving) want = (std::max)(want, 35.0f);
+                    want = std::clamp(want, 5.0f, 400.0f);
+                    if (std::fabs(want - cur) > cur * 0.04f) {
+                        RequestSpeedMult(want);
+                        sinceSpeedChange = 0;
+                    }
+                }
+            }
             SnakeShot shots[16];
             uint32_t k = g_snake.player_take_shots(g_player, shots, 16);
             if (g_control.launch) QueueShots(shots, k);
@@ -1156,10 +1337,10 @@ void SnakeThread() {
             logTimer = 0;
             SnakeStatus st{};
             g_snake.player_status(g_player, &st);
-            Log("snake: speed %.2f m/s stance %d gait %d aiming %d ammo %d/%d%s, shots %d, mode %d, focused %d, hook calls %u, hands %d, heading %.3f",
+            Log("snake: speed %.2f m/s stance %d gait %d aiming %d ammo %d/%d%s, shots %d, mode %d, focused %d, hook calls %u, hands %d, heading %.3f, snake %.2f / skyrim %.2f m/s, SpeedMult %.1f, run base %.2f",
                 speed, st.stance, st.gait, st.aiming, st.ammo, st.reserve, st.reloading ? " (reloading)" : "",
                 (int)g_shotsFired, (int)g_mode, (int)focused, g_hookCalls.exchange(0), ThePlayer() ? WeaponStateOf(ThePlayer()) : -1,
-                ThePlayer() ? At<float>(ThePlayer(), kRefAngle + 8) : 0.0f);
+                ThePlayer() ? At<float>(ThePlayer(), kRefAngle + 8) : 0.0f, snakeAvg, skyAvg, g_speedMult.load(), skyBase[1]);
         }
     }
 }
@@ -1623,6 +1804,22 @@ bool InstallInputHook() {
 }
 
 void OnMessage(SKSEMessagingInterface::Message* msg) {
+    // SpeedMult: never save Snake's value into the player's save, and re-read
+    // the player's own value after a load or new game.
+    if (msg->type == SKSEMessagingInterface::kMessage_SaveGame) {
+        void* player = ThePlayer();
+        float base = g_baseSpeedMult;
+        if (player && base > 0 && g_speedMult > 0 && std::fabs(g_speedMult - base) > 0.01f &&
+            SafeSetSpeedMult(player, base))
+            g_speedMult = base;  // re-applied by the next speed update
+        return;
+    }
+    if (msg->type == SKSEMessagingInterface::kMessage_PreLoadGame ||
+        msg->type == SKSEMessagingInterface::kMessage_NewGame) {
+        g_baseSpeedMult = -1.0f;
+        g_speedMult = -1.0f;
+        return;
+    }
     if (msg->type == SKSEMessagingInterface::kMessage_DataLoaded) {
         Log("Skyrim data loaded");
         if (LoadSnakeDll() && OpenRuntime() && InstallHook()) {

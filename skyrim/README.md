@@ -71,6 +71,18 @@ Exported meshes: Fox triangles wind the other way from Skyrim's, so the
 export reverses them (checked against vanilla meshes, whose triangles face
 along their vertex normals).
 
+Movement speed: Skyrim's character controller still moves the player
+(collision, slopes, stairs) but at Snake's speed. Snake's controller runs
+MGSV's locomotion internally (root motion: run ~2.35 m/s, crouch-run ~1.6,
+prone crawl ~0.7), and the player's `SpeedMult` is set to
+100 x Snake's speed / Skyrim's speed at 100 for the current Skyrim gait
+(run measured at 5.0 m/s, learned in play from steady stretches; samples
+from walls, turns and staggers are rejected). Idle presets stay at 35 or
+more because Skyrim will not start moving from the crawl's ~13. The
+player's own `SpeedMult` is restored when Snake mode ends and before every
+save, and re-read after loading. Movement and gait come from Skyrim's input
+flags; while aiming, the flags are Snake's strafe stick.
+
 How it runs: Snake's controller and the retarget run on the plugin's own
 60 Hz thread; the hook on `PlayerCharacter::UpdateAnimation` (called from
 Skyrim's job threads) only copies the latest pose into the bone nodes and
@@ -78,7 +90,7 @@ never calls into `snake.dll` (calling Rust from the job threads froze the
 game). If anything faults, Snake mode switches itself off.
 
 Testing hooks: `Data/SKSE/Plugins/snake_control.txt` (`enabled=1`, `mode=2`,
-`stance=prone`, `move=run`, `aim=1`, `fire=1`, `flash=0`, `launch=0`, `draw=0` to keep hands
+`stance=prone`, `move=run`, `aim=1`, `fire=1`, `weapon=1`, `speed=0`, `flash=0`, `launch=0`, `draw=0` to keep hands
 sheathed, `dump=1` to log the camera) drives the plugin without key presses.
 Log: `Documents/My Games/Skyrim Special Edition/SKSE/SnakeSKSE.log`.
 

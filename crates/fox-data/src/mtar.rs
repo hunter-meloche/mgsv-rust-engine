@@ -137,6 +137,25 @@ pub struct Clip {
     /// Named float parameters (`StrCode32` name, value), e.g. slope data.
     pub params: Vec<(u32, f32)>,
     pub tracks: Vec<Track>,
+    /// Motion events (markers the game reacts to, e.g. a magazine leaving or
+    /// entering the gun during a reload).
+    pub events: Vec<MotionEvent>,
+}
+
+/// A motion event: a named marker at one or more frames.
+///
+/// Layout (at the clip entry's motion event offset): `u32` section hash,
+/// `u32` track count, `u32` track offsets (from the section). Each track:
+/// `u32` name (`StrCode32`, e.g. `Normal`), `u32` event count, `u32` event
+/// offsets (from the track). Each event: `u32` name (`StrCode32`), a flags
+/// byte (low nibble: frame count; `0x40`: 16-bit frames, `0x80`: 8-bit), three
+/// more bytes (parameter counts), then the frames, each followed by an
+/// all-ones pad of the same width.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MotionEvent {
+    pub track: u32,
+    pub name: u32,
+    pub frames: Vec<u16>,
 }
 
 struct R<'a>(&'a [u8]);
@@ -468,17 +487,83 @@ impl Mtar {
                 channels,
             });
         }
+        // Best effort: a few NPC clips use another event layout; their
+        // animation still loads.
+        let events = if e.motion_events_offset == 0 {
+            Vec::new()
+        } else {
+            read_events(&r, e.motion_events_offset as usize).unwrap_or_default()
+        };
         Ok(Clip {
             frame_count,
             params,
             tracks,
+            events,
         })
     }
+}
+
+fn read_events(r: &R, at: usize) -> Result<Vec<MotionEvent>> {
+    let tracks = r.u32(at + 4)? as usize;
+    if tracks > 64 {
+        return Err(MtarError::Invalid(format!("{tracks} motion event tracks")));
+    }
+    let mut out = Vec::new();
+    for t in 0..tracks {
+        let ta = at + r.u32(at + 8 + 4 * t)? as usize;
+        let track = r.u32(ta)?;
+        let n = r.u32(ta + 4)? as usize;
+        if n > 256 {
+            return Err(MtarError::Invalid(format!("{n} motion events")));
+        }
+        for k in 0..n {
+            let ea = ta + r.u32(ta + 8 + 4 * k)? as usize;
+            let name = r.u32(ea)?;
+            let flags = r.u8(ea + 4)?;
+            let count = (flags & 0x0f) as usize;
+            let wide = flags & 0x40 != 0;
+            let frames = (0..count)
+                .map(|f| {
+                    if wide {
+                        r.u16(ea + 8 + f * 4)
+                    } else {
+                        r.u8(ea + 8 + f * 2).map(u16::from)
+                    }
+                })
+                .collect::<Result<_>>()?;
+            out.push(MotionEvent { track, name, frames });
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn motion_events() {
+        // From TPP's pl_rcvr_ar00.mtar: one track ("Normal") with an 8-bit
+        // point event (frame 24) and a 16-bit range event (frames 28-63).
+        let mut d = vec![0u8; 0];
+        d.extend_from_slice(&0x0bfe_2cf6u32.to_le_bytes());
+        d.extend_from_slice(&1u32.to_le_bytes());
+        d.extend_from_slice(&12u32.to_le_bytes());
+        // track at 12
+        d.extend_from_slice(&0xc8f4_fcb6u32.to_le_bytes());
+        d.extend_from_slice(&2u32.to_le_bytes());
+        d.extend_from_slice(&16u32.to_le_bytes());
+        d.extend_from_slice(&28u32.to_le_bytes());
+        // event at 12 + 16
+        d.extend_from_slice(&[0xb1, 0xde, 0x0d, 0xec, 0x81, 0, 0, 1, 0x18, 0xff, 0, 0]);
+        // event at 12 + 28
+        d.extend_from_slice(&[0x3a, 0xd5, 0xe0, 0xff, 0x42, 0, 0, 1, 0x1c, 0, 0xff, 0xff, 0x3f, 0, 0xff, 0xff]);
+        let ev = read_events(&R(&d), 0).unwrap();
+        assert_eq!(ev.len(), 2);
+        assert_eq!((ev[0].name, ev[0].frames.clone()), (0xec0d_deb1, vec![24]));
+        assert_eq!((ev[1].name, ev[1].frames.clone()), (0xffe0_d53a, vec![28, 63]));
+        assert_eq!(ev[1].track, 0xc8f4_fcb6);
+    }
 
     #[test]
     fn anim_half_values() {

@@ -118,6 +118,14 @@ enum Cmd {
     },
     /// Print StrCode32/StrCode64, PathCode64 and Wwise FNV-1 hashes of each TEXT.
     Hash { text: Vec<String> },
+    /// Find which words (one per line in WORDS) hash to the given values
+    /// (hex, StrCode32 or Wwise FNV-1), e.g. to name hashed motion events.
+    HashMatch {
+        #[arg(long)]
+        words: PathBuf,
+        /// Hex hash values.
+        targets: Vec<String>,
+    },
     /// Write a sound (16-bit PCM or IMA ADPCM) from an .sbp sound package as a .wav.
     SoundExport {
         /// Archive path of the .sbp (e.g. /Assets/tpp/sound/asset/common_bank_01.sbp).
@@ -586,6 +594,24 @@ fn run() -> Result<()> {
             }
             Ok(())
         }
+        Cmd::HashMatch { words, targets } => {
+            let wanted: std::collections::HashSet<u32> = targets
+                .iter()
+                .filter_map(|t| u32::from_str_radix(t.trim_start_matches("0x"), 16).ok())
+                .collect();
+            let text = std::fs::read_to_string(&words)?;
+            for w in text.lines().map(str::trim).filter(|w| !w.is_empty()) {
+                let s32 = fox_hash::str_code32(w.as_bytes());
+                let fnv = w.to_ascii_lowercase().bytes().fold(2166136261u32, |h, b| h.wrapping_mul(16777619) ^ b as u32);
+                if wanted.contains(&s32) {
+                    writeln!(out, "{s32:08x} str32 {w}")?;
+                }
+                if wanted.contains(&fnv) {
+                    writeln!(out, "{fnv:08x} fnv {w}")?;
+                }
+            }
+            Ok(())
+        }
         Cmd::Hash { text } => {
             for t in &text {
                 let fnv = t.to_ascii_lowercase().bytes().fold(2166136261u32, |h, b| h.wrapping_mul(16777619) ^ b as u32);
@@ -711,6 +737,20 @@ fn run() -> Result<()> {
                             c.tracks.len(),
                             keys
                         )?;
+                        if !c.events.is_empty() {
+                            let ev: Vec<String> = c
+                                .events
+                                .iter()
+                                .map(|e| {
+                                    let n = names
+                                        .resolve32(e.name)
+                                        .map(str::to_string)
+                                        .unwrap_or_else(|| format!("{:08x}", e.name));
+                                    format!("{n}@{:?}", e.frames)
+                                })
+                                .collect();
+                            writeln!(out, "         events: {}", ev.join(" "))?;
+                        }
                     }
                     Err(e) => writeln!(out, "  FAILED {name}: {e}")?,
                 }

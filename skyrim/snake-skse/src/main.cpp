@@ -1061,6 +1061,7 @@ struct Control {
     int launch = 1;      // launch projectiles (diagnostics)
     int weapon = -1;     // switch to this weapon once
     int speed = 1;       // match Skyrim's movement speed to Snake's
+    int body = 1;        // show Snake's own body
     bool dump = false;   // log the camera once (diagnostics)
 };
 Control g_control;
@@ -1091,6 +1092,7 @@ void PollControl(int curStance) {
         else if (k == "launch") g_control.launch = std::atoi(v.c_str());
         else if (k == "weapon") g_control.weapon = std::atoi(v.c_str());
         else if (k == "speed") g_control.speed = std::atoi(v.c_str());
+        else if (k == "body") g_control.body = std::atoi(v.c_str());
         else if (k == "dump") g_control.dump = v == "1";
     }
     fclose(f);
@@ -1630,6 +1632,114 @@ bool SafeSetWeaponsHidden(void* player, bool hide) {
     }
 }
 
+// ---- Snake's body ----------------------------------------------------------------
+//
+// `mgsv skyrim-export` writes Snake's MGSV body, face and bionic arm as one
+// skinned mesh (Data\\meshes\\snake\\snake_body.nif) bound to Skyrim's core
+// skeleton bones in Snake's rest pose. A main-thread task loads it, points
+// each shape's skin instance at the live skeleton's bones (by name) and
+// attaches it to the player's 3D root. While Snake mode is on it is shown
+// and the root's other children (Skyrim's body, armour, head) are hidden.
+// NiSkinInstance (geometry + 0x130): rootParent + 0x20, bones + 0x28,
+// boneWorldTransforms + 0x30, numMatrices + 0x3C.
+
+constexpr const char* kBodyMesh = "snake\\snake_body.nif";
+constexpr size_t kSkinRootParent = 0x20, kSkinBoneWorlds = 0x30;  // the rest: kGeomSkinInstance, kSkinBones, kSkinBoneCount
+std::atomic<void*> g_bodyNode{nullptr};
+std::atomic<void*> g_bodyParent{nullptr};  // 3D root it is attached to
+std::atomic<bool> g_bodyQueued{false};
+bool g_bodyFailed = false;
+std::vector<void*> g_bodyHidden;  // Skyrim nodes we hid (restored when Snake mode ends)
+
+// Point every skin instance under `node` at the bones of `skeleton`.
+int RebindSkin(void* node, void* skeleton, void* rootParent) {
+    int rebound = 0;
+    if (void* geom = AsGeometry(node)) {
+        void* skin = At<void*>(geom, kGeomSkinInstance);
+        if (skin && Readable(skin, 0x40)) {
+            uint32_t n = At<uint32_t>(skin, kSkinBoneCount);
+            void** bones = At<void**>(skin, kSkinBones);
+            void** worlds = At<void**>(skin, kSkinBoneWorlds);
+            for (uint32_t i = 0; i < n && bones && worlds && i < 64; ++i) {
+                const char* name = bones[i] ? Name(bones[i]) : nullptr;
+                void* live = name ? FindNode(skeleton, name) : nullptr;
+                if (!live) {
+                    Log("body: no live bone %s", name ? name : "?");
+                    continue;
+                }
+                bones[i] = live;
+                worlds[i] = &At<char>(live, kWorldRot);  // NiTransform: rotation, translation, scale
+                ++rebound;
+            }
+            At<void*>(skin, kSkinRootParent) = rootParent;
+        }
+    }
+    if (AsNode(node)) ForEachChild(node, [&](void* c) { rebound += RebindSkin(c, skeleton, rootParent); });
+    return rebound;
+}
+
+class BodyTask : public TaskDelegate {
+public:
+    void Run() override {
+        g_bodyQueued = false;
+        void* player = ThePlayer();
+        void* root = player ? Get3D(player, false) : nullptr;
+        void* skeleton = root ? FindNode(root, "NPC Root [Root]") : nullptr;
+        if (!skeleton || !g_fire.modelDemand) return;
+        if (g_bodyParent == root) return;
+        if (!g_bodyNode) {
+            void* node = nullptr;
+            uint32_t err = SafeDemand(kBodyMesh, &node);
+            Log("body model %s: error %u, node %p", kBodyMesh, err, node);
+            if (err != 0 || !node) {
+                g_bodyFailed = true;
+                return;
+            }
+            SetHidden(node, true);
+            g_bodyNode = node;
+        }
+        void* body = g_bodyNode;
+        int rebound = RebindSkin(body, skeleton, root);
+        if (!SafeAttach(root, body)) {
+            g_bodyFailed = true;
+            Log("attaching the body faulted");
+            return;
+        }
+        g_bodyParent = root;
+        g_bodyHidden.clear();
+        Log("body attached to %s (%p): %d skin bones rebound", Name(root) ? Name(root) : "?", root, rebound);
+        ForEachChild(root, [&](void* c) { Log("  root child %s", Name(c) ? Name(c) : "?"); });
+    }
+    void Dispose() override { delete this; }
+};
+
+// Show Snake's body and hide the player's own parts (or the reverse).
+void ShowBody(void* root, bool snake) {
+    void* body = g_bodyNode;
+    if (!root || g_bodyFailed) return;
+    if (g_bodyParent != root) {
+        if (snake && g_tasks && !g_bodyQueued.exchange(true)) g_tasks->AddTask(new BodyTask());
+        return;
+    }
+    if (!body) return;
+    SetHidden(body, !snake);
+    if (snake) {
+        // Skyrim re-shows parts it (re)attaches, so hide every frame.
+        ForEachChild(root, [&](void* c) {
+            if (c == body) return;
+            const char* name = Name(c);
+            if (name && strcmp(name, "NPC Root [Root]") == 0) return;
+            if (!(At<uint32_t>(c, 0xF4) & 1u)) {
+                SetHidden(c, true);
+                g_bodyHidden.push_back(c);
+            }
+        });
+    } else if (!g_bodyHidden.empty()) {
+        for (void* c : g_bodyHidden) SetHidden(c, false);
+        g_bodyHidden.clear();
+    }
+}
+
 // Write Snake's local rotations (and COM translation) to `nodes` (retarget
 // order; null entries skipped), then their world transforms parent-first.
 void WriteWorlds(const std::vector<void*>& nodes, size_t n);
@@ -1766,6 +1876,7 @@ void ApplySnake(void* player, float delta) {
             if (g_boneNames[i] == "NPC Spine2 [Spn2]") spine = g_nodes[i];
         }
         PlaceGun(0, hand, spine);
+        ShowBody(Get3D(player, false), g_control.body != 0);
         // First-person arms and guns.
         if (void* root1p = Get3D(player, true)) {
             if (root1p != g_cachedRoot1p) {
@@ -1836,6 +1947,7 @@ void HookedUpdateAnimation(void* self, float delta) {
             std::unique_lock<std::mutex> lock(g_hookMutex, std::try_to_lock);
             if (lock.owns_lock()) {
                 SafeSetWeaponsHidden(self, false);
+                ShowBody(Get3D(self, false), false);
                 for (int view = 0; view < 2; ++view) {
                     for (GunSlot& g : g_guns)
                         if (void* gun = g.node[view]) SetHidden(gun, true);

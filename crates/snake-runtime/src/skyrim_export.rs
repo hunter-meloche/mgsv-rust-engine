@@ -22,16 +22,16 @@ use crate::{read_any, WEAPONS};
 
 const UNITS_PER_METER: f32 = 70.0;
 
-fn to_sky(v: [f32; 3]) -> [f32; 3] {
+pub(crate) fn to_sky(v: [f32; 3]) -> [f32; 3] {
     [-v[0], v[2], v[1]]
 }
 
-fn normalize(v: [f32; 3]) -> [f32; 3] {
+pub(crate) fn normalize(v: [f32; 3]) -> [f32; 3] {
     let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
     if l > 1e-6 { [v[0] / l, v[1] / l, v[2] / l] } else { [0.0, 0.0, 1.0] }
 }
 
-fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
+pub(crate) fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
     [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 }
 
@@ -41,7 +41,7 @@ pub fn mesh_path(id: &str) -> String {
 }
 
 /// A texture of an `.fmdl` material slot: header and decoded-size mips.
-struct Texture {
+pub(crate) struct Texture {
     ftex: Ftex,
     mips: Vec<Vec<u8>>,
 }
@@ -70,7 +70,8 @@ fn read_texture(vfs: &Vfs, path_code: u64, format: PixelFormat) -> Result<Textur
 }
 
 /// Texture of material `mi` in slot `slot` (e.g. `Base_Tex_SRGB`).
-fn material_texture(vfs: &Vfs, m: &Fmdl, mi: usize, slot: &str) -> Option<Result<Texture>> {
+/// Path code of the texture in slot `slot` of material `mi`.
+pub(crate) fn material_texture_code(m: &Fmdl, mi: usize, slot: &str) -> Option<u64> {
     let want = fox_hash::str_code64(slot.as_bytes()) & 0xFFFF_FFFF_FFFF;
     let inst = m.material_instances.get(mi)?;
     let param = m.material_parameters.get(inst.textures.clone())?.iter().find(|p| {
@@ -78,7 +79,11 @@ fn material_texture(vfs: &Vfs, m: &Fmdl, mi: usize, slot: &str) -> Option<Result
             || m.strings.get(p.name as usize).map(String::as_str) == Some(slot)
     })?;
     let tex = m.textures.get(param.reference as usize)?;
-    let pc = *m.path_code64s.get(tex.reference as usize)?;
+    m.path_code64s.get(tex.reference as usize).copied()
+}
+
+pub(crate) fn material_texture(vfs: &Vfs, m: &Fmdl, mi: usize, slot: &str) -> Option<Result<Texture>> {
+    let pc = material_texture_code(m, mi, slot)?;
     // TPP normal maps are BC3 (x in alpha, y in green); the rest BC1.
     let format = if slot.starts_with("NormalMap") { PixelFormat::Bc3 } else { PixelFormat::Bc1 };
     Some(read_texture(vfs, pc, format))
@@ -94,7 +99,7 @@ fn dds_format(f: PixelFormat) -> Option<DdsFormat> {
 }
 
 /// Diffuse DDS: block-compressed data passed through, else decoded BGRA.
-fn diffuse_dds(t: &Texture) -> Result<Vec<u8>> {
+pub(crate) fn diffuse_dds(t: &Texture) -> Result<Vec<u8>> {
     if let Some(f) = dds_format(t.ftex.format) {
         return Ok(dds::write_dds(f, t.ftex.width, t.ftex.height, &t.mips));
     }
@@ -108,10 +113,16 @@ fn diffuse_dds(t: &Texture) -> Result<Vec<u8>> {
 
 /// Normal DDS (BGRA, alpha = specular mask) from the two-channel normal
 /// map and the specular map's red channel.
-fn normal_dds(normal: &Texture, specular: Option<&Texture>) -> Result<Vec<u8>> {
+pub(crate) fn normal_dds(normal: &Texture, specular: Option<&Texture>) -> Result<Vec<u8>> {
     let mut mips = Vec::new();
-    for (i, m) in normal.mips.iter().enumerate() {
+    // Stored uncompressed, so at most 1024 x 1024 (a 2048 map is 22 MB).
+    let skip = (0..normal.mips.len())
+        .find(|&i| normal.ftex.mip_dims(i).0 <= 1024)
+        .unwrap_or(0);
+    let mut out_dims = None;
+    for (i, m) in normal.mips.iter().enumerate().skip(skip) {
         let (w, h) = normal.ftex.mip_dims(i);
+        out_dims.get_or_insert((w, h));
         let mut px = ftex::decode_rgba(normal.ftex.format, w, h, m)?;
         // Specular mask at the same level (nearest sample if sizes differ).
         let spec = specular.and_then(|s| {
@@ -139,7 +150,8 @@ fn normal_dds(normal: &Texture, specular: Option<&Texture>) -> Result<Vec<u8>> {
         }
         mips.push(dds::rgba_to_bgra(&px));
     }
-    Ok(dds::write_dds(DdsFormat::Bgra8, normal.ftex.width, normal.ftex.height, &mips))
+    let (w, h) = out_dims.unwrap_or((normal.ftex.width, normal.ftex.height));
+    Ok(dds::write_dds(DdsFormat::Bgra8, w, h, &mips))
 }
 
 /// What [`export_weapons`] wrote.

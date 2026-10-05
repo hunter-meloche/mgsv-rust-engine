@@ -152,6 +152,13 @@ enum Cmd {
         kind: Option<String>,
         filter: String,
     },
+    /// Check Snake's Skyrim body binding: skin it with the retargeted Skyrim
+    /// skeleton for poses from a scripted run and compare with Snake's own
+    /// skinning (mean / max vertex distance per pose).
+    SkyrimBodyCheck {
+        #[arg(long)]
+        skyrim: PathBuf,
+    },
     /// Parse and validate every .fmdl inside every .fpk.
     FmdlCheck,
     /// Find files inside packages whose path contains PATTERN; prints
@@ -538,7 +545,8 @@ fn run() -> Result<()> {
             Ok(())
         }
         Cmd::SkyrimExport { skyrim } => {
-            let report = snake_runtime::skyrim_export::export_weapons(&vfs, &skyrim.join("Data"))?;
+            let mut report = snake_runtime::skyrim_export::export_weapons(&vfs, &skyrim.join("Data"))?;
+            snake_runtime::skyrim_body::export_snake_body(&vfs, &skyrim, &skyrim.join("Data"), &mut report)?;
             for f in &report.files {
                 writeln!(out, "wrote {} ({} bytes)", f.display(), std::fs::metadata(f).map(|m| m.len()).unwrap_or(0))?;
             }
@@ -616,6 +624,7 @@ fn run() -> Result<()> {
             }
             Ok(())
         }
+        Cmd::SkyrimBodyCheck { skyrim } => skyrim_body_check(&vfs, &skyrim),
         Cmd::FmdlCheck => fmdl_check(&vfs),
         Cmd::Mtar { path } => {
             let data = read_any(&vfs, &path)?;
@@ -2414,5 +2423,107 @@ fn write_file(path: &Path, data: &[u8]) -> Result<()> {
         std::fs::create_dir_all(p)?;
     }
     std::fs::write(path, data)?;
+    Ok(())
+}
+
+fn skyrim_body_check(vfs: &Vfs, skyrim: &Path) -> Result<()> {
+    use fox_anim::glam::{Mat3, Vec3};
+    use snake_core::Input;
+    let mut notes = Vec::new();
+    let body = snake_runtime::skyrim_body::build_body(
+        vfs,
+        skyrim,
+        &mut |f| Ok(vec![Vec::new(); f.material_instances.len()]),
+        &mut notes,
+    )?;
+    let assets = snake_runtime::SnakeAssets::load(vfs)?;
+    // Snake's own skinning of each source part.
+    let mut parts: std::collections::HashMap<&str, fox_anim::SkinnedModel> = Default::default();
+    for (path, _) in &body.sources {
+        if !parts.contains_key(path) {
+            let fmdl = fox_data::Fmdl::parse(&snake_runtime::read_any(vfs, path)?)?;
+            parts.insert(path, fox_anim::SkinnedModel::bind(&fmdl, &assets.skel).map_err(anyhow::Error::msg)?);
+        }
+    }
+    let to_sky = |v: Vec3| Vec3::new(-v.x, v.z, v.y) * 70.0;
+    // Bind transforms (rows -> matrix).
+    let bind: Vec<(Mat3, Vec3)> = body
+        .bones
+        .iter()
+        .map(|b| (Mat3::from_cols_array_2d(&b.rotation).transpose(), Vec3::from_array(b.translation)))
+        .collect();
+    let mut ctl = assets.controller()?;
+    let base = Input::default();
+    let fwd = Input { move_y: 1.0, ..base };
+    let script: Vec<(f32, Input, &str)> = vec![
+        (1.0, base, "idle"),
+        (2.0, fwd, "run"),
+        (2.0, Input { aim: true, ..base }, "aim"),
+        (2.0, Input { aim: true, aim_pitch: 0.5, ..base }, "aim up"),
+        (0.05, Input { crouch: true, ..base }, "crouch"),
+        (2.0, fwd, "crouch run"),
+        (0.05, Input { prone: true, ..base }, "prone"),
+        (3.0, fwd, "crawl"),
+    ];
+    let dt = 1.0 / 60.0;
+    for (secs, input, label) in script {
+        for k in 0..((secs / dt).round().max(1.0) as usize) {
+            let mut i = input;
+            if k > 0 {
+                i.crouch = false;
+                i.prone = false;
+            }
+            ctl.update(&assets.rig, &assets.clips, &snake_core::FlatGround { height: 0.0 }, dt, &i);
+        }
+        let pose = ctl.pose(&assets.rig, &assets.skel).map_err(anyhow::Error::msg)?;
+        let model = body.retarget.model_transforms(&pose);
+        let cur: Vec<(Mat3, Vec3)> = body
+            .core
+            .iter()
+            .map(|&i| (Mat3::from_quat(model[i].1), model[i].2))
+            .collect();
+        let (mut sum, mut n, mut max) = (0.0f32, 0usize, 0.0f32);
+        let mut dsum = Vec3::ZERO;
+        let mut per_part: std::collections::BTreeMap<String, (f32, usize)> = Default::default();
+        let mut max_at = String::new();
+        for (shape, (path, mesh)) in body.shapes.iter().zip(&body.sources) {
+            let reference = &parts[path].skin(&pose)[*mesh];
+            for (v, p) in shape.shape.positions.iter().enumerate() {
+                let p = Vec3::from_array(*p);
+                let mut out = Vec3::ZERO;
+                for (b, w) in shape.weights[v] {
+                    if w > 0.0 {
+                        let (br, bt) = bind[b as usize];
+                        let (cr, ct) = cur[b as usize];
+                        out += (cr * (br.transpose() * (p - bt)) + ct) * w;
+                    }
+                }
+                let d = (out - to_sky(reference[v])) / 70.0 * 100.0; // cm
+                let e = d.length();
+                dsum += d;
+                let key = format!("{} {mesh}", path.rsplit('/').next().unwrap_or("?"));
+                let entry = per_part.entry(key).or_default();
+                entry.0 += e;
+                entry.1 += 1;
+                sum += e;
+                n += 1;
+                if e > max {
+                    max = e;
+                    max_at = format!("{} mesh {mesh} vertex {v}", path.rsplit('/').next().unwrap_or("?"));
+                }
+            }
+        }
+        println!(
+            "{label:<12} mean {:5.1} cm  max {:5.1} cm ({max_at}); mean offset {:.1?}",
+            sum / n.max(1) as f32,
+            max,
+            (dsum / n.max(1) as f32).to_array()
+        );
+        if label == "idle" {
+            for (k, (e, c)) in &per_part {
+                println!("    {k:<28} {:5.1} cm over {c} vertices", e / *c as f32);
+            }
+        }
+    }
     Ok(())
 }

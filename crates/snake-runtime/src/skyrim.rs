@@ -167,7 +167,8 @@ pub struct SkyrimRetarget {
 #[derive(Clone, Copy, Debug)]
 pub struct LocalPose {
     pub rotation: Quat,
-    /// Only for `NPC COM`: local translation (pelvis height), else None.
+    /// For bones Snake drives: local translation placing the joint where
+    /// Snake's is (the COM: pelvis height and sway); None keeps the rest.
     pub translation: Option<Vec3>,
 }
 
@@ -335,20 +336,31 @@ impl SkyrimRetarget {
         let c = basis();
         let ci = c.inverse();
         let mut model = Vec::with_capacity(self.bones.len());
+        let mut model_pos: Vec<Vec3> = Vec::with_capacity(self.bones.len());
         let mut out = Vec::with_capacity(self.bones.len());
         for b in &self.bones {
             let parent_model = b.parent.map_or(b.parent_rest_model, |p| model[p]);
+            let parent_pos = b.parent.map_or(Vec3::ZERO, |p| model_pos[p]);
             let target = match b.source {
                 Some(s) => (c * pose.rotations[s] * ci * b.aligned).normalize(),
                 None => (parent_model * b.rest_local_rot).normalize(),
             };
             model.push(target);
             let rotation = (parent_model.inverse() * target).normalize();
-            let translation = (b.name == "NPC COM [COM ]").then(|| {
-                // Pelvis height and sway from Snake's waist (root space), in
-                // the frame of NPC Root (at the actor's origin).
-                parent_model.inverse() * (fox_to_sky(pose.positions[self.waist]) * UNITS_PER_METER)
-            });
+            // Joints driven by Snake sit where Snake's are (his proportions,
+            // so his own mesh skins onto this skeleton without the limbs
+            // pivoting about Skyrim's joints); the COM carries his pelvis
+            // height and sway (NPC Root is at the actor's origin). Other
+            // bones keep their rest offsets.
+            let snake_pos = match b.source {
+                Some(_) if b.name == "NPC COM [COM ]" => {
+                    Some(fox_to_sky(pose.positions[self.waist]) * UNITS_PER_METER)
+                }
+                Some(s) => Some(fox_to_sky(pose.positions[s]) * UNITS_PER_METER),
+                None => None,
+            };
+            let translation = snake_pos.map(|p| parent_model.inverse() * (p - parent_pos));
+            model_pos.push(snake_pos.unwrap_or(parent_pos + parent_model * b.rest_local_pos));
             out.push(LocalPose {
                 rotation,
                 translation,
@@ -381,6 +393,17 @@ impl SkyrimRetarget {
     /// Model-space joint positions of the retargeted Skyrim skeleton (for
     /// checks): rest local translations under the retargeted rotations.
     pub fn joint_positions(&self, pose: &Pose) -> Vec<(String, Vec3)> {
+        self.model_transforms(pose)
+            .into_iter()
+            .map(|(name, _, pos)| (name, pos))
+            .collect()
+    }
+
+    /// Model-space rotation and position of every output bone for `pose`
+    /// (Skyrim axes and units; the space of Snake's root converted by
+    /// `(-x, z, y) * 70`): rest local translations under the retargeted
+    /// rotations, as the plugin poses the in-game skeleton.
+    pub fn model_transforms(&self, pose: &Pose) -> Vec<(String, Quat, Vec3)> {
         let locals = self.apply(pose);
         let mut model: Vec<(Quat, Vec3)> = Vec::with_capacity(self.bones.len());
         let mut out = Vec::new();
@@ -392,8 +415,14 @@ impl SkyrimRetarget {
             let t = l.translation.unwrap_or(b.rest_local_pos);
             let m = ((pr * l.rotation).normalize(), pt + pr * t);
             model.push(m);
-            out.push((b.name.clone(), m.1));
+            out.push((b.name.clone(), m.0, m.1));
         }
         out
+    }
+
+    /// Each output bone's name, parent (index among the output bones) and
+    /// driving Snake bone.
+    pub fn bone_links(&self) -> Vec<(String, Option<usize>, Option<usize>)> {
+        self.bones.iter().map(|b| (b.name.clone(), b.parent, b.source)).collect()
     }
 }

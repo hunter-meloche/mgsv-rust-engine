@@ -5,6 +5,7 @@
 use std::path::Path;
 
 pub mod skyrim;
+pub mod skyrim_body;
 pub mod skyrim_export;
 
 use anyhow::{Context, Result};

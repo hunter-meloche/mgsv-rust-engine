@@ -134,18 +134,23 @@ skeleton, since the plugin writes the same locals to both). Skyrim's
 first-person arms are hidden while it shows, so you see Snake's gloved right
 hand and bionic left arm on the gun.
 
-Movement speed: Skyrim's character controller still moves the player
-(collision, slopes, stairs) but at Snake's speed. Snake's controller runs
-MGSV's locomotion internally (root motion: run ~2.35 m/s, crouch-run ~1.6,
-prone crawl ~0.7), and the player's `SpeedMult` is set to
-100 x Snake's speed / Skyrim's speed at 100 for the current Skyrim gait,
-times `MoveSpeedScale` (snake.ini, percent, default 100)
-(run measured at 5.0 m/s, learned in play from steady stretches; samples
-from walls, turns and staggers are rejected). Idle presets stay at 35 or
-more because Skyrim will not start moving from the crawl's ~13. The
-player's own `SpeedMult` is restored when Snake mode ends and before every
-save, and re-read after loading. Movement and gait come from Skyrim's input
-flags; while aiming, the flags are Snake's strafe stick.
+Movement: Snake moves the player himself (direct drive). Skyrim's movement
+code sets the player's Havok character controller velocity once per frame
+through `bhkCharacterController::SetLinearVelocityImpl` (vtable slot 7 of the
+`bhkCharProxyController` at player +0xF8 (process) +0x08 +0x250, all checked
+by RTTI name; the slot was found by counting per-frame calls). In Snake mode
+that call's horizontal velocity is replaced by Snake's own root motion,
+turned into Skyrim's world axes by the actor's heading, so starts, stops and
+strafes follow MGSV's own animations at MGSV's speeds (run 2.35 m/s, crouch
+1.6, crawl ~0.7), while gravity, slopes and collision stay Skyrim's; only the
+player's controller is changed (the vtable is shared). Measured in game
+(`trace=1` in the control file logs both speeds every 0.1 s): Skyrim's speed
+follows Snake's through the start (0 -> 0.6 -> 1.0 -> 1.8 -> 2.35 m/s), the
+stop and every stance, within about 0.05 m/s. If the controller is not found,
+the earlier SpeedMult matching takes over (Skyrim's run measured at 5.0 m/s,
+SpeedMult = 100 x Snake's speed / Skyrim's, `MoveSpeedScale` in snake.ini);
+`drive=0` in the control file forces it. The player's own SpeedMult is left
+alone while driving.
 
 Verified in game: run (Snake 2.35 / Skyrim 2.3 m/s), sprint (4.2 / 4.3),
 aim strafe (2.0 / 1.9), crouch and prone. Skyrim keeps sprinting until the

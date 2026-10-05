@@ -311,6 +311,97 @@ bool Readable(const void* p, size_t n) {
     return reinterpret_cast<const char*>(p) + n <= reinterpret_cast<const char*>(mbi.BaseAddress) + mbi.RegionSize;
 }
 
+// MSVC RTTI class name of a polymorphic object (".?AVPlayerCharacter@@"),
+// or null: vtable[-1] is the complete object locator, whose type
+// descriptor (an image-relative offset) holds the decorated name at +0x10.
+const char* RttiName(const void* obj) {
+    static const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    static const size_t size = [] {
+        auto dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+        return static_cast<size_t>(reinterpret_cast<IMAGE_NT_HEADERS64*>(base + dos->e_lfanew)->OptionalHeader.SizeOfImage);
+    }();
+    auto in = [&](uintptr_t p) { return p >= base && p < base + size; };
+    if (!obj || !Readable(obj, 8)) return nullptr;
+    auto vt = *reinterpret_cast<const uintptr_t* const*>(obj);
+    if (!in(reinterpret_cast<uintptr_t>(vt)) || !Readable(vt - 1, 8)) return nullptr;
+    auto col = reinterpret_cast<const uint32_t*>(vt[-1]);
+    if (!in(reinterpret_cast<uintptr_t>(col)) || col[0] != 1) return nullptr;
+    uintptr_t td = base + col[3];
+    if (!in(td) || !Readable(reinterpret_cast<const void*>(td + 0x10), 4)) return nullptr;
+    const char* name = reinterpret_cast<const char*>(td + 0x10);
+    return name[0] == '.' && name[1] == '?' ? name : nullptr;
+}
+
+// Diagnostics: the player's character controller. Actor::currentProcess
+// (AIProcess, no RTTI) sits at +0xF0 in SE (this runtime shifts reference
+// data by 8); AIProcess+0x10 is its MiddleHighProcessData, which holds the
+// controller; the classes are checked by RTTI name.
+void ProbeCharController(void* player) {
+    for (size_t pOff : {size_t(0xF0), size_t(0xF8)}) {
+        void* process = At<void*>(player, pOff);
+        if (!process || !Readable(process, 0x40)) continue;
+        for (size_t mOff = 0x08; mOff <= 0x20; mOff += 8) {
+            void* mh = At<void*>(process, mOff);
+            if (!mh || !Readable(mh, 0x400)) continue;
+            for (size_t off = 0; off < 0x400; off += 8) {
+                void* q = At<void*>(mh, off);
+                if (!q || (reinterpret_cast<uintptr_t>(q) & 7) || !Readable(q, 0x40)) continue;
+                const char* n = RttiName(q);
+                if (n && (strstr(n, "bhk") || strstr(n, "hkp")))
+                    Log("probe: player+%zX -> process %p +%zX -> %p +%zX -> %p %s", pOff, process, mOff, mh, off, q, n);
+            }
+        }
+    }
+}
+
+// The player's bhkCharProxyController (RTTI-checked), or null.
+void* CharController(void* player) {
+    void* process = player && Readable(player, 0x100) ? At<void*>(player, 0xF8) : nullptr;
+    void* mh = process && Readable(process, 0x10) ? At<void*>(process, 0x08) : nullptr;
+    void* cc = mh && Readable(mh, 0x258) ? At<void*>(mh, 0x250) : nullptr;
+    const char* n = cc ? RttiName(cc) : nullptr;
+    return n && strstr(n, "bhkChar") ? cc : nullptr;
+}
+
+// Diagnostics: the controller's memory as rows of four floats.
+void DumpCharController(void* player, const char* label) {
+    void* cc = CharController(player);
+    if (!cc || !Readable(cc, 0x400)) {
+        Log("probe %s: no character controller", label);
+        return;
+    }
+    Log("probe %s: controller %p", label, cc);
+    for (size_t off = 0; off < 0x400; off += 16) {
+        const float* f = &At<float>(cc, off);
+        bool interesting = false;
+        for (int k = 0; k < 4; ++k)
+            if (std::isfinite(f[k]) && std::fabs(f[k]) > 1e-4f && std::fabs(f[k]) < 1e5f) interesting = true;
+        if (interesting) Log("  +%03zX  %10.4f %10.4f %10.4f %10.4f", off, f[0], f[1], f[2], f[3]);
+    }
+}
+
+class DumpTask : public TaskDelegate {
+public:
+    explicit DumpTask(std::string label) : label_(std::move(label)) {}
+    void Run() override { DumpCharController(ThePlayer(), label_.c_str()); }
+    void Dispose() override { delete this; }
+
+private:
+    std::string label_;
+};
+
+class ProbeTask : public TaskDelegate {
+public:
+    void Run() override {
+        void* player = ThePlayer();
+        if (!player) return;
+        Log("probe: player %p %s", player, RttiName(player) ? RttiName(player) : "?");
+        ProbeCharController(player);
+        Log("probe: done");
+    }
+    void Dispose() override { delete this; }
+};
+
 // Bones referenced by skinned geometry under `obj` (name -> node). Skyrim
 // keeps some bones (fingers, toes, twists) out of the skeleton's child
 // arrays at runtime, but the skin instances still point at them.
@@ -1072,6 +1163,7 @@ void RequestSpeedMult(float value) {
 std::atomic<bool> g_enabled{false};
 std::atomic<int> g_mode{2};  // 0 compute only, 1 local transforms, 2 local + world (default)
 std::atomic<float> g_speed{0.0f};  // player speed (m/s), measured by the hook
+std::atomic<float> g_moveForward{0.0f}, g_moveRight{0.0f};  // the same in the actor's frame (m/s)
 // Actor::ActorState::actorState1: the ActorState base is at actor + 0xC0 on
 // this runtime (vtable there, verified in game), flags follow at + 0xC8.
 // Bits 0-3 moving back / forward / right / left, 6 walking, 7 running,
@@ -1132,10 +1224,13 @@ struct Control {
     int flash = 1;       // muzzle flash (diagnostics)
     int launch = 1;      // launch projectiles (diagnostics)
     int weapon = -1;     // switch to this weapon once
-    int speed = 1;       // match Skyrim's movement speed to Snake's
+    int speed = 1;       // match Skyrim's movement speed to Snake's (when not driving directly)
+    int drive = 1;       // Snake moves the player himself (direct drive)
+    int trace = 0;       // log Snake's and Skyrim's speeds every 0.1 s (diagnostics)
     int body = 1;        // show Snake's own body
     int reload = 0;      // reload once
     bool dump = false;   // log the camera once (diagnostics)
+    int probe = 0;       // 1: log the player's process / character controller objects once
 };
 Control g_control;
 
@@ -1165,9 +1260,12 @@ void PollControl(int curStance) {
         else if (k == "launch") g_control.launch = std::atoi(v.c_str());
         else if (k == "weapon") g_control.weapon = std::atoi(v.c_str());
         else if (k == "speed") g_control.speed = std::atoi(v.c_str());
+        else if (k == "drive") g_control.drive = std::atoi(v.c_str());
+        else if (k == "trace") g_control.trace = std::atoi(v.c_str());
         else if (k == "body") g_control.body = std::atoi(v.c_str());
         else if (k == "reload") g_control.reload = std::atoi(v.c_str());
         else if (k == "dump") g_control.dump = v == "1";
+        else if (k == "probe") g_control.probe = std::atoi(v.c_str());
     }
     fclose(f);
     Log("control: enabled %d mode %d move %s aim %d stance %s (current %d)", (int)g_enabled, (int)g_mode,
@@ -1292,6 +1390,73 @@ void UpdateHud() {
     g_hudText = text;
     g_hudShown = show;
     g_tasks->AddUITask(new HudTask(text, show, color));
+}
+
+// ---- direct drive: Snake moves the character ------------------------------------
+//
+// Skyrim's movement code sets the player's Havok character controller
+// velocity once per frame through bhkCharacterController::
+// SetLinearVelocityImpl (vtable slot 7 of the bhkCharProxyController,
+// found by counting per-frame calls: slot 7 receives Skyrim's world velocity
+// in Havok units, metres per second). In Snake mode its horizontal part is
+// replaced by Snake's own root motion (MGSV's starts, stops and strafes, at
+// MGSV's speeds); the vertical part (gravity, slopes) and collision stay
+// Skyrim's. The vtable is shared by every character, so only the player's
+// controller is changed. Snake's velocity comes from the Snake thread, in
+// Skyrim's world axes.
+
+constexpr int kVtSetLinearVelocity = 7;
+using SetVelocityFn = void (*)(void* self, const float* velocity);
+SetVelocityFn g_originalSetVelocity = nullptr;
+std::atomic<void*> g_playerController{nullptr};
+std::atomic<bool> g_driving{false};         // Snake mode with a fresh velocity
+std::atomic<float> g_driveVx{0}, g_driveVy{0};  // m/s, Skyrim world X / Y
+std::atomic<int64_t> g_driveStamp{0};       // NowMs() of the last update
+std::atomic<bool> g_driveQueued{false};
+
+void HookedSetVelocity(void* self, const float* velocity) {
+    if (g_driving && self == g_playerController && velocity && NowMs() - g_driveStamp < 200) {
+        alignas(16) float v[4] = {g_driveVx, g_driveVy, velocity[2], velocity[3]};
+        g_originalSetVelocity(self, v);
+        return;
+    }
+    g_originalSetVelocity(self, velocity);
+}
+
+// Hook slot 7 once a player controller exists (main thread).
+class DriveHookTask : public TaskDelegate {
+public:
+    void Run() override {
+        g_driveQueued = false;
+        void* cc = CharController(ThePlayer());
+        if (!cc) return;
+        g_playerController = cc;
+        if (g_originalSetVelocity) return;
+        void** vt = Vtable(cc);
+        DWORD old;
+        if (!VirtualProtect(&vt[kVtSetLinearVelocity], sizeof(void*), PAGE_EXECUTE_READWRITE, &old)) return;
+        g_originalSetVelocity = reinterpret_cast<SetVelocityFn>(vt[kVtSetLinearVelocity]);
+        vt[kVtSetLinearVelocity] = reinterpret_cast<void*>(&HookedSetVelocity);
+        VirtualProtect(&vt[kVtSetLinearVelocity], sizeof(void*), old, &old);
+        Log("direct drive: hooked %s::SetLinearVelocityImpl (vtable %p); Snake moves the player", RttiName(cc), vt);
+    }
+    void Dispose() override { delete this; }
+};
+
+// From the Snake thread each tick: Snake's horizontal velocity (his root
+// motion over the tick, in his own frame) turned into Skyrim's world axes
+// by the actor's heading (forward (sin h, cos h), right (cos h, -sin h)).
+void UpdateDrive(void* player, float forward, float right) {
+    void* cc = CharController(player);
+    if (cc != g_playerController) {
+        g_playerController = cc;
+        if (cc && !g_originalSetVelocity && g_tasks && !g_driveQueued.exchange(true)) g_tasks->AddTask(new DriveHookTask());
+    }
+    float h = At<float>(player, kRefAngle + 8);
+    g_driveVx = forward * std::sin(h) + right * std::cos(h);
+    g_driveVy = forward * std::cos(h) - right * std::sin(h);
+    g_driveStamp = NowMs();
+    g_driving = cc != nullptr;
 }
 
 // ---- aim camera -------------------------------------------------------------------
@@ -1529,6 +1694,17 @@ void SnakeThread() {
             g_snake.player_transform(g_player, &after, &yawAfter);
             float dx = after.x - before.x, dz = after.z - before.z;
             float snakeSpeed = std::sqrt(dx * dx + dz * dz) / static_cast<float>(dt);
+            // Snake's own frame (Fox: +Z ahead at yaw 0, right is -X).
+            float fwd = (dx * std::sin(yawAfter) + dz * std::cos(yawAfter)) / static_cast<float>(dt);
+            float rgt = (-dx * std::cos(yawAfter) + dz * std::sin(yawAfter)) / static_cast<float>(dt);
+            if (void* player = ThePlayer(); player && g_control.drive) UpdateDrive(player, fwd, rgt);
+            else g_driving = false;
+            bool driven = g_driving && g_originalSetVelocity;
+            static int traceTick = 0;
+            if (g_control.trace && ++traceTick % 6 == 0)
+                Log("trace: snake %.2f fwd %.2f right %.2f | skyrim %.2f fwd %.2f right %.2f m/s (stance %d, moving %d, driven %d)",
+                    snakeSpeed, fwd, rgt, speed, g_moveForward.load(), g_moveRight.load(), (int)cur.stance, (int)moving,
+                    (int)driven);
             // SpeedMult = 100 x Snake's speed / Skyrim's speed at SpeedMult
             // 100, both learned per state: Snake's per stance x gait (its
             // controller is deterministic, so this settles quickly), Skyrim's
@@ -1563,7 +1739,14 @@ void SnakeThread() {
                     skyBase[skyGait] += (est - skyBase[skyGait]) * 0.05f;
             }
             speedTimer += dt;
-            if (speedTimer > 0.2 && g_control.speed && !g_speedBroken) {
+            if (driven) {
+                // Snake moves the player himself: the player's own SpeedMult.
+                float base = g_baseSpeedMult;
+                if (speedTimer > 0.2 && base > 0 && g_speedMult > 0 && std::fabs(g_speedMult - base) > 0.01f) {
+                    speedTimer = 0;
+                    RequestSpeedMult(base);
+                }
+            } else if (speedTimer > 0.2 && g_control.speed && !g_speedBroken) {
                 speedTimer = 0;
                 if (cur < 0) {
                     RequestSpeedMult(-1.0f);  // read the player's own value first
@@ -1604,6 +1787,17 @@ void SnakeThread() {
             if (g_control.dump) {
                 g_control.dump = false;
                 DumpCamera(ThePlayer());
+            }
+            if (g_control.probe == 1 && g_tasks) {
+                g_control.probe = 0;
+                g_tasks->AddTask(new ProbeTask());
+            }
+            if (g_control.probe == 2 && g_tasks) {  // controller dump, with the measured speed
+                g_control.probe = 0;
+                char label[64];
+                snprintf(label, sizeof label, "at %.2f m/s heading %.3f", speed,
+                         ThePlayer() ? At<float>(ThePlayer(), kRefAngle + 8) : 0.0f);
+                g_tasks->AddTask(new DumpTask(label));
             }
             // Hands drawn while aiming; sheathed again a second after.
             if (in.aim) sinceAim = 0;
@@ -2190,6 +2384,9 @@ void ApplySnake(void* player, float delta) {
     if (g_havePos && delta > 0) {
         float dx = pos[0] - g_lastPos[0], dy = pos[1] - g_lastPos[1];
         g_speed = std::sqrt(dx * dx + dy * dy) / delta / 70.0f;
+        float h = At<float>(player, kRefAngle + 8);
+        g_moveForward = (dx * std::sin(h) + dy * std::cos(h)) / delta / 70.0f;
+        g_moveRight = (dx * std::cos(h) - dy * std::sin(h)) / delta / 70.0f;
     }
     {
         g_actorFlags = At<uint32_t>(player, kActorState1);

@@ -167,7 +167,18 @@ stop and every stance, within about 0.05 m/s. If the controller is not found,
 the earlier SpeedMult matching takes over (Skyrim's run measured at 5.0 m/s,
 SpeedMult = 100 x Snake's speed / Skyrim's);
 `drive=0` in the control file forces it. The player's own SpeedMult is left
-alone while driving. Tempo: `MoveSpeedScale` in snake.ini (percent, default 150) sets the
+alone while driving. Dash: Snake dashes (MGSV's sprint, `s_dh_lp`, 4.2 m/s x tempo) only while
+the sprint key is held: `SprintKey` in snake.ini, a virtual-key code,
+default 164 = Left Alt, Skyrim's sprint key. Releasing it goes back to the
+run. There is no stamina cost, as in MGSV: Skyrim's `SprintHandler` (found in
+PlayerControls by RTTI name, before the ready-weapon handler) is off in
+Snake mode. It drained stamina and kept sprinting after the key was
+released. Dashing while moving crouched rises straight into the dash: the
+controller switches to standing and enters the dash loop at the frame that
+best matches the crouched stride. Snake stays standing afterwards. Prone he
+keeps crawling.
+
+Tempo: `MoveSpeedScale` in snake.ini (percent, default 150) sets the
 tempo of all of Snake's motion: his controller advances by 1.5 x the real
 time step, so every animation plays half again as fast, and through root
 motion he moves 1.5x as fast (run 3.5 m/s). Turns, stance changes, raising

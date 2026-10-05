@@ -547,6 +547,22 @@ impl Controller {
             Gait::Run
         };
 
+        // Dashing while moving crouched rises straight into the dash (MGSV:
+        // the dash button stands Snake up without stopping), blending from
+        // the crouched stride into the matching dash frame.
+        if input.sprint
+            && moving
+            && self.stance == Stance::Crouch
+            && matches!(self.state, State::Start | State::Loop)
+        {
+            self.stance = Stance::Stand;
+            let name = self.names.looping(Stance::Stand, Gait::Dash);
+            if self.play_loop_matched(rig, clips, &name) {
+                self.gait = Gait::Dash;
+                self.state = State::Loop;
+            }
+        }
+
         // Stance changes.
         if !matches!(self.state, State::Changing { .. }) {
             let target = if input.prone {

@@ -1648,6 +1648,7 @@ void SnakeThread() {
     // Crouch follows Skyrim's sneak; X toggles prone (C is Skyrim's
     // auto-move, Z its shout key).
     Key f8{VK_F8}, f9{VK_F10};
+    const int sprintVk = IniInt(L"SprintKey", VK_LMENU);
     // 1 / 2 switch Snake's weapon (MRS-4 / WU S.Pistol), as in MGSV's
     // primary/secondary slots.
     Key weaponKeys[2] = {{'1'}, {'2'}};
@@ -1741,7 +1742,12 @@ void SnakeThread() {
         // them from the speed fed back on itself and stalled the player).
         bool matching = g_control.speed && !g_speedBroken;
         bool moving = (flags & 0xF) != 0 || (!matching && speed > 0.3f);
-        bool sprint = (flags >> 8) & 1, walkFlag = (flags >> 6) & 1, runFlag = (flags >> 7) & 1;
+        // Dash: held, as in MGSV, on Skyrim's sprint key (snake.ini SprintKey,
+        // a virtual-key code, default Left Alt). Skyrim's own sprint is off
+        // in Snake mode: it drained stamina and stayed latched after the key
+        // was released.
+        bool sprint = focused && (GetAsyncKeyState(sprintVk) & 0x8000) != 0;
+        bool walkFlag = (flags >> 6) & 1, runFlag = (flags >> 7) & 1;
         bool sneaking = (flags >> 9) & 1;
         const std::string& mv = g_control.move;
         if (mv == "idle") moving = false, sprint = false;
@@ -1758,7 +1764,7 @@ void SnakeThread() {
         }
         // Gait from Skyrim's own flags (falling back to the measured speed
         // when not speed matching).
-        if (sprint || (!matching && !walkFlag && !runFlag && speed > 5.5f)) in.sprint = true;
+        if (sprint && moving) in.sprint = true;
         else if (walkFlag || (!matching && !runFlag && speed < 2.6f)) in.walk = true;
         if (wantStance < 0) wantStance = sneaking ? 1 : 0;
         bool ctrlDown = focused && (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
@@ -1800,7 +1806,12 @@ void SnakeThread() {
             float k = 1.0f - std::exp(-static_cast<float>(dt) / 0.15f);
             g_cameraDrop = g_cameraDrop + (target - g_cameraDrop) * k;
         }
-        if (want != cur.stance) {
+        // Dashing from a crouch stands Snake up (he rises into the dash);
+        // prone he keeps crawling.
+        if (in.sprint && cur.stance == 1 && want == 1) wantStance = want = 0;
+        if (in.sprint && cur.stance == 2) in.sprint = false;
+        bool risingIntoDash = in.sprint && cur.stance == 1 && want == 0;
+        if (want != cur.stance && !risingIntoDash) {
             if (want == 2) in.prone = true;                         // stand/crouch -> prone
             else if (cur.stance == 2) (want == 1 ? in.crouch : in.prone) = true;  // prone -> crouch / stand
             else in.crouch = true;                                  // stand <-> crouch
@@ -2878,6 +2889,13 @@ CanProcessFn g_originalReadyCanProcess = nullptr;
 CanProcessFn g_originalJumpCanProcess = nullptr;
 // Sneaking: Snake's stance decides (Ctrl is read by the Snake thread).
 CanProcessFn g_originalSneakCanProcess = nullptr;
+// Sprinting: Snake dashes while the sprint key is held, without stamina.
+CanProcessFn g_originalSprintCanProcess = nullptr;
+
+bool HookedSprintCanProcess(void* self, void* event) {
+    if (g_enabled) return false;
+    return g_originalSprintCanProcess(self, event);
+}
 
 bool HookedSneakCanProcess(void* self, void* event) {
     if (g_enabled) return false;
@@ -2944,6 +2962,18 @@ void HookReadyWeapon(void* attackHandler) {
         Log("hooked %s::CanProcess: Ctrl sets Snake's stance in Snake mode", sneakName);
     else
         Log("sneak: handler not found (slot %d holds %s)", slot + 2, sneakName ? sneakName : "?");
+    // The sprint handler, before the ready-weapon one (checked by name).
+    bool sprintHooked = false;
+    for (int k = slot - 12; k < slot && !sprintHooked; ++k) {
+        void* h = k >= 0 ? At<void*>(controls, k * 8) : nullptr;
+        const char* name = h && Readable(h, 16) ? RttiName(h) : nullptr;
+        if (name && strstr(name, "Sprint") &&
+            HookCanProcess(h, reinterpret_cast<void*>(&HookedSprintCanProcess), g_originalSprintCanProcess)) {
+            Log("hooked %s::CanProcess (slot %d): Snake dashes on the held sprint key, no stamina", name, k);
+            sprintHooked = true;
+        }
+    }
+    if (!sprintHooked) Log("sprint: handler not found; Skyrim's sprint also runs in Snake mode");
 }
 
 bool HookedAttackCanProcess(void* self, void* event) {

@@ -606,6 +606,7 @@ fn export_weapon(
             glossiness: 80.0,
             specular_strength: 1.0,
             alpha_test: None,
+            clamp_uv: false,
             effect: None,
         });
     }

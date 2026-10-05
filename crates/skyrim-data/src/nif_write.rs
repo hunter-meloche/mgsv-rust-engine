@@ -25,6 +25,9 @@ pub struct Shape {
     /// (`NiAlphaProperty` alpha test), drawn double-sided: hair cards,
     /// eyelashes, patches.
     pub alpha_test: Option<u8>,
+    /// Clamp UVs to the texture's edges instead of repeating it (a decal
+    /// whose UVs reach past the texture, e.g. Snake's emblem patch).
+    pub clamp_uv: bool,
     /// Draw as an unlit additive effect (`BSEffectShaderProperty` +
     /// additive `NiAlphaProperty`) with this source texture instead of the
     /// lit material, e.g. a muzzle flash.
@@ -154,7 +157,7 @@ fn lighting_shader(s: &Shape, texture_set: i32, skinned: bool) -> Vec<u8> {
     for v in [0.0, 0.0, 0.0, 1.0] {
         m.f32(v); // emissive colour, emissive multiple
     }
-    m.u32(3); // texture clamp: wrap s, wrap t
+    m.u32(if s.clamp_uv { 0 } else { 3 }); // texture clamp: clamp or wrap s, t
     m.f32(1.0); // alpha
     m.f32(0.0); // refraction strength
     m.f32(s.glossiness);

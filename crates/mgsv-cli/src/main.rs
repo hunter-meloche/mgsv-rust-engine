@@ -483,9 +483,11 @@ fn run() -> Result<()> {
                     .unwrap_or_else(|| "?".into());
                 writeln!(
                     out,
-                    "  mesh {i:>3} {:>6} vertices, material {:>2}, group {group}",
+                    "  mesh {i:>3} {:>6} vertices, material {:>2}, group {group}, uv {:.3?}..{:.3?}",
                     mesh.positions.len(),
-                    mesh.material_instance
+                    mesh.material_instance,
+                    mesh.uvs[0].iter().fold([f32::MAX; 2], |a, u| [a[0].min(u[0]), a[1].min(u[1])]),
+                    mesh.uvs[0].iter().fold([f32::MIN; 2], |a, u| [a[0].max(u[0]), a[1].max(u[1])]),
                 )?;
             }
             for (i, (min, max)) in m.bounding_boxes.iter().enumerate() {

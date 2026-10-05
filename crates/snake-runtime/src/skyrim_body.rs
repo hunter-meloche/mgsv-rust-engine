@@ -360,6 +360,10 @@ pub fn build_body(
                     glossiness: material.glossiness,
                     specular_strength: 1.0,
                     alpha_test: material.cutout.then_some(128),
+                    // A cut-out decal reaching past its texture (the emblem
+                    // patch, UVs -0.49..1.07) would repeat it: MGSV clamps.
+                    clamp_uv: material.cutout
+                        && mesh.uvs[0].iter().flatten().any(|&c| !(-0.01..=1.01).contains(&c)),
                     effect: None,
                 },
                 weights: pick(&weights, &used),

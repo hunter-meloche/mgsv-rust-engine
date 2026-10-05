@@ -75,7 +75,8 @@ Movement speed: Skyrim's character controller still moves the player
 (collision, slopes, stairs) but at Snake's speed. Snake's controller runs
 MGSV's locomotion internally (root motion: run ~2.35 m/s, crouch-run ~1.6,
 prone crawl ~0.7), and the player's `SpeedMult` is set to
-100 x Snake's speed / Skyrim's speed at 100 for the current Skyrim gait
+100 x Snake's speed / Skyrim's speed at 100 for the current Skyrim gait,
+times `MoveSpeedScale` (snake.ini, percent, default 100)
 (run measured at 5.0 m/s, learned in play from steady stretches; samples
 from walls, turns and staggers are rejected). Idle presets stay at 35 or
 more because Skyrim will not start moving from the crawl's ~13. The

@@ -30,6 +30,11 @@ MgsvDir=$mgsv
 DictionariesDir=$(Join-Path $repo "dictionaries")
 ; Damage of each bullet (Skyrim scale: a Hunting Bow does 7, a Daedric Bow 19).
 BulletDamage=48
+; Snake's movement speed in percent of MGSV's (run 2.35 m/s, crouch 1.6,
+; crawl 0.7); Skyrim's own run is about 5 m/s.
+MoveSpeedScale=100
+; Gunshot volume in percent.
+ShotVolume=70
 "@
 Set-Content -Path (Join-Path $plugins "snake.ini") -Value $ini -Encoding ASCII
 

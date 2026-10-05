@@ -1111,6 +1111,8 @@ void SnakeThread() {
     // Skyrim ground speed at SpeedMult 100 per gait (walk, run, sprint; m/s):
     // run measured in game, the others first guesses, all refined in play.
     float skyBase[3] = {1.6f, 5.0f, 7.0f};
+    // snake.ini MoveSpeedScale (percent): 100 = MGSV's own speeds.
+    const float moveScale = IniInt(L"MoveSpeedScale", 100) / 100.0f;
     float snakeSpeedOf[12] = {};  // Snake's steady speed per stance x gait (0: not seen yet)
     int lastState = -1;
     uint32_t lastDir = 0;
@@ -1280,7 +1282,7 @@ void SnakeThread() {
                     // which reads as idle): keep the current value rather
                     // than jumping back to the player's own speed.
                     if (moving && target <= 0.1f) holdSpeed = true;
-                    float want = target > 0.1f ? 100.0f * target / skyBase[sg] : g_baseSpeedMult.load();
+                    float want = target > 0.1f ? 100.0f * moveScale * target / skyBase[sg] : g_baseSpeedMult.load();
                     // Skyrim will not start moving (or turn round) from a
                     // standstill below roughly SpeedMult 20, though it keeps
                     // moving at 15 (the prone crawl), so the idle preset

@@ -1146,6 +1146,87 @@ void PollControl(int curStance) {
         g_control.move.c_str(), g_control.aim, g_control.stance.c_str(), curStance);
 }
 
+// ---- aim camera -------------------------------------------------------------------
+//
+// MGSV aims over Snake's right shoulder. Skyrim's over-the-shoulder offsets
+// for drawn hands (Skyrim.ini [Camera] fOverShoulderCombatPosX / PosZ) give
+// the same framing, and Skyrim reads them live, so in Snake mode the plugin
+// sets them (snake.ini AimCameraX / AimCameraZ, game units; AimCamera=0 to
+// leave them alone) and restores the player's own values afterwards.
+// The settings are found by name: an INI Setting is {vtable, value, name},
+// so the object is the one in the exe's data whose +0x10 points at the
+// name string.
+
+struct FloatSetting {
+    float* value = nullptr;
+    float original = 0;
+};
+FloatSetting g_aimCamX, g_aimCamZ;
+
+bool InImage(uintptr_t p, uintptr_t base, size_t size) { return p >= base && p < base + size; }
+
+float* FindFloatSetting(const char* name) {
+    auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    auto dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+    auto nt = reinterpret_cast<IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+    size_t imageSize = nt->OptionalHeader.SizeOfImage;
+    IMAGE_SECTION_HEADER* first = IMAGE_FIRST_SECTION(nt);
+    size_t len = strlen(name) + 1;  // with the terminator
+    std::vector<uintptr_t> strings;
+    for (int i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
+        const IMAGE_SECTION_HEADER& sec = first[i];
+        if (sec.Characteristics & IMAGE_SCN_MEM_EXECUTE) continue;
+        auto* p = reinterpret_cast<const char*>(base + sec.VirtualAddress);
+        size_t n = sec.Misc.VirtualSize;
+        for (size_t k = 1; k + len <= n; ++k)
+            if (p[k] == name[0] && p[k - 1] == 0 && memcmp(p + k, name, len) == 0) strings.push_back(reinterpret_cast<uintptr_t>(p + k));
+    }
+    for (uintptr_t str : strings) {
+        for (int i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
+            const IMAGE_SECTION_HEADER& sec = first[i];
+            if (!(sec.Characteristics & IMAGE_SCN_MEM_WRITE)) continue;
+            auto* q = reinterpret_cast<const uintptr_t*>(base + sec.VirtualAddress);
+            size_t n = sec.Misc.VirtualSize / sizeof(uintptr_t);
+            for (size_t k = 2; k < n; ++k) {
+                if (q[k] != str || !InImage(q[k - 2], base, imageSize)) continue;
+                float* value = reinterpret_cast<float*>(const_cast<uintptr_t*>(q + k - 1));
+                if (std::isfinite(*value) && std::fabs(*value) < 10000.0f) return value;
+            }
+        }
+    }
+    return nullptr;
+}
+
+bool SafeFindFloatSetting(const char* name, FloatSetting& out) {
+    __try {
+        out.value = FindFloatSetting(name);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        out.value = nullptr;
+    }
+    if (out.value) out.original = *out.value;
+    return out.value != nullptr;
+}
+
+void SetUpAimCamera() {
+    if (!IniInt(L"AimCamera", 1)) {
+        Log("aim camera: off (snake.ini AimCamera=0)");
+        return;
+    }
+    bool x = SafeFindFloatSetting("fOverShoulderCombatPosX:Camera", g_aimCamX);
+    bool z = SafeFindFloatSetting("fOverShoulderCombatPosZ:Camera", g_aimCamZ);
+    Log("aim camera: fOverShoulderCombatPosX %s (%.1f), fOverShoulderCombatPosZ %s (%.1f)", x ? "found" : "not found",
+        x ? g_aimCamX.original : 0.0f, z ? "found" : "not found", z ? g_aimCamZ.original : 0.0f);
+}
+
+// Snake's aim camera on (Snake mode) or the player's own values back.
+void ApplyAimCamera(bool snake) {
+    static bool applied = false;
+    if (snake == applied) return;
+    applied = snake;
+    if (g_aimCamX.value) *g_aimCamX.value = snake ? float(IniInt(L"AimCameraX", 120)) : g_aimCamX.original;
+    if (g_aimCamZ.value) *g_aimCamZ.value = snake ? float(IniInt(L"AimCameraZ", 0)) : g_aimCamZ.original;
+}
+
 void SnakeThread() {
     // Crouch follows Skyrim's sneak; X toggles prone (C is Skyrim's
     // auto-move, Z its shout key).
@@ -1195,6 +1276,7 @@ void SnakeThread() {
             g_enabled = !g_enabled;
             Log("Snake mode %s", g_enabled ? "ON" : "OFF");
         }
+        ApplyAimCamera(g_enabled);
         if (!g_enabled) {
             // Give the player their own speed back.
             float base = g_baseSpeedMult;
@@ -2122,6 +2204,7 @@ void OnMessage(SKSEMessagingInterface::Message* msg) {
             g_fire.ready = lib && SetUpFiring();
             Log("firing %s", g_fire.ready ? "ready" : "unavailable");
             SetUpSounds();
+            SetUpAimCamera();
             g_running = true;
             g_snakeThread = std::thread(SnakeThread);
             g_snakeThread.detach();

@@ -46,6 +46,16 @@ Snake's grip each frame while aiming or reloading; otherwise it rides on
 its MGSV holster point (`CNP_ASRROOT`, at the left hip), placed relative to
 Skyrim's `NPC Spine2` (snake_retarget_weapon_place).
 
+Aim camera: in Snake mode, aiming frames Snake over his right shoulder as in
+MGSV, with Snake on the left and the gun in view. The plugin sets Skyrim's
+drawn-hands camera offsets (`fOverShoulderCombatPosX` / `PosZ`, read live by
+the game) to `AimCameraX` / `AimCameraZ` from snake.ini (default 120 / 0;
+`AimCamera=0` leaves them alone) and puts the player's own values back when
+Snake mode ends. It finds the settings by name: an INI setting is
+`{vtable, value, name}`, so it is the object in the exe's data whose `+0x10`
+points at the name string. After Snake mode ends, Skyrim's camera keeps the
+offset until the next draw or sheathe.
+
 First person: Snake's arm chains (clavicles down to the fingers; the
 first-person skeleton has finger bones, so his grip shows) drive the
 first-person skeleton too, while its spine and head stay Skyrim's so the

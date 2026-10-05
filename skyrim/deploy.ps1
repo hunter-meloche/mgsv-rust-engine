@@ -35,6 +35,12 @@ BulletDamage=48
 MoveSpeedScale=100
 ; Gunshot volume in percent.
 ShotVolume=70
+; Over-the-shoulder aim camera in Snake mode, as in MGSV (Skyrim's
+; fOverShoulderCombatPosX/PosZ while aiming, game units; restored when
+; Snake mode ends). AimCamera=0 keeps Skyrim's camera.
+AimCamera=1
+AimCameraX=120
+AimCameraZ=0
 "@
 Set-Content -Path (Join-Path $plugins "snake.ini") -Value $ini -Encoding ASCII
 

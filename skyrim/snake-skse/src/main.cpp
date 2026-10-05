@@ -1202,6 +1202,7 @@ std::atomic<bool> g_enabled{false};
 std::atomic<int> g_mode{2};  // 0 compute only, 1 local transforms, 2 local + world (default)
 std::atomic<float> g_speed{0.0f};  // player speed (m/s), measured by the hook
 std::atomic<int> g_snakeStance{0};  // Snake's stance (0 stand, 1 crouch, 2 prone)
+std::atomic<bool> g_snakeMoving{false};  // the player is moving (Space dives instead of jumping)
 std::atomic<int> g_wantSneak{-1};   // Skyrim's sneak flag to keep (-1: leave it alone)
 std::atomic<bool> g_snakeAiming{false};
 std::atomic<float> g_cameraYaw{0.0f};      // camera heading (Skyrim convention: forward (sin, cos))
@@ -1275,6 +1276,7 @@ struct Control {
     int trace = 0;       // log Snake's and Skyrim's speeds every 0.1 s (diagnostics)
     int body = 1;        // show Snake's own body
     int reload = 0;      // reload once
+    int dive = 0;        // dive once
     bool dump = false;   // log the camera once (diagnostics)
     int probe = 0;       // 1: log the player's process / character controller objects once
 };
@@ -1310,6 +1312,7 @@ void PollControl(int curStance) {
         else if (k == "trace") g_control.trace = std::atoi(v.c_str());
         else if (k == "body") g_control.body = std::atoi(v.c_str());
         else if (k == "reload") g_control.reload = std::atoi(v.c_str());
+        else if (k == "dive") g_control.dive = std::atoi(v.c_str());
         else if (k == "dump") g_control.dump = v == "1";
         else if (k == "probe") g_control.probe = std::atoi(v.c_str());
     }
@@ -1649,6 +1652,8 @@ void SnakeThread() {
     // auto-move, Z its shout key).
     Key f8{VK_F8}, f9{VK_F10};
     const int sprintVk = IniInt(L"SprintKey", VK_LMENU);
+    // Space while running or dashing: MGSV's dive to prone.
+    Key diveKey{VK_SPACE};
     // 1 / 2 switch Snake's weapon (MRS-4 / WU S.Pistol), as in MGSV's
     // primary/secondary slots.
     Key weaponKeys[2] = {{'1'}, {'2'}};
@@ -1820,6 +1825,17 @@ void SnakeThread() {
         g_snakeAiming = in.aim;
         in.fire = in.aim && (g_control.fire >= 0 ? g_control.fire == 1 : focused && (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
         in.reload = reloadKey.Pressed(focused) || g_control.reload != 0;
+        // Dive: Space while moving, standing or crouched, not aiming. Snake
+        // lands prone, so the stance Ctrl keeps is prone from now on (the
+        // controller ignores stance requests while the dive plays).
+        bool divePressed = diveKey.Pressed(focused) || g_control.dive != 0;
+        g_control.dive = 0;
+        g_snakeMoving = moving;
+        if (divePressed && moving && !in.aim && cur.stance != 2) {
+            in.dive = 1;
+            wantStance = 2;
+            Log("dive");
+        }
         g_control.reload = 0;
         in.aim_pitch = -g_pitch.load();
         // Direction: while aiming the actor faces the camera and strafes, so
@@ -2903,7 +2919,8 @@ bool HookedSneakCanProcess(void* self, void* event) {
 }
 
 bool HookedJumpCanProcess(void* self, void* event) {
-    if (g_enabled && g_snakeStance != 0) return false;
+    // Moving, Space is Snake's dive.
+    if (g_enabled && (g_snakeStance != 0 || g_snakeMoving)) return false;
     return g_originalJumpCanProcess(self, event);
 }
 

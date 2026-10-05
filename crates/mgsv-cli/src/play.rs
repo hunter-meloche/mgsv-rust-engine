@@ -139,6 +139,7 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
             aim: aim_button,
             fire: aim_button && lmb,
             reload: window.is_key_pressed(Key::R, KeyRepeat::No),
+            dive: window.is_key_pressed(Key::Space, KeyRepeat::No),
             aim_pitch: -(cam_pitch - ctl.recoil),
             switch_to: [Key::Key1, Key::Key2, Key::Key3, Key::Key4]
                 .iter()

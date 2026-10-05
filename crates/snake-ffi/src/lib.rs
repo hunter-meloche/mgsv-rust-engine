@@ -65,6 +65,7 @@ pub struct SnakeInput {
     pub aim: u8,
     pub fire: u8,
     pub reload: u8,
+    pub dive: u8,
     pub switch_to: i32,
 }
 
@@ -413,6 +414,7 @@ pub unsafe extern "C" fn snake_player_update(
             aim: i.aim != 0,
             fire: i.fire != 0,
             reload: i.reload != 0,
+            dive: i.dive != 0,
             aim_pitch: i.aim_pitch,
             switch_to: usize::try_from(i.switch_to).ok(),
         };

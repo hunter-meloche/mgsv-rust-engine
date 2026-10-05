@@ -178,6 +178,14 @@ controller switches to standing and enters the dash loop at the frame that
 best matches the crouched stride. Snake stays standing afterwards. Prone he
 keeps crawling.
 
+Dive: Space while running or dashing (standing or crouched, not aiming)
+plays MGSV's dive to prone, `snapdiv_s_rn_f_int`: 6.1 m in 4.4 s, about
+3 s at tempo 1.5. That variant ends exactly in the prone idle
+`snapnon_c_idl_l`; the plain `snapdiv_s_rn_f` ends mirrored. Snake is prone
+afterwards: sneaking, the crawl Sneak bonus, a low camera. While Snake moves,
+Skyrim's jump is off, so Space only dives. Standing still upright, Space
+still jumps. The control file's `dive=1` dives once.
+
 Tempo: `MoveSpeedScale` in snake.ini (percent, default 150) sets the
 tempo of all of Snake's motion: his controller advances by 1.5 x the real
 time step, so every animation plays half again as fast, and through root

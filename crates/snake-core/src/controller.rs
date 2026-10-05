@@ -73,11 +73,18 @@ pub struct Input {
     pub fire: bool,
     /// Pressed this tick: reload.
     pub reload: bool,
+    /// Pressed this tick: dive forward to prone (while running or dashing).
+    pub dive: bool,
     /// Camera pitch (radians, up positive): where the weapon aims.
     pub aim_pitch: f32,
     /// Pressed this tick: switch to the weapon in this slot.
     pub switch_to: Option<usize>,
 }
+
+/// MGSV's dive from a run to prone. Its plain sibling `snapdiv_s_rn_f`
+/// ends mirrored, in a prone pose with no idle; this one ends in
+/// `snapnon_c_idl_l`.
+pub const DIVE: &str = "snapdiv_s_rn_f_int";
 
 /// A shot fired this tick, in world space.
 #[derive(Clone, Copy, Debug)]
@@ -546,6 +553,19 @@ impl Controller {
         } else {
             Gait::Run
         };
+
+        // Diving: running or dashing (standing or crouched), Snake dives
+        // forward and lands prone. MGSV's dive from a run ends exactly in
+        // the prone idle; the stance changes when it finishes.
+        if input.dive
+            && moving
+            && matches!(self.stance, Stance::Stand | Stance::Crouch)
+            && matches!(self.state, State::Start | State::Loop)
+            && self.play(clips, DIVE, false, 0.15)
+        {
+            self.state = State::Changing { to: Stance::Prone };
+            self.gait = Gait::Idle;
+        }
 
         // Dashing while moving crouched rises straight into the dash (MGSV:
         // the dash button stands Snake up without stopping), blending from

@@ -30,6 +30,7 @@ typedef struct {
     float camera_yaw;  /* radians about +Y; 0 looks along +Z */
     float aim_pitch;   /* radians, up positive */
     uint8_t sprint, walk, crouch, prone, aim, fire, reload;
+    uint8_t dive;      /* pressed: dive forward to prone (running or dashing) */
     int32_t switch_to;
 } SnakeInput;
 

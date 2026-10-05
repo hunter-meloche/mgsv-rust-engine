@@ -1163,6 +1163,7 @@ void RequestSpeedMult(float value) {
 std::atomic<bool> g_enabled{false};
 std::atomic<int> g_mode{2};  // 0 compute only, 1 local transforms, 2 local + world (default)
 std::atomic<float> g_speed{0.0f};  // player speed (m/s), measured by the hook
+std::atomic<int> g_snakeStance{0};  // Snake's stance (0 stand, 1 crouch, 2 prone)
 std::atomic<float> g_moveForward{0.0f}, g_moveRight{0.0f};  // the same in the actor's frame (m/s)
 // Actor::ActorState::actorState1: the ActorState base is at actor + 0xC0 on
 // this runtime (vtable there, verified in game), flags follow at + 0xC8.
@@ -1390,6 +1391,16 @@ void UpdateHud() {
     g_hudText = text;
     g_hudShown = show;
     g_tasks->AddUITask(new HudTask(text, show, color));
+}
+
+// Skyrim's movement input (PlayerControls::data.moveInputVec, +0x24): x
+// right, y forward, -1..1 per axis (keys) or the stick; false if unknown.
+bool ReadMoveInput(float& x, float& y) {
+    void* pc = g_fire.playerControls && Readable(g_fire.playerControls, 8) ? *g_fire.playerControls : nullptr;
+    if (!pc || !Readable(pc, 0x30)) return false;
+    x = At<float>(pc, 0x24);
+    y = At<float>(pc, 0x28);
+    return std::isfinite(x) && std::isfinite(y) && std::fabs(x) <= 1.5f && std::fabs(y) <= 1.5f;
 }
 
 // ---- direct drive: Snake moves the character ------------------------------------
@@ -1647,9 +1658,16 @@ void SnakeThread() {
             Log("prone %s", proneToggled ? "on" : "off");
         }
         int want = proneToggled ? 2 : sneaking ? 1 : 0;
+        // A stance from the control file is a one-off request: once reached,
+        // X and Skyrim's sneak decide again.
         if (g_control.stance == "stand") want = 0;
         else if (g_control.stance == "crouch") want = 1;
         else if (g_control.stance == "prone") want = 2;
+        if (!g_control.stance.empty() && want == cur.stance) {
+            g_control.stance.clear();
+            proneToggled = want == 2;
+        }
+        g_snakeStance = cur.stance;
         if (want != cur.stance) {
             if (want == 2) in.prone = true;                         // stand/crouch -> prone
             else if (cur.stance == 2) (want == 1 ? in.crouch : in.prone) = true;  // prone -> crouch / stand
@@ -1661,17 +1679,19 @@ void SnakeThread() {
         g_control.reload = 0;
         in.aim_pitch = -g_pitch.load();
         // Direction: while aiming the actor faces the camera and strafes, so
-        // Skyrim's movement flags (back / forward / right / left) are Snake's
-        // stick; otherwise Skyrim turns the actor to its heading and Snake
-        // moves straight ahead.
+        // Skyrim's movement input (PlayerControls +0x24: x right, y forward,
+        // keys or stick) is Snake's stick; otherwise Skyrim turns the actor
+        // to its heading and Snake moves straight ahead. (The actor's movement
+        // flags cannot tell back from right while aiming.)
         if (moving) {
             float mx = 0, my = 1;
-            if (in.aim && (flags & 0xF)) {
-                mx = float((flags >> 2) & 1) - float((flags >> 3) & 1);
-                my = float((flags >> 1) & 1) - float(flags & 1);
-                float len = std::sqrt(mx * mx + my * my);
-                mx /= len;
-                my /= len;
+            float ix = 0, iy = 0;
+            if (in.aim && ReadMoveInput(ix, iy)) {
+                float len = std::sqrt(ix * ix + iy * iy);
+                if (len > 0.05f) {
+                    mx = ix / (std::max)(len, 1.0f);
+                    my = iy / (std::max)(len, 1.0f);
+                }
             }
             in.move_x = mx;
             in.move_y = my;
@@ -1791,6 +1811,19 @@ void SnakeThread() {
             if (g_control.probe == 1 && g_tasks) {
                 g_control.probe = 0;
                 g_tasks->AddTask(new ProbeTask());
+            }
+            if (g_control.probe == 4) {  // PlayerControls floats (the movement input vector)
+                g_control.probe = 0;
+                void* pc = g_fire.playerControls && Readable(g_fire.playerControls, 8) ? *g_fire.playerControls : nullptr;
+                if (pc && Readable(pc, 0x80)) {
+                    std::string row;
+                    char b[24];
+                    for (size_t off = 0x20; off < 0x80; off += 4) {
+                        snprintf(b, sizeof b, " %zX:%.2f", off, At<float>(pc, off));
+                        row += b;
+                    }
+                    Log("probe controls:%s", row.c_str());
+                }
             }
             if (g_control.probe == 2 && g_tasks) {  // controller dump, with the measured speed
                 g_control.probe = 0;
@@ -2557,6 +2590,24 @@ CanProcessFn g_originalAttackCanProcess = nullptr;
 // ready-weapon handler six slots before the attack/block handler (found by
 // looking for the attack handler this hook is called on).
 CanProcessFn g_originalReadyCanProcess = nullptr;
+// Jumping: off while Snake is crouched or prone (MGSV has no jump there).
+CanProcessFn g_originalJumpCanProcess = nullptr;
+
+bool HookedJumpCanProcess(void* self, void* event) {
+    if (g_enabled && g_snakeStance != 0) return false;
+    return g_originalJumpCanProcess(self, event);
+}
+
+// Patch slot 1 (CanProcess) of a handler's vtable.
+bool HookCanProcess(void* handler, void* hook, CanProcessFn& original) {
+    void** vt = Vtable(handler);
+    DWORD old;
+    if (!VirtualProtect(&vt[1], sizeof(void*), PAGE_EXECUTE_READWRITE, &old)) return false;
+    original = reinterpret_cast<CanProcessFn>(vt[1]);
+    vt[1] = hook;
+    VirtualProtect(&vt[1], sizeof(void*), old, &old);
+    return true;
+}
 std::atomic<bool> g_readySearched{false};
 
 bool HookedReadyCanProcess(void* self, void* event) {
@@ -2578,13 +2629,22 @@ void HookReadyWeapon(void* attackHandler) {
         Log("ready weapon: handler not found (attack handler at slot %d); R also readies Skyrim's weapon", slot);
         return;
     }
-    void** vt = Vtable(ready);
-    DWORD old;
-    if (!VirtualProtect(&vt[1], sizeof(void*), PAGE_EXECUTE_READWRITE, &old)) return;
-    g_originalReadyCanProcess = reinterpret_cast<CanProcessFn>(vt[1]);
-    vt[1] = reinterpret_cast<void*>(&HookedReadyCanProcess);
-    VirtualProtect(&vt[1], sizeof(void*), old, &old);
-    Log("hooked ReadyWeaponHandler::CanProcess (vtable %p, PlayerControls slot %d): R reloads in Snake mode", vt, slot - 6);
+    const char* readyName = RttiName(ready);
+    if (readyName && !strstr(readyName, "ReadyWeapon")) {
+        Log("ready weapon: slot %d holds %s, not the ready-weapon handler", slot - 6, readyName);
+        return;
+    }
+    if (HookCanProcess(ready, reinterpret_cast<void*>(&HookedReadyCanProcess), g_originalReadyCanProcess))
+        Log("hooked %s::CanProcess (PlayerControls slot %d): R reloads in Snake mode", readyName ? readyName : "ReadyWeaponHandler",
+            slot - 6);
+    // The jump handler two slots before the attack handler.
+    void* jump = At<void*>(controls, (slot - 2) * 8);
+    const char* jumpName = jump ? RttiName(jump) : nullptr;
+    if (jumpName && strstr(jumpName, "Jump") &&
+        HookCanProcess(jump, reinterpret_cast<void*>(&HookedJumpCanProcess), g_originalJumpCanProcess))
+        Log("hooked %s::CanProcess: no jumping while Snake is crouched or prone", jumpName);
+    else
+        Log("jump: handler not found (slot %d holds %s)", slot - 2, jumpName ? jumpName : "?");
 }
 
 bool HookedAttackCanProcess(void* self, void* event) {

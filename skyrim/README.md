@@ -150,7 +150,13 @@ stop and every stance, within about 0.05 m/s. If the controller is not found,
 the earlier SpeedMult matching takes over (Skyrim's run measured at 5.0 m/s,
 SpeedMult = 100 x Snake's speed / Skyrim's, `MoveSpeedScale` in snake.ini);
 `drive=0` in the control file forces it. The player's own SpeedMult is left
-alone while driving.
+alone while driving. While aiming, Snake's stick is Skyrim's own movement input
+(`PlayerControls` +0x24: x right, y forward, keys or gamepad; the actor's
+movement flags cannot tell back from right while aiming), so strafes go
+the way the keys say (checked in game for W/A/S/D). Skyrim's jump is off
+while Snake is crouched or prone (`JumpHandler`, two `PlayerControls` slots
+before the attack handler, checked by RTTI name like the ready-weapon
+handler).
 
 Verified in game: run (Snake 2.35 / Skyrim 2.3 m/s), sprint (4.2 / 4.3),
 aim strafe (2.0 / 1.9), crouch and prone. Skyrim keeps sprinting until the
@@ -192,7 +198,7 @@ full reload 6 s, rounds in at 3.3 s). Mesh groups the game hides (the MRS-4's
 rail light) are no longer exported.
 
 Testing hooks: `Data/SKSE/Plugins/snake_control.txt` (`enabled=1`, `mode=2`,
-`stance=prone`, `move=run`, `aim=1`, `fire=1`, `reload=1`, `weapon=1`, `speed=0`, `flash=0`, `launch=0`, `draw=0` to keep hands
+`stance=prone` (once: X and sneak decide again when it is reached), `move=run`, `aim=1`, `fire=1`, `reload=1`, `weapon=1`, `speed=0`, `flash=0`, `launch=0`, `draw=0` to keep hands
 sheathed, `dump=1` to log the camera) drives the plugin without key presses.
 Log: `Documents/My Games/Skyrim Special Edition/SKSE/SnakeSKSE.log`.
 

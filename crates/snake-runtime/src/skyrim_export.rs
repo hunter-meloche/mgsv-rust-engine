@@ -156,13 +156,14 @@ pub fn export_weapons(vfs: &Vfs, data_dir: &Path) -> Result<ExportReport> {
     // additive shape inside the gun's own node makes Skyrim draw the whole
     // gun in the transparent pass (it turned pale while flashing).
     write_muzzle_flash_texture(vfs, data_dir, &mut report)?;
-    let flash = data_dir.join("meshes").join("snake").join("muzzle_flash.nif");
-    std::fs::create_dir_all(flash.parent().unwrap())?;
-    std::fs::write(
-        &flash,
-        nif_write::write_static_nif("muzzle_flash", &muzzle_flash_shapes([0.0; 3], to_sky([0.0, 0.0, 1.0]))),
-    )?;
-    report.files.push(flash);
+    let flash_nif =
+        nif_write::write_static_nif("muzzle_flash", &muzzle_flash_shapes([0.0; 3], to_sky([0.0, 0.0, 1.0])));
+    for name in ["muzzle_flash.nif", "muzzle_flash_1p.nif"] {
+        let flash = data_dir.join("meshes").join("snake").join(name);
+        std::fs::create_dir_all(flash.parent().unwrap())?;
+        std::fs::write(&flash, &flash_nif)?;
+        report.files.push(flash);
+    }
     for def in &WEAPONS {
         export_weapon(vfs, def.id, def.model, data_dir, &mut report)
             .with_context(|| format!("exporting {}", def.id))?;
@@ -386,8 +387,13 @@ fn export_weapon(vfs: &Vfs, id: &str, model: &str, data_dir: &Path, report: &mut
             effect: None,
         });
     }
-    let path = mesh_dir.join(format!("{stem}.nif"));
-    std::fs::write(&path, nif_write::write_static_nif(&stem, &shapes))?;
-    report.files.push(path);
+    // A second copy for the first-person skeleton: Skyrim caches models by
+    // path, so another instance needs another file.
+    let nif = nif_write::write_static_nif(&stem, &shapes);
+    for suffix in ["", "_1p"] {
+        let path = mesh_dir.join(format!("{stem}{suffix}.nif"));
+        std::fs::write(&path, &nif)?;
+        report.files.push(path);
+    }
     Ok(())
 }

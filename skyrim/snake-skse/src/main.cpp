@@ -20,6 +20,7 @@
 #include <malloc.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdarg>
@@ -1387,20 +1388,23 @@ struct ModelArgs {  // BSModelDB::DBTraits::ArgsType
 };
 using DemandFn = uint32_t (*)(const char* path, void** out, const ModelArgs* args);
 
-// One mesh per weapon (weapon index order).
+// One mesh per weapon (weapon index order) and per view: the third-person
+// skeleton (view 0) and the first-person one (view 1). Skyrim caches
+// models by path, so the first-person instance is a copy of the mesh under
+// its own name (`<mesh>_1p.nif`, written by the export).
 constexpr int kMaxGuns = 4;
 struct GunSlot {
-    std::atomic<void*> node{nullptr};    // loaded model root
-    std::atomic<void*> parent{nullptr};  // hand node it is attached to
-    bool failed = false;                 // no mesh (run `mgsv skyrim-export`)
+    std::atomic<void*> node[2] = {nullptr, nullptr};    // loaded model root, per view
+    std::atomic<void*> parent[2] = {nullptr, nullptr};  // hand node it is attached to
+    bool failed[2] = {false, false};                    // no mesh (run `mgsv skyrim-export`)
 };
 GunSlot g_guns[kMaxGuns];
 std::atomic<int> g_gunCount{0};  // set once every mesh has been tried
 // The muzzle flash is a separate mesh beside the gun (inside the gun's node
 // its additive shapes made Skyrim draw the whole gun unlit).
-constexpr const char* kFlashMesh = "snake\\muzzle_flash.nif";
-std::atomic<void*> g_flashNode{nullptr};
-std::atomic<void*> g_flashParent{nullptr};
+const char* const kFlashMesh[2] = {"snake\\muzzle_flash.nif", "snake\\muzzle_flash_1p.nif"};
+std::atomic<void*> g_flashNode[2] = {nullptr, nullptr};
+std::atomic<void*> g_flashParent[2] = {nullptr, nullptr};
 std::vector<SnakeVec3> g_muzzles;  // per weapon, in its mesh frame
 std::atomic<bool> g_gunQueued{false};
 
@@ -1423,68 +1427,77 @@ bool SafeAttach(void* parent, void* child) {
     }
 }
 
-void SetHidden(void* node, bool hidden);
+void SetHidden(void* node, bool hidden) {
+    uint32_t& flags = At<uint32_t>(node, 0xF4);
+    flags = hidden ? (flags | 1u) : (flags & ~1u);
+}
+
+// Mesh path for a view: "snake\\x.nif" -> "snake\\x_1p.nif" for first person.
+std::string ViewMesh(const char* mesh, int view) {
+    std::string m = mesh ? mesh : "";
+    if (view == 1 && m.size() > 4) m.insert(m.size() - 4, "_1p");
+    return m;
+}
 
 class AttachGunTask : public TaskDelegate {
 public:
     void Run() override {
         g_gunQueued = false;
         void* player = ThePlayer();
-        void* root = player ? Get3D(player, false) : nullptr;
-        void* hand = root ? FindNode(root, kRightHand) : nullptr;
-        if (!hand) return;
+        if (!player || !g_fire.modelDemand) return;
         int count = (std::min)((int)g_snake.weapon_count(g_runtime), kMaxGuns);
-        for (int i = 0; i < count; ++i) {
-            GunSlot& g = g_guns[i];
-            if (!g.node && !g.failed) {
-                const char* mesh = g_snake.weapon_mesh(g_runtime, i);
-                void* node = nullptr;
-                uint32_t err = mesh && g_fire.modelDemand ? SafeDemand(mesh, &node) : 0xFFFFFFFE;
-                Log("gun model %s: error %u, node %p (%s)", mesh ? mesh : "?", err, node, node ? Name(node) : "-");
-                if (err != 0 || !node) {
-                    g.failed = true;
-                    continue;
-                }
-                SetHidden(node, true);
-                g.node = node;
-            }
-            void* gun = g.node;
-            if (gun && g.parent != hand) {
-                if (SafeAttach(hand, gun)) {
-                    g.parent = hand;
-                    Log("gun model %d attached to %s (%p)", i, kRightHand, hand);
-                } else {
-                    g.failed = true;
-                    Log("attaching gun model %d faulted", i);
-                }
-            }
-        }
-        if (!g_flashNode && g_fire.modelDemand) {
-            void* node = nullptr;
-            uint32_t err = SafeDemand(kFlashMesh, &node);
-            Log("muzzle flash model %s: error %u, node %p", kFlashMesh, err, node);
-            if (err == 0 && node) g_flashNode = node;
-            g_muzzles.clear();
+        if (g_muzzles.empty()) {
             for (int i = 0; i < count; ++i) {
                 SnakeVec3 m{};
                 g_snake.weapon_muzzle(g_runtime, i, &m);
                 g_muzzles.push_back(m);
             }
         }
-        void* flash = g_flashNode;
-        if (flash && g_flashParent != hand && SafeAttach(hand, flash)) {
-            g_flashParent = hand;
-            SetHidden(flash, true);
+        for (int view = 0; view < 2; ++view) {
+            void* root = Get3D(player, view == 1);
+            void* hand = root ? FindNode(root, kRightHand) : nullptr;
+            if (!hand) continue;
+            for (int i = 0; i < count; ++i) {
+                GunSlot& g = g_guns[i];
+                if (!g.node[view] && !g.failed[view]) {
+                    std::string mesh = ViewMesh(g_snake.weapon_mesh(g_runtime, i), view);
+                    void* node = nullptr;
+                    uint32_t err = SafeDemand(mesh.c_str(), &node);
+                    Log("gun model %s: error %u, node %p", mesh.c_str(), err, node);
+                    if (err != 0 || !node) {
+                        g.failed[view] = true;
+                        continue;
+                    }
+                    SetHidden(node, true);
+                    g.node[view] = node;
+                }
+                void* gun = g.node[view];
+                if (gun && g.parent[view] != hand) {
+                    if (SafeAttach(hand, gun)) {
+                        g.parent[view] = hand;
+                        Log("gun model %d attached to the %s-person %s (%p)", i, view ? "first" : "third", kRightHand, hand);
+                    } else {
+                        g.failed[view] = true;
+                        Log("attaching gun model %d faulted", i);
+                    }
+                }
+            }
+            if (!g_flashNode[view]) {
+                void* node = nullptr;
+                uint32_t err = SafeDemand(kFlashMesh[view], &node);
+                Log("muzzle flash model %s: error %u, node %p", kFlashMesh[view], err, node);
+                if (err == 0 && node) g_flashNode[view] = node;
+            }
+            void* flash = g_flashNode[view];
+            if (flash && g_flashParent[view] != hand && SafeAttach(hand, flash)) {
+                g_flashParent[view] = hand;
+                SetHidden(flash, true);
+            }
         }
         g_gunCount = count;
     }
     void Dispose() override { delete this; }
 };
-
-void SetHidden(void* node, bool hidden) {
-    uint32_t& flags = At<uint32_t>(node, 0xF4);
-    flags = hidden ? (flags | 1u) : (flags & ~1u);
-}
 
 // Local transform (rotation matrix `r`, position `lp`) under `hand` for a
 // placement from snake_retarget_weapon_place: hand-relative as is, or
@@ -1515,27 +1528,28 @@ void HandLocal(int place, const SnakeVec3& pos, const SnakeQuat& rot, void* hand
     }
 }
 
-// Place (or hide) every gun under `hand`; queue the attach when needed.
-// Local transforms only: Skyrim derives the world transforms (and the
-// renderer's per-object state) in its next update. Writing a gun's world
+// Place (or hide) every gun of a view under `hand`; queue the attach when
+// needed. Local transforms only: Skyrim derives the world transforms (and
+// the renderer's per-object state) in its next update. Writing a gun's world
 // transform here, as for the bones, made the renderer draw it as a flat
-// fog-coloured silhouette on some frames.
-void PlaceGun(void* hand, void* spine) {
+// fog-coloured silhouette on some frames. In first person a holstered gun
+// is not shown.
+void PlaceGun(int view, void* hand, void* spine) {
     if (!hand) return;
     int count = g_gunCount;
     bool attached = count > 0;
     for (int i = 0; i < count; ++i)
-        if (!g_guns[i].failed && g_guns[i].parent != hand) attached = false;
+        if (!g_guns[i].failed[view] && g_guns[i].parent[view] != hand) attached = false;
     if (!attached) {
         if (g_tasks && !g_gunQueued.exchange(true)) g_tasks->AddTask(new AttachGunTask());
         return;
     }
     int inHand = -1;
     for (int i = 0; i < count; ++i) {
-        void* gun = g_guns[i].node;
+        void* gun = g_guns[i].node[view];
         if (!gun) continue;
         int place = g_hookGunPlace[i];
-        if (place == 0 || (place == 2 && !spine)) {
+        if (place == 0 || (place == 2 && (!spine || view == 1))) {
             SetHidden(gun, true);
             continue;
         }
@@ -1546,12 +1560,12 @@ void PlaceGun(void* hand, void* spine) {
     }
     // Flash: same rotation as the gun in the hands, at its muzzle; one
     // random cell.
-    void* flash = g_flashParent == hand ? static_cast<void*>(g_flashNode) : nullptr;
+    void* flash = g_flashParent[view] == hand ? static_cast<void*>(g_flashNode[view]) : nullptr;
     if (!flash) return;
     bool flashing = inHand >= 0 && inHand < (int)g_muzzles.size() && NowMs() < g_flashUntil;
     SetHidden(flash, !flashing);
     if (!flashing) return;
-    void* gun = g_guns[inHand].node;
+    void* gun = g_guns[inHand].node[view];
     const float* r = &At<float>(gun, kLocalRot);
     const float* lp = &At<float>(gun, kLocalPos);
     const SnakeVec3& m = g_muzzles[inHand];
@@ -1614,6 +1628,64 @@ bool SafeSetWeaponsHidden(void* player, bool hide) {
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
+}
+
+// Write Snake's local rotations (and COM translation) to `nodes` (retarget
+// order; null entries skipped), then their world transforms parent-first.
+void WriteWorlds(const std::vector<void*>& nodes, size_t n);
+
+void WritePose(const std::vector<void*>& nodes, size_t n, bool world) {
+    for (size_t i = 0; i < n; ++i) {
+        void* node = nodes[i];
+        if (!node) continue;
+        QuatToMat(g_hookRot[i], &At<float>(node, kLocalRot));
+        if (g_hookHas[i]) {
+            float* lp = &At<float>(node, kLocalPos);
+            lp[0] = g_hookTr[i].x;
+            lp[1] = g_hookTr[i].y;
+            lp[2] = g_hookTr[i].z;
+        }
+    }
+    if (world) WriteWorlds(nodes, n);
+}
+
+void WriteWorlds(const std::vector<void*>& nodes, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        void* node = nodes[i];
+        if (!node) continue;
+        void* parent = At<void*>(node, kParent);
+        if (!parent) continue;
+        float prot[9], ppos[3];
+        memcpy(prot, &At<float>(parent, kWorldRot), sizeof prot);
+        memcpy(ppos, &At<float>(parent, kWorldPos), sizeof ppos);
+        float ps = At<float>(parent, kWorldScale);
+        float* lr = &At<float>(node, kLocalRot);
+        float* lp = &At<float>(node, kLocalPos);
+        float scaled[3] = {lp[0] * ps, lp[1] * ps, lp[2] * ps}, rotated[3];
+        MatVec(prot, scaled, rotated);
+        MatMul(prot, lr, &At<float>(node, kWorldRot));
+        float* wp = &At<float>(node, kWorldPos);
+        for (int k = 0; k < 3; ++k) wp[k] = ppos[k] + rotated[k];
+        At<float>(node, kWorldScale) = ps * At<float>(node, kLocalScale);
+    }
+}
+
+// First person: only the arm chains (clavicles down to the fingers) follow
+// Snake; the spine, neck and head stay Skyrim's so the first-person camera
+// is not moved. Skyrim poses its first-person spine very differently from
+// the third-person one, so each clavicle gets the world orientation of its
+// third-person counterpart (where Snake already aims along the camera) and
+// the rest of the chain keeps Snake's local rotations. Unlike the
+// third-person skeleton this one has fingers.
+void* g_cachedRoot1p = nullptr;
+std::vector<void*> g_nodes1p;
+std::vector<std::array<float, 3>> g_rest1p;  // clavicle local positions as loaded
+constexpr float kFirstPersonPistolDrop = 10.0f;  // Skyrim units (~14 cm)
+
+bool IsArmBone(const std::string& n) {
+    for (const char* part : {"Clavicle", "UpperArm", "Upperarm", "Forearm", "Hand", "Finger"})
+        if (n.find(part) != std::string::npos) return true;
+    return false;
 }
 
 void ApplySnake(void* player, float delta) {
@@ -1685,36 +1757,7 @@ void ApplySnake(void* player, float delta) {
         }
     }
     size_t n = (std::min)(g_nodes.size(), g_hookRot.size());
-    for (size_t i = 0; i < n; ++i) {
-        void* node = g_nodes[i];
-        if (!node) continue;
-        QuatToMat(g_hookRot[i], &At<float>(node, kLocalRot));
-        if (g_hookHas[i]) {
-            float* lp = &At<float>(node, kLocalPos);
-            lp[0] = g_hookTr[i].x;
-            lp[1] = g_hookTr[i].y;
-            lp[2] = g_hookTr[i].z;
-        }
-    }
-    // World transforms of the retargeted bones, parent-first (table order).
-    for (size_t i = 0; i < n && mode >= 2; ++i) {
-        void* node = g_nodes[i];
-        if (!node) continue;
-        void* parent = At<void*>(node, kParent);
-        if (!parent) continue;
-        float prot[9], ppos[3];
-        memcpy(prot, &At<float>(parent, kWorldRot), sizeof prot);
-        memcpy(ppos, &At<float>(parent, kWorldPos), sizeof ppos);
-        float ps = At<float>(parent, kWorldScale);
-        float* lr = &At<float>(node, kLocalRot);
-        float* lp = &At<float>(node, kLocalPos);
-        float scaled[3] = {lp[0] * ps, lp[1] * ps, lp[2] * ps}, rotated[3];
-        MatVec(prot, scaled, rotated);
-        MatMul(prot, lr, &At<float>(node, kWorldRot));
-        float* wp = &At<float>(node, kWorldPos);
-        for (int k = 0; k < 3; ++k) wp[k] = ppos[k] + rotated[k];
-        At<float>(node, kWorldScale) = ps * At<float>(node, kLocalScale);
-    }
+    WritePose(g_nodes, n, mode >= 2);
     if (mode >= 2) {
         void* hand = nullptr;
         void* spine = nullptr;
@@ -1722,7 +1765,53 @@ void ApplySnake(void* player, float delta) {
             if (g_boneNames[i] == kRightHand) hand = g_nodes[i];
             if (g_boneNames[i] == "NPC Spine2 [Spn2]") spine = g_nodes[i];
         }
-        PlaceGun(hand, spine);
+        PlaceGun(0, hand, spine);
+        // First-person arms and guns.
+        if (void* root1p = Get3D(player, true)) {
+            if (root1p != g_cachedRoot1p) {
+                g_nodes1p.clear();
+                int found = 0;
+                for (auto& name : g_boneNames) {
+                    g_nodes1p.push_back(IsArmBone(name) ? FindNode(root1p, name) : nullptr);
+                    found += g_nodes1p.back() != nullptr;
+                }
+                g_cachedRoot1p = root1p;
+                g_rest1p.assign(g_nodes1p.size(), {0, 0, 0});
+                for (size_t i = 0; i < g_nodes1p.size(); ++i)
+                    if (g_nodes1p[i]) memcpy(g_rest1p[i].data(), &At<float>(g_nodes1p[i], kLocalPos), 3 * sizeof(float));
+                Log("first-person 3D %p: %d arm bones", root1p, found);
+            }
+            size_t n1 = (std::min)(g_nodes1p.size(), g_hookRot.size());
+            WritePose(g_nodes1p, n1, false);
+            for (size_t i = 0; i < n1 && i < g_nodes.size(); ++i) {
+                void* node = g_nodes1p[i];
+                void* third = g_nodes[i];
+                if (!node || !third || g_boneNames[i].find("Clavicle") == std::string::npos) continue;
+                void* parent = At<void*>(node, kParent);
+                if (!parent) continue;
+                const float* pw = &At<float>(parent, kWorldRot);
+                const float* tw = &At<float>(third, kWorldRot);
+                float* r = &At<float>(node, kLocalRot);
+                for (int a = 0; a < 3; ++a)
+                    for (int b = 0; b < 3; ++b)  // r = pw^T tw
+                        r[a * 3 + b] = pw[0 * 3 + a] * tw[0 * 3 + b] + pw[1 * 3 + a] * tw[1 * 3 + b] + pw[2 * 3 + a] * tw[2 * 3 + b];
+                // Two-handed pistol aim holds the gun at eye level, so in
+                // first person the hands would cover the crosshair: lower the
+                // shoulders (world -Z) for the pistol; the aim direction is kept.
+                float dropBy = g_hookGunPlace[1] == 1 ? kFirstPersonPistolDrop / At<float>(parent, kWorldScale) : 0.0f;
+                float drop[3] = {0, 0, -dropBy}, local[3];
+                float* lp = &At<float>(node, kLocalPos);
+                for (int a = 0; a < 3; ++a)  // local = pw^T drop
+                    local[a] = pw[0 * 3 + a] * drop[0] + pw[1 * 3 + a] * drop[1] + pw[2 * 3 + a] * drop[2];
+                if (i < g_rest1p.size())
+                    for (int a = 0; a < 3; ++a) lp[a] = g_rest1p[i][a] + local[a];
+            }
+            WriteWorlds(g_nodes1p, n1);
+            void* hand1p = nullptr;
+            for (size_t i = 0; i < n1; ++i)
+                if (g_boneNames[i] == kRightHand) hand1p = g_nodes1p[i];
+            PlaceGun(1, hand1p, nullptr);
+        }
     }
     if (g_hookFrames++ < 3) Log("hook t%u: applied pose %llu (mode %d)", GetCurrentThreadId(), g_appliedSeq, mode);
 }
@@ -1747,9 +1836,11 @@ void HookedUpdateAnimation(void* self, float delta) {
             std::unique_lock<std::mutex> lock(g_hookMutex, std::try_to_lock);
             if (lock.owns_lock()) {
                 SafeSetWeaponsHidden(self, false);
-                for (GunSlot& g : g_guns)
-                    if (void* gun = g.node) SetHidden(gun, true);
-                if (void* flash = g_flashNode) SetHidden(flash, true);
+                for (int view = 0; view < 2; ++view) {
+                    for (GunSlot& g : g_guns)
+                        if (void* gun = g.node[view]) SetHidden(gun, true);
+                    if (void* flash = g_flashNode[view]) SetHidden(flash, true);
+                }
             }
         }
         return;

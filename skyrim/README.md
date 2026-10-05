@@ -41,8 +41,18 @@ MGSV's specular map as the mask). The plugin loads it with
 `BSModelDB::Demand`, attaches it to the right hand and places it from
 Snake's grip each frame while aiming or reloading; otherwise it rides on
 its MGSV holster point (`CNP_ASRROOT`, at the left hip), placed relative to
-Skyrim's `NPC Spine2` (snake_retarget_weapon_place). Third person only for
-now. The WU S.Pistol's textures ship without `.ftex` headers
+Skyrim's `NPC Spine2` (snake_retarget_weapon_place).
+
+First person: Snake's arm chains (clavicles down to the fingers; the
+first-person skeleton has finger bones, so his grip shows) drive the
+first-person skeleton too, while its spine and head stay Skyrim's so the
+camera is untouched. Each clavicle takes the world orientation of its
+third-person counterpart (Skyrim's first-person spine is posed very
+differently), so the rifle points where you look, held low on the right.
+Guns and flash attach to the first-person hand as separate copies of the
+meshes (`*_1p.nif`; Skyrim caches models by path). With the pistol the
+shoulders drop 10 units so the two-handed grip does not cover the
+crosshair; the pistol itself is still hard to see behind the gauntlets. The WU S.Pistol's textures ship without `.ftex` headers
 (only the two largest mips exist); the export rebuilds them from the
 `.ftexs` parts (`Ftex::from_parts`: chunk table at offset 0, square size,
 format from the slot). Keys **1** / **2** switch between the MRS-4 and the

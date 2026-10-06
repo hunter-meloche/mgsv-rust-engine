@@ -401,6 +401,21 @@ impl ClipNames {
         Some(self.name(rest))
     }
 
+    /// Stance changes on the move (both feet's variants where MGSV has
+    /// them): crouch-walking or running down to prone (a slide forward into
+    /// the crawl), and from the crawl up into a crouched or standing run.
+    /// MGSV has none for standing <-> crouching: it blends between the
+    /// stances' loops.
+    pub fn moving_transition(&self, to: Stance, gait: Gait) -> Vec<String> {
+        let both = |base: &str| vec![self.name(&format!("{base}_l")), self.name(&format!("{base}_r"))];
+        match (to, gait) {
+            (Stance::Prone, Gait::Walk) => both("c_qwk2c"),
+            (Stance::Prone, _) => both("c_qrn2c"),
+            (Stance::Crouch, _) => both("c_c2qrn"),
+            (Stance::Stand, _) => vec![self.name("c_c2srn_l")],
+        }
+    }
+
     /// Clips the controller cannot work without.
     pub fn required(&self) -> Vec<String> {
         let mut v = Vec::new();
@@ -474,7 +489,13 @@ pub struct Controller {
     foley: Vec<crate::foley::Foley>,
     /// The weapon to switch to once the current one is holstered.
     pending_switch: Option<usize>,
+    /// After a stance change while aiming: the previous stance's aim grid
+    /// slot and its remaining weight (the upper body blends across).
+    aim_slot_fade: Option<(usize, f32)>,
 }
+
+/// Time to blend the aiming upper body from one stance's aim to the next.
+const AIM_STANCE_FADE: f32 = 0.3;
 
 impl Controller {
     pub fn new(clips: &ClipLibrary, names: ClipNames) -> Result<Self, String> {
@@ -509,6 +530,7 @@ impl Controller {
             magazine: None,
             foley: Vec::new(),
             pending_switch: None,
+            aim_slot_fade: None,
         })
     }
 
@@ -564,6 +586,11 @@ impl Controller {
 
     fn weapon_mut(&mut self) -> Option<&mut Armed> {
         self.current.and_then(|i| self.weapons.get_mut(i))
+    }
+
+    /// The locomotion clip playing (for probes and debugging).
+    pub fn clip_name(&self) -> &str {
+        self.player.current_name()
     }
 
     pub fn aiming(&self) -> bool {
@@ -739,13 +766,7 @@ impl Controller {
                 None
             };
             if let Some(to) = target {
-                match self.names.transition(self.stance, to) {
-                    Some(name) if self.play(clips, &name, false, 0.2) => {
-                        self.state = State::Changing { to };
-                        self.gait = Gait::Idle;
-                    }
-                    _ => self.stance = to,
-                }
+                self.change_stance(rig, clips, to, moving, gait);
             }
         }
 
@@ -801,6 +822,12 @@ impl Controller {
                 self.foot = Foot::L;
                 self.enter_idle(clips);
             }
+        }
+        if let Some((_, weight)) = self.aim_slot_fade.as_mut() {
+            *weight -= dt / AIM_STANCE_FADE;
+        }
+        if self.aim_slot_fade.is_some_and(|(_, weight)| weight <= 0.0) {
+            self.aim_slot_fade = None;
         }
         let target_w = if self.state == State::Aim { 1.0 } else { 0.0 };
         self.aim_weight += (target_w - self.aim_weight).clamp(-6.0 * dt, 6.0 * dt);
@@ -861,7 +888,15 @@ impl Controller {
                 if self.player.finished() || self.player.progress() > 0.95 {
                     self.stance = to;
                     self.foot = Foot::L;
-                    self.enter_idle(clips);
+                    // Still moving (a moving transition, or set off during
+                    // one): straight into the new stance's loop.
+                    let name = self.names.looping(to, gait);
+                    if moving && self.play_loop_matched(rig, clips, &name) {
+                        self.gait = gait;
+                        self.state = State::Loop;
+                    } else {
+                        self.enter_idle(clips);
+                    }
                 }
             }
             State::Idle => {
@@ -924,6 +959,66 @@ impl Controller {
         self.position = collision.slide(self.position, delta, radius, height);
         let f = dr * Vec3::Z;
         self.yaw = wrap_angle(self.yaw + f.x.atan2(f.z));
+    }
+
+    /// Change stance to `to`. On the move (or aiming) Snake does not stop,
+    /// as in MGSV: standing <-> crouching switches at once and blends into
+    /// the new stance's loop (and aim); down to prone and up from it play
+    /// MGSV's moving transitions, which carry on into the new stance's loop.
+    /// Standing still, the stance-change clips play.
+    fn change_stance(&mut self, rig: &HumanRig, clips: &ClipLibrary, to: Stance, moving: bool, gait: Gait) {
+        let from = self.stance;
+        let aiming = self.state == State::Aim;
+        let walking = moving && (aiming || matches!(self.state, State::Start | State::Loop));
+        let upright = |s: Stance| s != Stance::Prone;
+        if upright(from) && upright(to) && (walking || aiming) {
+            self.stance = to;
+            if aiming {
+                let slots = (stance_slot(from), stance_slot(to));
+                if slots.0 != slots.1 {
+                    self.aim_slot_fade = Some((slots.0, 1.0));
+                }
+            } else {
+                let gait = if to == Stance::Crouch && gait == Gait::Dash { Gait::Run } else { gait };
+                let name = self.names.looping(to, gait);
+                if self.play_loop_matched(rig, clips, &name) {
+                    self.gait = gait;
+                    self.state = State::Loop;
+                }
+            }
+            return;
+        }
+        if walking {
+            // The variant whose first frame is closest to the current feet.
+            let move_gait = if from == Stance::Prone { Gait::Run } else { gait };
+            let current = self.player.frame(rig).ok();
+            let best = self
+                .names
+                .moving_transition(to, move_gait)
+                .into_iter()
+                .filter_map(|name| {
+                    let clip = clips.get(&name)?;
+                    let d = match &current {
+                        Some(cur) => rig.target_distance(cur, &rig.sample_frame(&clip, 0.0).ok()?),
+                        None => 0.0,
+                    };
+                    Some((d, name))
+                })
+                .min_by(|a, b| a.0.total_cmp(&b.0));
+            if let Some((_, name)) = best {
+                if self.play(clips, &name, false, 0.2) {
+                    self.state = State::Changing { to };
+                    return;
+                }
+            }
+        }
+        match self.names.transition(from, to) {
+            Some(name) if self.play(clips, &name, false, 0.2) => {
+                self.state = State::Changing { to };
+                self.gait = Gait::Idle;
+            }
+            _ => self.stance = to,
+        }
     }
 
     fn enter_idle(&mut self, clips: &ClipLibrary) {
@@ -1205,16 +1300,27 @@ impl Controller {
         let mut frame = self.player.frame(rig)?;
         if let (Some(w), Some(upper)) = (self.weapon(), rig.mask("Upper")) {
             let slot = stance_slot(self.stance);
+            // The stance's aim pose, blended from the previous stance's just
+            // after a stance change.
+            let aim_at = |slot: usize, pitch: f32| -> Result<Option<fox_anim::RigFrame>, String> {
+                match (&w.rig.grids[slot], &w.grids[slot]) {
+                    (Some(grid), Some(clip)) => w.rig.aim_frame(rig, grid, clip, self.aim_yaw, pitch).map(Some),
+                    _ => Ok(None),
+                }
+            };
+            let aim_blended = |pitch: f32| -> Result<Option<fox_anim::RigFrame>, String> {
+                let aim = aim_at(slot, pitch)?;
+                Ok(match (aim, self.aim_slot_fade) {
+                    (Some(aim), Some((from, weight))) => match aim_at(from, pitch)? {
+                        Some(old) => Some(rig.blend(&aim, &old, weight.clamp(0.0, 1.0))),
+                        None => Some(aim),
+                    },
+                    (aim, _) => aim,
+                })
+            };
             let raised = self.aim_weight.max(self.ready_weight);
             if raised > 0.0 {
-                if let (Some(grid), Some(clip)) = (&w.rig.grids[slot], &w.grids[slot]) {
-                    let aim = w.rig.aim_frame(
-                        rig,
-                        grid,
-                        clip,
-                        self.aim_yaw,
-                        self.aim_pitch + self.recoil * 0.5,
-                    )?;
+                if let Some(aim) = aim_blended(self.aim_pitch + self.recoil * 0.5)? {
                     frame = rig.layer(&frame, &aim, upper, raised);
                 }
             }
@@ -1231,11 +1337,10 @@ impl Controller {
                     continue;
                 }
                 if aim_now.is_none() {
-                    let grid = (slot..=slot).chain(0..1).find_map(|s| w.rig.grids[s].as_ref().zip(w.grids[s].as_ref()));
-                    aim_now = match grid {
-                        Some((grid, clip)) => Some(w.rig.aim_frame(rig, grid, clip, self.aim_yaw, self.aim_pitch)?),
-                        None => Some(frame.clone()),
-                    };
+                    aim_now = Some(match aim_blended(self.aim_pitch)? {
+                        Some(aim) => aim,
+                        None => aim_at(0, self.aim_pitch)?.unwrap_or_else(|| frame.clone()),
+                    });
                 }
                 let aim = aim_now.as_ref().expect("set above");
                 let reference = rig.sample_frame(&h.clip, h.aim_frame())?;

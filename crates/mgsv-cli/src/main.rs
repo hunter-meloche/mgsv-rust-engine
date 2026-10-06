@@ -319,6 +319,10 @@ enum Cmd {
     /// per frame of a clip, the muzzle direction and how far the rifle's
     /// left-hand grip is from the animated left hand.
     WeaponProbe { clip: String },
+    /// Development probe: stance changes on the move and while aiming,
+    /// through the player controller: per stretch, the speed, clip and the
+    /// largest per-tick joint rotation.
+    StanceProbe,
     /// Development probe: for each weapon's draw and holster clips, per
     /// frame, how far the gun in the hand is from the gun in its holster
     /// (position cm, angle degrees), with the clips' motion events.
@@ -1027,6 +1031,7 @@ fn run() -> Result<()> {
         Cmd::AimProbe { clip } => aim_probe(&vfs, &clip),
         Cmd::WeaponProbe { clip } => weapon_probe(&vfs, &clip),
         Cmd::DrawProbe => draw_probe(&vfs),
+        Cmd::StanceProbe => stance_probe(&vfs),
         Cmd::Play { frames, shot, auto, draw_test, shot_every, view_yaw } => {
             let assets = snake_runtime::SnakeAssets::load(&vfs)?;
             for w in &assets.weapons {
@@ -1578,6 +1583,84 @@ fn weapon_probe(vfs: &Vfs, name: &str) -> Result<()> {
         "mean grip-to-left-hand {:.3} m",
         total / (clip.frame_count + 1) as f32
     );
+    Ok(())
+}
+
+fn stance_probe(vfs: &Vfs) -> Result<()> {
+    use snake_core::Input;
+    let assets = snake_runtime::SnakeAssets::load(vfs)?;
+    let mut ctl = assets.controller()?;
+    let world = snake_core::FlatGround { height: 0.0 };
+    let dt = 1.0 / 60.0;
+    let walk = Input { move_y: 0.4, ..Default::default() };
+    let run = Input { move_y: 1.0, ..Default::default() };
+    let aim_walk = Input { aim: true, ..walk };
+    let tap = |i: Input, crouch: bool, prone: bool| Input { crouch, prone, ..i };
+    let steps: Vec<(&str, f32, Input)> = vec![
+        ("settle", 0.5, Input { switch_to: Some(0), ..Default::default() }),
+        ("aim walk", 1.5, aim_walk),
+        ("aim walk: crouch", 1.5, tap(aim_walk, true, false)),
+        ("aim walk: stand", 1.5, tap(aim_walk, true, false)),
+        ("aim still: crouch", 1.5, tap(Input { aim: true, ..Default::default() }, true, false)),
+        ("aim still: stand", 1.5, tap(Input { aim: true, ..Default::default() }, true, false)),
+        ("aim walk: prone", 4.5, tap(aim_walk, false, true)),
+        ("aim crawl: crouch", 3.5, tap(aim_walk, true, false)),
+        ("aim walk: stand", 1.5, tap(aim_walk, true, false)),
+        ("walk", 1.5, walk),
+        ("walk: crouch", 1.5, tap(walk, true, false)),
+        ("walk: stand", 1.5, tap(walk, true, false)),
+        ("run", 1.0, run),
+        ("run: crouch", 1.5, tap(run, true, false)),
+        ("crouch-run: prone", 3.0, tap(run, false, true)),
+        ("crawl: crouch", 3.0, tap(run, true, false)),
+        ("crouch-run: stand", 1.5, tap(run, true, false)),
+        ("walk: prone", 4.5, tap(walk, false, true)),
+        ("crawl: stand", 3.0, tap(run, false, true)),
+        ("stop", 1.0, Input::default()),
+    ];
+    let mut prev: Option<fox_anim::Pose> = None;
+    for (label, secs, input) in steps {
+        let n = (secs / dt).round() as usize;
+        let (mut jump, mut min_speed, mut max_speed) = (0.0f32, f32::MAX, 0.0f32);
+        let mut jump_at = String::new();
+        let mut clips = Vec::new();
+        for k in 0..n {
+            let mut i = input;
+            if k > 0 {
+                (i.crouch, i.prone, i.switch_to) = (false, false, None);
+            }
+            let before = ctl.position;
+            ctl.update(&assets.rig, &assets.clips, &world, dt, &i);
+            let speed = (ctl.position - before).length() / dt;
+            if k > 5 {
+                min_speed = min_speed.min(speed);
+                max_speed = max_speed.max(speed);
+            }
+            let pose = ctl.pose(&assets.rig, &assets.skel).map_err(anyhow::Error::msg)?;
+            if let Some(p) = &prev {
+                let j = p.rotations.iter().zip(&pose.rotations).take(21).map(|(a, b)| a.angle_between(*b).to_degrees()).fold(0.0f32, f32::max);
+                if j > jump {
+                    jump = j;
+                    jump_at = format!("{:.2}s in {}", k as f32 * dt, ctl.clip_name());
+                }
+                if j > 20.0 && std::env::var("STANCE_TRACE").is_ok() {
+                    let k_bone = p.rotations.iter().zip(&pose.rotations).take(21).map(|(a, b)| a.angle_between(*b)).enumerate().fold((0, 0.0f32), |m, (i, d)| if d > m.1 { (i, d) } else { m }).0;
+                    println!("    {label} {:.2}s: joint {k_bone} {j:.1} deg, {} aiming {} in hand {}", k as f32 * dt, ctl.clip_name(), ctl.aiming(), ctl.weapon_in_hand());
+                }
+            }
+            prev = Some(pose);
+            let clip = ctl.clip_name().to_string();
+            if clips.last() != Some(&clip) {
+                clips.push(clip);
+            }
+        }
+        println!(
+            "{label:<20} {:?} aiming {}: speed {min_speed:.2}..{max_speed:.2} m/s, joints up to {jump:.1} deg/tick ({jump_at}); {}",
+            ctl.stance,
+            ctl.aiming(),
+            clips.join(" > ")
+        );
+    }
     Ok(())
 }
 

@@ -294,7 +294,23 @@ while the hands are drawn or sheathed (just after aiming) and for a moment
 after. No toggle is tried during that, and a refused one is retried every
 0.3 s. Only after 20 refusals in a row is the flag written directly. Ctrl taps and holds count
 from the stance Snake is heading for, so quick taps chain (prone -> crouch
--> stand) while a transition still plays. Prone, Snake gets a hidden +20 Sneak (`CrawlSneakBonus` in snake.ini;
+-> stand) while a transition still plays.
+
+Stance changes on the move do not stop Snake, as in MGSV. Standing <->
+crouching while walking or running switches at once and blends into the
+new stance's loop from the matching point of the stride (MGSV has no clips
+for it). Down to prone and up from the crawl play MGSV's moving transitions
+(`snapnon_c_qwk2c` / `qrn2c` from a walk / run, `c2qrn` / `c2srn` up into a
+crouched / standing run; the foot variant closest to the current pose),
+which carry their own forward motion and continue straight into the new
+stance's loop. While aiming (walking or standing still), standing <->
+crouching keeps the aim: the stance switches at once and the aiming upper
+body blends from one stance's aim grid to the other's over 0.3 s. Standing
+still and not aiming, the stance-change clips play as before. `mgsv
+stance-probe` runs these through the controller (speed, clips, largest
+per-tick joint turn per stretch).
+
+Prone, Snake gets a hidden +20 Sneak (`CrawlSneakBonus` in snake.ini;
 MGSV keeps its stance camouflage values in code rather than data, only the
 sight ranges and camouflage thresholds are in `Soldier2ParameterTables`, so
 this is the fallback), an actor value modifier (Sneak = 15) added on the

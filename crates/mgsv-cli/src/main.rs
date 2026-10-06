@@ -1673,6 +1673,61 @@ fn draw_probe(vfs: &Vfs) -> Result<()> {
             println!("{} holstered: {}, origin {gp:.3}, barrel {:.2}, up {:.2}, holster contents: body meshes {:?}", w.name, bbox(&vs), gr * fox_anim::Vec3::Z, gr * fox_anim::Vec3::Y, w.holster_meshes);
         }
     }
+    // The pistol's draw applied onto the crouched aim: hand positions.
+    {
+        let w = &assets.weapons[1];
+        let upper = assets.rig.mask("Upper").context("no Upper mask")?;
+        let find = |n: &str| assets.skel.find(fox_hash::str_code32(n.as_bytes())).unwrap();
+        let (lh, rh, head, chest) = (find("SKL_013_LHAND"), find("SKL_023_RHAND"), find("SKL_004_HEAD"), find("SKL_002_CHEST"));
+        let clip = assets.clips.get(w.rig.draw.as_deref().unwrap()).unwrap();
+        let end = assets.rig.sample_frame(&clip, clip.frame_count as f32).map_err(anyhow::Error::msg)?;
+        for slot in [0usize, 1] {
+            let (grid, gclip) = (w.rig.grids[slot].as_ref().unwrap(), assets.clips.get(&w.rig.grids[slot].as_ref().unwrap().clip).unwrap());
+            let aim = w.rig.aim_frame(&assets.rig, grid, &gclip, 0.0, 0.0).map_err(anyhow::Error::msg)?;
+            let p = assets.rig.solve(&assets.skel, &aim);
+            println!("slot {slot} aim: L {:.2} R {:.2} head {:.2} chest {:.2}", p.positions[lh], p.positions[rh], p.positions[head], p.positions[chest]);
+            for f in [0.0f32, 3.0, 6.0, 9.0, 12.0] {
+                let now = assets.rig.sample_frame(&clip, f).map_err(anyhow::Error::msg)?;
+                let over = assets.rig.add_delta(&aim, &end, &now, upper, 1.0);
+                let p = assets.rig.solve(&assets.skel, &over);
+                let q = assets.rig.solve(&assets.skel, &now);
+                println!("  f{f:>2}: L {:.2} R {:.2} head {:.2} | clip L {:.2} R {:.2}", p.positions[lh], p.positions[rh], p.positions[head], q.positions[lh], q.positions[rh]);
+            }
+        }
+    }
+    // A crouched pistol draw through the controller: hands per tick.
+    {
+        use snake_core::Input;
+        let find = |n: &str| assets.skel.find(fox_hash::str_code32(n.as_bytes())).unwrap();
+        let (lh, rh) = (find("SKL_013_LHAND"), find("SKL_023_RHAND"));
+        let mut ctl = assets.controller()?;
+        let world = snake_core::FlatGround { height: 0.0 };
+        let dt = 1.0 / 60.0;
+        let run = |ctl: &mut snake_core::Controller, n: usize, input: Input, print: bool| -> Result<()> {
+            for k in 0..n {
+                let mut i = input;
+                if k > 0 {
+                    i.crouch = false;
+                    i.switch_to = None;
+                }
+                ctl.update(&assets.rig, &assets.clips, &world, dt, &i);
+                if print {
+                    let p = ctl.pose(&assets.rig, &assets.skel).map_err(anyhow::Error::msg)?;
+                    println!("  crouch draw tick {k:>2}: L {:.2} R {:.2} aiming {} in hand {}", p.positions[lh], p.positions[rh], ctl.aiming(), ctl.weapon_in_hand());
+                }
+            }
+            Ok(())
+        };
+        // The play --draw-test script up to its crouched pistol draw.
+        run(&mut ctl, 19, Input { switch_to: Some(0), ..Default::default() }, false)?;
+        run(&mut ctl, 90, Input { aim: true, ..Default::default() }, false)?;
+        run(&mut ctl, 60, Input::default(), false)?;
+        run(&mut ctl, 20, Input { switch_to: Some(1), ..Default::default() }, false)?;
+        run(&mut ctl, 90, Input { aim: true, ..Default::default() }, false)?;
+        run(&mut ctl, 20, Input::default(), false)?;
+        run(&mut ctl, 50, Input { crouch: true, ..Default::default() }, false)?;
+        run(&mut ctl, 40, Input { aim: true, ..Default::default() }, true)?;
+    }
     // The controller: draw, holster and switch, per tick where the gun is
     // and the largest per-tick gun and joint movement.
     let mut ctl = assets.controller()?;

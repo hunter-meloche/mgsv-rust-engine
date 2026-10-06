@@ -333,16 +333,21 @@ rail light) are no longer exported.
 
 Drawing and holstering: the guns ride on Snake's body and come out with
 MGSV's own motions. Aiming (or reloading) from holstered plays the draw
-clip on the upper body (`snapasr_s_fre0_st` for the rifle,
+clip on the upper body (applied as its change from its standing aim frame
+onto the current stance's aim, so crouched it starts and ends kneeling;
+not started during a stance change, whose stance is only settled at its
+end) (`snapasr_s_fre0_st` for the rifle,
 `snaphg01_s_fre0_st` for the pistol), after a short reach for the gun since
 the clips start with the hand on it; letting go plays the holster clip
 (`..._fre0_ed`), which ends in the idle arms. The rifle hangs on its sling
 at the left hip (the body's `CNP_ASRROOT` on `SKL_300_ASRROOT`). The sling
-bone swings as MGSV simulates it (`sna0_main0_asr.sim`, `snake_core::sling`):
-the rifle's centre of mass, 13.6 cm from the joint, hangs under gravity
-within 35 degrees of the waist's reference direction, out of the left
-thigh, with angular damping 0.8 and no inertia from Snake's own movement;
-fixed to the waist it tipped out behind him when crouching. The pistol's
+bone swings a little with Snake's movement (`snake_core::sling`): the
+rifle keeps its mounted angle (muzzle down and back, the stock up in front
+of the chest, as in MGSV) on a spring, free to swing 15 degrees side to
+side but only 8 fore and aft, out of the left thigh. MGSV's own sling
+simulation (`sna0_main0_asr.sim`: a body 13.6 cm from the joint in a
+35-degree cone) left to hang under gravity stood the rifle up from the hip
+into the shoulder whenever Snake leaned to run or crouch. The pistol's
 right-thigh holster is closed: MGSV models the holstered gun into Snake's
 body (its grip shows at the back of the holster; mesh 16, in a mesh group
 under the holster's), so the pistol is hidden in there and that grip is

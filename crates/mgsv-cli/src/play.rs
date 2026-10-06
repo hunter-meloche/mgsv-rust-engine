@@ -174,16 +174,19 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
         if opts.draw_test {
             let f = total_frames;
             input = Input { camera_yaw: cam_yaw, ..Input::default() };
+            // Standing: rifle out and back, pistol out and back; crouched:
+            // pistol out and back, rifle out and back; a crouched run (the
+            // sling); prone.
             input.switch_to = match f {
                 1 => Some(0),
                 170 => Some(1),
+                530 => Some(0),
                 _ => None,
             };
-            input.aim = (20..110).contains(&f) || (190..280).contains(&f);
-            // Then crouch-walk and go prone with the pistol holstered.
+            input.aim = [(20, 110), (190, 280), (350, 440), (550, 640)].iter().any(|&(a, b)| (a..b).contains(&f));
             input.crouch = f == 300;
-            input.move_y = if (330..420).contains(&f) || (500..560).contains(&f) { 1.0 } else { 0.0 };
-            input.prone = f == 440;
+            input.move_y = if (700..820).contains(&f) || (900..960).contains(&f) { 1.0 } else { 0.0 };
+            input.prone = f == 840;
             cam_pitch = 0.05;
             input.aim_pitch = -cam_pitch;
         }
@@ -246,7 +249,7 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
             .pose(&assets.rig, &assets.skel)
             .map_err(anyhow::Error::msg)?;
         if let Some(sling) = sling.as_mut() {
-            sling.step(&mut pose, TICK);
+            sling.step(&mut pose, ctl.position, ctl.rotation(), TICK);
         }
         let (rot, pos) = (ctl.rotation(), ctl.position);
 

@@ -183,6 +183,12 @@ impl Handling {
         self.t.max(0.0)
     }
 
+    /// The clip's frame in the standing aim: a draw ends there, a holster
+    /// starts there.
+    fn aim_frame(&self) -> f32 {
+        if self.draw { self.clip.frame_count as f32 } else { 0.0 }
+    }
+
     /// Weight on the upper body: in from whatever the body is doing (the
     /// reach, or quickly from the aim when holstering), out at the end into
     /// the aim (drawing) or locomotion.
@@ -771,7 +777,11 @@ impl Controller {
         // The gun comes out to aim or reload and goes back afterwards.
         let reloading = self.weapon().is_some_and(Armed::reloading);
         let out = (input.aim && can_aim) || (reloading && self.pending_switch.is_none());
-        self.update_handling(dt, out);
+        // Not while changing stance: the draw and holster are laid onto the
+        // stance's aim, and the stance is only settled at the end (drawing
+        // while crouching down raised the arms to standing height).
+        let changing = matches!(self.state, State::Changing { .. });
+        self.update_handling(dt, (!changing).then_some(out));
         self.update_weapon(dt, input);
         let aim_now = input.aim && can_aim && !matches!(self.state, State::Changing { .. });
         if aim_now {
@@ -1073,11 +1083,12 @@ impl Controller {
         self.weapon().is_some_and(|w| w.drawn)
     }
 
-    /// Draw the current weapon (`out`) or put it back in its holster:
-    /// MGSV's draw and holster clips play on the upper body and the gun
-    /// changes hands at their events. Prone (the clips are standing ones)
-    /// and for weapons without clips it changes hands at once.
-    fn update_handling(&mut self, dt: f32, out: bool) {
+    /// Draw the current weapon (`out` true) or put it back in its holster
+    /// (false; None: carry on with what is under way): MGSV's draw and
+    /// holster clips play on the upper body and the gun changes hands at
+    /// their events. Prone (the clips are standing ones) and for weapons
+    /// without clips it changes hands at once.
+    fn update_handling(&mut self, dt: f32, out: Option<bool>) {
         let prone = self.stance == Stance::Prone;
         let mut holstering = false;
         let Some(w) = self.weapon_mut() else { return };
@@ -1100,6 +1111,7 @@ impl Controller {
             w.handling = None;
         }
         let heading_out = w.handling.as_ref().map_or(w.drawn, |h| h.draw);
+        let Some(out) = out else { return };
         if out == heading_out {
             return;
         }
@@ -1206,14 +1218,30 @@ impl Controller {
                     frame = rig.layer(&frame, &aim, upper, raised);
                 }
             }
-            // Drawing or holstering (and a cut-short one fading out).
+            // Drawing or holstering (and a cut-short one fading out). MGSV's
+            // clips are standing ones that end (draw) or start (holster) in
+            // the standing aim: they are applied as their change from that
+            // frame onto the current stance's aim, so crouched they start
+            // and end on the crouched aim instead of forcing standing arms.
             let fading = w.fading.as_ref().map(|(h, weight)| (h, h.weight().min(*weight)));
             let handling = w.handling.as_ref().map(|h| (h, h.weight()));
+            let mut aim_now = None;
             for (h, weight) in fading.into_iter().chain(handling) {
-                if weight > 0.0 {
-                    let over = rig.sample_frame(&h.clip, h.clip_time() * crate::FPS)?;
-                    frame = rig.layer(&frame, &over, upper, weight);
+                if weight <= 0.0 {
+                    continue;
                 }
+                if aim_now.is_none() {
+                    let grid = (slot..=slot).chain(0..1).find_map(|s| w.rig.grids[s].as_ref().zip(w.grids[s].as_ref()));
+                    aim_now = match grid {
+                        Some((grid, clip)) => Some(w.rig.aim_frame(rig, grid, clip, self.aim_yaw, self.aim_pitch)?),
+                        None => Some(frame.clone()),
+                    };
+                }
+                let aim = aim_now.as_ref().expect("set above");
+                let reference = rig.sample_frame(&h.clip, h.aim_frame())?;
+                let now = rig.sample_frame(&h.clip, h.clip_time() * crate::FPS)?;
+                let over = rig.add_delta(aim, &reference, &now, upper, 1.0);
+                frame = rig.layer(&frame, &over, upper, weight);
             }
             // Per-shot motion, applied as a change from the clip's first
             // frame so it works at any aim angle.

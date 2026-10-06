@@ -479,7 +479,7 @@ pub unsafe extern "C" fn snake_player_update(
             .update(&p.assets.rig, &p.assets.clips, collision, dt, &input);
         p.pose = p.controller.pose(&p.assets.rig, &p.assets.skel)?;
         if let Some(sling) = p.sling.as_mut() {
-            sling.step(&mut p.pose, dt);
+            sling.step(&mut p.pose, p.controller.position, p.controller.rotation(), dt);
         }
         if let Some(strap) = p.strap.as_mut() {
             strap.step(&mut p.pose, p.controller.position, p.controller.rotation(), dt);

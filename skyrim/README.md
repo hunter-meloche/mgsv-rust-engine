@@ -223,9 +223,16 @@ game). If anything faults, Snake mode switches itself off.
 
 Stance and stealth: in Snake mode Ctrl (read by the plugin; Skyrim's
 `SneakHandler`, found beside the attack handler and checked by RTTI, is off)
-sets Snake's stance, and Skyrim's sneak flag (actor state bit 9) follows it:
-crouched and prone count as sneaking (the HUD eye shows), standing does
-not. Prone, Snake gets a hidden +20 Sneak (`CrawlSneakBonus` in snake.ini;
+sets Snake's stance, and Skyrim's sneaking follows it: crouched and prone
+count as sneaking (the HUD eye shows), standing does not. Skyrim does the
+toggle itself. Writing only the sneak flag (actor state bit 9) left the HUD
+eye out of step, and so did the graph events `sneakStart`/`sneakStop`. The
+hook keeps a copy of the first real "Sneak" `ButtonEvent`. Whenever Skyrim's
+sneak state differs from Snake's, the copy is replayed as a fresh press
+through the handler's own ProcessButton on the main thread. That is vtable
+slot 6 on this runtime: slots 2-5 are the base class's shared no-ops, and
+CommonLib's slot 4 is SE's. Before the first Ctrl press, or if a replay ever
+changes nothing, the flag is written directly. Prone, Snake gets a hidden +20 Sneak (`CrawlSneakBonus` in snake.ini;
 MGSV keeps its stance camouflage values in code rather than data, only the
 sight ranges and camouflage thresholds are in `Soldier2ParameterTables`, so
 this is the fallback), an actor value modifier (Sneak = 15) added on the

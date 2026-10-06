@@ -428,6 +428,49 @@ public:
     void Dispose() override { delete this; }
 };
 
+// Diagnostics (probe=6): the player object's bytes, and those of the
+// objects its first 0x400 bytes point at, to snake_probe_<n>.bin, on the
+// main thread (to diff states such as sneaking).
+class MemDumpTask : public TaskDelegate {
+public:
+    void Run() override {
+        static int n = 0;
+        void* player = ThePlayer();
+        if (!player) return;
+        std::wstring path = PluginDir() + L"\\snake_probe_" + std::to_wstring(n++) + L".bin";
+        FILE* f = nullptr;
+        if (_wfopen_s(&f, path.c_str(), L"wb") != 0 || !f) return;
+        constexpr size_t kSize = 0x1400;
+        std::vector<uint8_t> buf(kSize, 0xCD);
+        auto copy = [&](const void* src) {
+            std::fill(buf.begin(), buf.end(), 0xCD);
+            for (size_t off = 0; off < kSize; off += 0x100)
+                if (src && Readable(static_cast<const char*>(src) + off, 0x100)) memcpy(&buf[off], static_cast<const char*>(src) + off, 0x100);
+            fwrite(buf.data(), 1, kSize, f);
+        };
+        copy(player);
+        // Pointed-at objects: the pointers in the player's first 0x400 bytes.
+        for (size_t off = 0; off < 0x400; off += 8) {
+            void* q = At<void*>(player, off);
+            copy(Readable(q, 0x100) ? q : nullptr);
+        }
+        // And one level further below the AI process (player +0xF8): its first 0x400 bytes' pointers.
+        void* process = At<void*>(player, 0xF8);
+        for (size_t off = 0; off < 0x400; off += 8) {
+            void* q = process && Readable(process, 0x400) ? At<void*>(process, off) : nullptr;
+            copy(Readable(q, 0x100) ? q : nullptr);
+        }
+        void* middle = process && Readable(process, 0x10) ? At<void*>(process, 0x08) : nullptr;
+        for (size_t off = 0; off < 0x400; off += 8) {
+            void* q = middle && Readable(middle, 0x400) ? At<void*>(middle, off) : nullptr;
+            copy(Readable(q, 0x100) ? q : nullptr);
+        }
+        fclose(f);
+        Log("probe: player memory dumped (%d)", n - 1);
+    }
+    void Dispose() override { delete this; }
+};
+
 class ProbeTask : public TaskDelegate {
 public:
     void Run() override {
@@ -1566,6 +1609,92 @@ void RequestCrawlBonus(bool on) {
     if (on != g_crawlBonusApplied && g_tasks && !g_crawlBonusQueued.exchange(true)) g_tasks->AddTask(new CrawlBonusTask());
 }
 
+// ---- sneaking: Skyrim's own sneak toggle ----------------------------------------
+//
+// Snake's stance decides whether the player sneaks, but the toggle itself is
+// Skyrim's: its SneakHandler sets the actor's sneak flag, the animation graph
+// and the HUD's sneak eye together. Writing the flag alone left the eye out
+// of step (open after standing up, shut after diving prone), and the graph
+// events "sneakStart"/"sneakStop" did not fix it. Ctrl is blocked from the
+// handler in Snake mode (it sets Snake's stance), so the hook keeps a copy of
+// the first real "Sneak" button event, and whenever Skyrim's sneak state
+// differs from Snake's the copy is replayed (as a fresh press) through the
+// handler's own ProcessButton on the main thread: vtable slot 6 on this
+// runtime (slots 2-5 are the base class's shared no-ops; CommonLib's slot 4
+// is SE's). Until Ctrl has been pressed once there is no copy, and the flag
+// is written directly; it is again if a replayed toggle ever changes
+// nothing.
+
+std::atomic<int> g_sneakSyncWanted{-1};
+std::atomic<bool> g_sneakSyncQueued{false};
+std::atomic<bool> g_haveSneakTemplate{false};
+std::atomic<bool> g_sneakToggleBroken{false};  // a replay changed nothing: write the flag instead
+std::mutex g_sneakTemplateMutex;
+uint8_t g_sneakTemplate[0x30];
+void* g_sneakHandler = nullptr;
+
+// From the sneak handler's CanProcess: keep the first "Sneak" button event.
+void CaptureSneakEvent(void* handler, void* event) {
+    if (g_haveSneakTemplate || !event) return;
+    const char* name = RttiName(event);
+    if (!name || !strstr(name, "ButtonEvent") || !Readable(event, 0x30)) return;
+    const char* id = At<const char*>(event, 0x18);  // IDEvent control id (BSFixedString)
+    if (!id || !Readable(id, 6) || strcmp(id, "Sneak") != 0) return;
+    {
+        std::lock_guard<std::mutex> lock(g_sneakTemplateMutex);
+        memcpy(g_sneakTemplate, event, sizeof g_sneakTemplate);
+        g_sneakHandler = handler;
+    }
+    g_haveSneakTemplate = true;
+    Log("sneak: kept Skyrim's Sneak button event; sneaking now toggles through its own handler");
+}
+
+void CopySneakTemplate(uint8_t* out) {
+    std::lock_guard<std::mutex> lock(g_sneakTemplateMutex);
+    memcpy(out, g_sneakTemplate, sizeof g_sneakTemplate);
+}
+
+bool SafeToggleSneak(void* handler, uint8_t* event, void* controlsData) {
+    __try {
+        using ProcessButtonFn = void (*)(void*, void*, void*);
+        reinterpret_cast<ProcessButtonFn>(Vtable(handler)[6])(handler, event, controlsData);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+class SneakSyncTask : public TaskDelegate {
+public:
+    void Run() override {
+        g_sneakSyncQueued = false;
+        int want = g_sneakSyncWanted;
+        void* player = ThePlayer();
+        void* controls = g_fire.playerControls && Readable(g_fire.playerControls, 8) ? *g_fire.playerControls : nullptr;
+        if (want < 0 || !player || !controls || !g_haveSneakTemplate || g_sneakToggleBroken) return;
+        int before = (At<uint32_t>(player, kActorState1) >> 9) & 1;
+        if (before == want) return;
+        alignas(16) uint8_t event[0x30];
+        CopySneakTemplate(event);
+        At<void*>(event, 0x10) = nullptr;  // next event
+        At<float>(event, 0x28) = 1.0f;     // value: pressed
+        At<float>(event, 0x2C) = 0.0f;     // held for: just now
+        bool ok = SafeToggleSneak(g_sneakHandler, event, reinterpret_cast<char*>(controls) + 0x24);
+        int after = (At<uint32_t>(player, kActorState1) >> 9) & 1;
+        Log("sneak: Skyrim's toggle %s, sneaking %d -> %d (want %d)", ok ? "ran" : "faulted", before, after, want);
+        if (after == before) {
+            g_sneakToggleBroken = true;
+            Log("sneak: Skyrim's toggle had no effect; writing the sneak flag directly from now on");
+        }
+    }
+    void Dispose() override { delete this; }
+};
+
+void RequestSneakSync(int sneak) {
+    g_sneakSyncWanted = sneak;
+    if (g_tasks && !g_sneakSyncQueued.exchange(true)) g_tasks->AddTask(new SneakSyncTask());
+}
+
 // ---- aim camera -------------------------------------------------------------------
 //
 // MGSV aims over Snake's right shoulder. Skyrim's over-the-shoulder offsets
@@ -1700,6 +1829,10 @@ void SnakeThread() {
         SnakeStatus cur{};
         g_snake.player_status(g_player, &cur);
         PollControl(cur.stance);
+        if (g_control.probe == 6 && g_tasks) {
+            g_control.probe = 0;
+            g_tasks->AddTask(new MemDumpTask());
+        }
         if (f9.Pressed(focused)) {
             int m = (g_mode + 1) % 3;
             g_mode = m;
@@ -1800,7 +1933,20 @@ void SnakeThread() {
         int want = wantStance;
         g_snakeStance = want;
         RequestCrawlBonus(cur.stance == 2);
-        g_wantSneak = want >= 1 ? 1 : 0;
+        {
+            // Skyrim's own toggle whenever its sneak state differs (also
+            // after Skyrim ends sneaking by itself), at most every 0.3 s.
+            int sneak = want >= 1 ? 1 : 0;
+            g_wantSneak = sneak;
+            static float sinceSync = 1.0f;
+            sinceSync += static_cast<float>(dt);
+            void* pl = ThePlayer();
+            if (pl && g_haveSneakTemplate && !g_sneakToggleBroken && sinceSync > 0.3f &&
+                static_cast<int>((At<uint32_t>(pl, kActorState1) >> 9) & 1) != sneak) {
+                sinceSync = 0.0f;
+                RequestSneakSync(sneak);
+            }
+        }
         // Camera follows Snake's head down (crouched, prone), smoothed.
         {
             SnakeStatus hs{};
@@ -2639,9 +2785,10 @@ void ApplySnake(void* player, float delta) {
         g_moveRight = (dx * std::cos(h) - dy * std::sin(h)) / delta / 70.0f;
     }
     {
-        // Skyrim's sneak flag (bit 9) follows Snake's stance.
+        // Skyrim's sneak flag (bit 9) follows Snake's stance: written here
+        // only until Skyrim's own toggle is available (see SneakSyncTask).
         int sneak = g_wantSneak;
-        if (sneak >= 0) {
+        if (sneak >= 0 && (!g_haveSneakTemplate || g_sneakToggleBroken)) {
             uint32_t& state = At<uint32_t>(player, kActorState1);
             state = (state & ~(1u << 9)) | (static_cast<uint32_t>(sneak) << 9);
         }
@@ -2914,6 +3061,7 @@ bool HookedSprintCanProcess(void* self, void* event) {
 }
 
 bool HookedSneakCanProcess(void* self, void* event) {
+    CaptureSneakEvent(self, event);
     if (g_enabled) return false;
     return g_originalSneakCanProcess(self, event);
 }

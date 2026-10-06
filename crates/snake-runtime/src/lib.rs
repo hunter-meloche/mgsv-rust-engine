@@ -38,9 +38,8 @@ pub struct LoadedWeapon {
     pub model: fox_anim::SkinnedModel,
     pub rest: fox_anim::Pose,
     pub stats: snake_core::WeaponStats,
+    /// Attachment, clips and holster (`rig.holster`).
     pub rig: snake_core::WeaponRig,
-    /// Where it rides when not in the hands (bone and offset); hidden if none.
-    pub back: Option<(usize, (fox_anim::Quat, fox_anim::Vec3))>,
     pub color: fox_anim::Vec3,
 }
 
@@ -151,9 +150,18 @@ pub struct WeaponDef {
     cnp: &'static str,
     motion: &'static str,
     clips: snake_core::WeaponClips<'static>,
-    /// Body connection point (and bone) it rides on when not in the hands.
-    holster: Option<(&'static str, &'static str)>,
+    /// Where it rides when not in the hands.
+    holster: Option<Holster>,
     color: [f32; 3],
+}
+
+/// A weapon's place on Snake's body when not in the hands.
+pub enum Holster {
+    /// A bone and the body's connection point on it.
+    Cnp(&'static str, &'static str),
+    /// A bone, with the gun where MGSV's draw clip takes it from (Snake's
+    /// thigh holster has a helper bone but no connection point).
+    Draw(&'static str),
 }
 
 pub const WEAPONS: [WeaponDef; 2] = [
@@ -178,8 +186,11 @@ pub const WEAPONS: [WeaponDef; 2] = [
                 empty: [Some("snapar00_aw0_s_fre_rld"), Some("snapar00_aw0_c_fre_rld_std")],
             },
             fire: Some("snapar00_aw1_s_fre"),
+            // Off the sling up to the aim, and back.
+            draw: Some("snapasr_s_fre0_st"),
+            holster: Some("snapasr_s_fre0_ed"),
         },
-        holster: Some(("SKL_300_ASRROOT", "CNP_ASRROOT")),
+        holster: Some(Holster::Cnp("SKL_300_ASRROOT", "CNP_ASRROOT")),
         color: [0.22, 0.22, 0.22],
     },
     // WU S.Pistol (tranquilizer).
@@ -202,8 +213,11 @@ pub const WEAPONS: [WeaponDef; 2] = [
                 empty: [Some("snaphg01_s_fre_emp_rld"), Some("snaphg01_c_fre_emp_rld")],
             },
             fire: Some("snaphg01_s_fre1"),
+            // Out of the thigh holster up to the aim, and back.
+            draw: Some("snaphg01_s_fre0_st"),
+            holster: Some("snaphg01_s_fre0_ed"),
         },
-        holster: None,
+        holster: Some(Holster::Draw("SKL_534_RHOL_HLP")),
         color: [0.28, 0.27, 0.25],
     },
 ];
@@ -281,10 +295,15 @@ pub fn load_weapon(
     let model = fox_data::Fmdl::parse(&read_any(vfs, def.model)?)?;
     let gun_skel = fox_anim::Skeleton::from_fmdl(&model);
     let skinned = fox_anim::SkinnedModel::bind(&model, &gun_skel).map_err(anyhow::Error::msg)?;
-    let holster = match def.holster {
-        Some((b, c)) => Some((bone(b)?, cnp(&body, c)?)),
+    weapon_rig.holster = match def.holster {
+        Some(Holster::Cnp(b, c)) => Some((bone(b)?, cnp(&body, c)?)),
+        Some(Holster::Draw(b)) => {
+            let b = bone(b)?;
+            Some((b, weapon_rig.holster_from_draw(rig, skel, clips, b).map_err(anyhow::Error::msg)?))
+        }
         None => None,
     };
+    weapon_rig.fit_hand_over(rig, skel, clips).map_err(anyhow::Error::msg)?;
     Ok(LoadedWeapon {
         id: def.id,
         name: def.name,
@@ -292,7 +311,6 @@ pub fn load_weapon(
         rest: fox_anim::Pose::rest(&gun_skel),
         stats,
         rig: weapon_rig,
-        back: holster,
         color: fox_anim::Vec3::from_array(def.color),
     })
 }

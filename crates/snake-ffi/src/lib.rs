@@ -728,16 +728,16 @@ pub unsafe extern "C" fn snake_retarget_magazine_place(
         let w = p.assets.weapons.get(weapon as usize).ok_or("no such weapon")?;
         let Some(m) = w.rig.magazine else { return Ok(0) };
         let ctl = &p.controller;
-        let (place, bone, held) = if ctl.current == Some(weapon as usize) && ctl.weapon_in_hand() {
-            let Some((q, t, _)) = ctl.magazine() else { return Ok(0) };
-            (1, "NPC R Hand [RHnd]", (q, t))
-        } else if let Some((b, (hr, ht))) = w.back {
-            let (br, bp) = (p.pose.rotations[b], p.pose.positions[b]);
-            let (gr, gp) = (br * hr, bp + br * ht);
-            (2, "NPC Spine2 [Spn2]", (gr * m.cnp.0, gp + gr * m.cnp.1))
-        } else {
+        let Some((gr, gp, in_hand)) = ctl.gun_place(weapon as usize, &p.pose) else {
             return Ok(0);
         };
+        let held = if ctl.current == Some(weapon as usize) {
+            let Some((q, t, _)) = ctl.magazine() else { return Ok(0) };
+            (q, t)
+        } else {
+            (gr * m.cnp.0, gp + gr * m.cnp.1)
+        };
+        let (place, bone) = if in_hand { (1, "NPC R Hand [RHnd]") } else { (2, "NPC Spine2 [Spn2]") };
         let Some((q, t)) = r.retarget.attach_local(&p.pose, bone, held) else {
             return Ok(0);
         };
@@ -827,16 +827,11 @@ pub unsafe extern "C" fn snake_retarget_weapon_place(
                 p.as_ref().ok_or("null player")?,
             )
         };
-        let w = p.assets.weapons.get(weapon as usize).ok_or("no such weapon")?;
-        let ctl = &p.controller;
-        let (place, bone, held) = if ctl.current == Some(weapon as usize) && ctl.weapon_in_hand() {
-            (1, "NPC R Hand [RHnd]", w.rig.gun_transform(&p.pose))
-        } else if let Some((b, (hr, ht))) = w.back {
-            let (br, bp) = (p.pose.rotations[b], p.pose.positions[b]);
-            (2, "NPC Spine2 [Spn2]", (br * hr, bp + br * ht))
-        } else {
+        let Some((gr, gp, in_hand)) = p.controller.gun_place(weapon as usize, &p.pose) else {
             return Ok(0);
         };
+        let held = (gr, gp);
+        let (place, bone) = if in_hand { (1, "NPC R Hand [RHnd]") } else { (2, "NPC Spine2 [Spn2]") };
         let Some((q, t)) = r.retarget.attach_local(&p.pose, bone, held) else {
             return Ok(0);
         };
@@ -875,8 +870,10 @@ pub unsafe extern "C" fn snake_retarget_held_weapon(
         let Some(i) = ctl.current.filter(|_| ctl.weapon_in_hand()) else {
             return Ok(-1);
         };
-        let w = p.assets.weapons.get(i).ok_or("no such weapon")?;
-        let held = w.rig.gun_transform(&p.pose);
+        let Some((gr, gp, _)) = ctl.gun_place(i, &p.pose) else {
+            return Ok(-1);
+        };
+        let held = (gr, gp);
         let Some((q, t)) = r.retarget.attach_local(&p.pose, "NPC R Hand [RHnd]", held) else {
             return Ok(-1);
         };

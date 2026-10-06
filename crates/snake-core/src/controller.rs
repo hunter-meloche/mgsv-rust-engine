@@ -118,6 +118,84 @@ pub struct Armed {
     /// Seconds into the fire clip, after a shot.
     firing: Option<f32>,
     fire_held: bool,
+    /// Draw and holster clips (upper body), if any.
+    draw_clip: Option<Arc<Clip>>,
+    holster_clip: Option<Arc<Clip>>,
+    /// The gun is in the hand (else in its holster).
+    drawn: bool,
+    /// Drawing or holstering, and a motion being faded out after it was
+    /// cut short (with its remaining weight).
+    handling: Option<Handling>,
+    fading: Option<(Handling, f32)>,
+    /// Seconds since the gun last changed hands: its transform blends from
+    /// where it was over `SWAP_BLEND`.
+    since_swap: f32,
+}
+
+/// The gun's transform blends from the holster to the hand (and back) over
+/// this long after it changes hands: MGSV's clips put the hand within a few
+/// centimetres of the holstered gun, not exactly on it.
+const SWAP_BLEND: f32 = 0.12;
+
+/// Reaching for the holstered gun before the draw clip (which starts with
+/// the hand on it) plays.
+const REACH: f32 = 0.15;
+
+/// Drawing the gun from its holster, or putting it back: an upper-body clip
+/// and the time the gun changes hands.
+struct Handling {
+    clip: Arc<Clip>,
+    t: f32,
+    length: f32,
+    swap_at: f32,
+    /// Drawing (else holstering).
+    draw: bool,
+    swapped: bool,
+}
+
+impl Handling {
+    /// `hand_over`: the clip frame where the gun changes hands (else the
+    /// clip's event, else halfway).
+    fn new(clip: Arc<Clip>, draw: bool, hand_over: Option<f32>) -> Self {
+        let length = clip.frame_count as f32 / crate::FPS;
+        let event = if draw {
+            crate::weapon::EVENT_WEAPON_TO_HAND
+        } else {
+            crate::weapon::EVENT_WEAPON_TO_HOLSTER
+        };
+        let swap_at = hand_over
+            .or_else(|| {
+                clip.events
+                    .iter()
+                    .find(|e| e.name == event)
+                    .and_then(|e| e.frames.first())
+                    .map(|&f| f as f32)
+            })
+            .map_or(length * 0.5, |f| f / crate::FPS);
+        // A draw clip starts with the hand on the holstered gun: reach for
+        // it first (holding the first frame), then play.
+        let t = if draw { -REACH } else { 0.0 };
+        Self { clip, t, length, swap_at, draw, swapped: false }
+    }
+
+    /// Seconds into the clip (0 while reaching).
+    fn clip_time(&self) -> f32 {
+        self.t.max(0.0)
+    }
+
+    /// Weight on the upper body: in from whatever the body is doing (the
+    /// reach, or quickly from the aim when holstering), out at the end into
+    /// the aim (drawing) or locomotion.
+    fn weight(&self) -> f32 {
+        let rise = if self.draw { (self.t + REACH) / REACH } else { self.t / 0.08 };
+        let edge = rise.min((self.length - self.t) / 0.12).clamp(0.0, 1.0);
+        edge * edge * (3.0 - 2.0 * edge)
+    }
+
+    /// Nearly done: the aim beneath shows through.
+    fn finishing(&self) -> bool {
+        self.t >= self.length - 0.12
+    }
 }
 
 /// A reload in progress: its clip and the times (seconds) of its magazine
@@ -388,6 +466,8 @@ pub struct Controller {
     /// Foley the controller makes itself (raising the gun, switching
     /// weapons), until taken.
     foley: Vec<crate::foley::Foley>,
+    /// The weapon to switch to once the current one is holstered.
+    pending_switch: Option<usize>,
 }
 
 impl Controller {
@@ -422,6 +502,7 @@ impl Controller {
             tempo: 1.0,
             magazine: None,
             foley: Vec::new(),
+            pending_switch: None,
         })
     }
 
@@ -448,6 +529,8 @@ impl Controller {
             reload_empty: reload(&rig.reload.empty)?,
             magazine_in_hand: None,
             fire_clip: rig.fire.as_deref().map(get).transpose()?,
+            draw_clip: rig.draw.as_deref().map(get).transpose()?,
+            holster_clip: rig.holster_clip.as_deref().map(get).transpose()?,
             ammo: stats.magazine,
             reserve: stats.reserve,
             stats,
@@ -456,6 +539,10 @@ impl Controller {
             reloading: None,
             firing: None,
             fire_held: false,
+            drawn: false,
+            handling: None,
+            fading: None,
+            since_swap: SWAP_BLEND,
         };
         self.weapons.push(armed);
         if self.current.is_none() {
@@ -656,6 +743,8 @@ impl Controller {
             }
         }
 
+        // Switching weapons: the one in the hands goes back in its holster
+        // first, then the other comes out if Snake is still aiming.
         if let Some(i) = input.switch_to.filter(|&i| i < self.weapons.len()) {
             if self.current != Some(i) {
                 if let Some(w) = self.weapon_mut() {
@@ -663,14 +752,27 @@ impl Controller {
                     w.magazine_in_hand = None;
                     w.firing = None;
                 }
+                self.pending_switch = Some(i);
+            } else {
+                self.pending_switch = None;
+            }
+        }
+        if let Some(i) = self.pending_switch {
+            if self.weapon().is_none_or(|w| !w.drawn && w.handling.is_none()) {
                 self.current = Some(i);
+                self.pending_switch = None;
                 // Handling the gear: suit and weapon rattle.
                 self.push_handling_foley();
             }
         }
-        self.update_weapon(dt, input);
         let slot = stance_slot(self.stance);
-        let can_aim = self.weapon().is_some_and(|w| w.grids[slot].is_some());
+        let can_aim =
+            self.pending_switch.is_none() && self.weapon().is_some_and(|w| w.grids[slot].is_some());
+        // The gun comes out to aim or reload and goes back afterwards.
+        let reloading = self.weapon().is_some_and(Armed::reloading);
+        let out = (input.aim && can_aim) || (reloading && self.pending_switch.is_none());
+        self.update_handling(dt, out);
+        self.update_weapon(dt, input);
         let aim_now = input.aim && can_aim && !matches!(self.state, State::Changing { .. });
         if aim_now {
             if self.state != State::Aim {
@@ -870,7 +972,11 @@ impl Controller {
 
     fn update_weapon(&mut self, dt: f32, input: &Input) {
         let aiming = self.state == State::Aim;
-        let aim_ready = self.aim_weight > 0.8;
+        // Out of the holster and up.
+        let in_hand = self
+            .weapon()
+            .is_some_and(|w| w.drawn && w.handling.as_ref().is_none_or(Handling::finishing));
+        let aim_ready = self.aim_weight > 0.8 && in_hand;
         self.recoil *= (-8.0 * dt).exp();
         let mut shots = 0;
         let mut kick = 0.0;
@@ -879,7 +985,7 @@ impl Controller {
         // Real seconds: the tempo does not change the fire rate.
         let real_dt = dt / self.tempo.max(0.01);
         // The weapon comes up before the reload motion starts.
-        let raised = self.aim_weight.max(self.ready_weight) > 0.9;
+        let raised = self.aim_weight.max(self.ready_weight) > 0.9 && in_hand;
         if let Some(w) = self.weapon_mut() {
             w.cooldown -= real_dt;
             if let Some(t) = w.firing.as_mut() {
@@ -962,10 +1068,83 @@ impl Controller {
             .collect()
     }
 
-    /// Whether the gun should be drawn in the hand (else holstered).
+    /// Whether the gun is in the hand (else holstered).
     pub fn weapon_in_hand(&self) -> bool {
-        self.weapon()
-            .is_some_and(|w| self.aim_weight > 0.05 || w.reloading())
+        self.weapon().is_some_and(|w| w.drawn)
+    }
+
+    /// Draw the current weapon (`out`) or put it back in its holster:
+    /// MGSV's draw and holster clips play on the upper body and the gun
+    /// changes hands at their events. Prone (the clips are standing ones)
+    /// and for weapons without clips it changes hands at once.
+    fn update_handling(&mut self, dt: f32, out: bool) {
+        let prone = self.stance == Stance::Prone;
+        let mut holstering = false;
+        let Some(w) = self.weapon_mut() else { return };
+        w.since_swap += dt;
+        if let Some((_, weight)) = w.fading.as_mut() {
+            *weight -= dt / 0.1;
+        }
+        if w.fading.as_ref().is_some_and(|(_, weight)| *weight <= 0.0) {
+            w.fading = None;
+        }
+        if let Some(h) = w.handling.as_mut() {
+            h.t += dt;
+            if !h.swapped && h.t >= h.swap_at {
+                h.swapped = true;
+                w.drawn = h.draw;
+                w.since_swap = 0.0;
+            }
+        }
+        if w.handling.as_ref().is_some_and(|h| h.t >= h.length) {
+            w.handling = None;
+        }
+        let heading_out = w.handling.as_ref().map_or(w.drawn, |h| h.draw);
+        if out == heading_out {
+            return;
+        }
+        // Turning back: fade the motion out from where it is.
+        if let Some(h) = w.handling.take() {
+            let weight = h.weight();
+            w.fading = Some((h, weight));
+        }
+        if w.drawn == out {
+            return;
+        }
+        let clip = if out { &w.draw_clip } else { &w.holster_clip };
+        match clip.clone().filter(|_| !prone) {
+            Some(clip) => {
+                let hand_over = w.rig.hand_over[if out { 0 } else { 1 }];
+                w.handling = Some(Handling::new(clip, out, hand_over));
+                holstering = !out;
+            }
+            None => {
+                w.drawn = out;
+                w.since_swap = 0.0;
+            }
+        }
+        if holstering {
+            self.push_handling_foley();
+        }
+    }
+
+    /// Weapon `i`'s transform in `pose`'s space and whether it is in the
+    /// hand: in the hand, in its holster, or between the two just after it
+    /// changed hands. None when it is holstered and has no holster.
+    pub fn gun_place(&self, i: usize, pose: &Pose) -> Option<(Quat, Vec3, bool)> {
+        let w = self.weapons.get(i)?;
+        let current = self.current == Some(i);
+        let in_hand = current && w.drawn;
+        let hand = w.rig.gun_transform(pose);
+        let holster = w.rig.holstered(pose);
+        let (from, to) = if in_hand { (holster, hand) } else { (Some(hand), holster?) };
+        let s = if current { (w.since_swap / SWAP_BLEND).clamp(0.0, 1.0) } else { 1.0 };
+        let s = s * s * (3.0 - 2.0 * s);
+        let (r, p) = match from {
+            Some((fr, fp)) if s < 1.0 => (fr.slerp(to.0, s), fp.lerp(to.1, s)),
+            _ => to,
+        };
+        Some((r, p, in_hand))
     }
 
     /// Follow the current weapon's magazine for `pose` (call after each
@@ -974,11 +1153,13 @@ impl Controller {
     /// it was when it came out.
     pub fn track_magazine(&mut self, pose: &Pose) {
         self.magazine = None;
+        let Some((gr, gp, _)) = self.current.and_then(|i| self.gun_place(i, pose)) else {
+            return;
+        };
         let Some(w) = self.current.and_then(|i| self.weapons.get_mut(i)) else {
             return;
         };
         let Some(m) = w.rig.magazine else { return };
-        let (gr, gp) = w.rig.gun_transform(pose);
         let in_gun = (gr * m.cnp.0, gp + gr * m.cnp.1);
         let out = w
             .reloading
@@ -1019,6 +1200,15 @@ impl Controller {
                         self.aim_pitch + self.recoil * 0.5,
                     )?;
                     frame = rig.layer(&frame, &aim, upper, raised);
+                }
+            }
+            // Drawing or holstering (and a cut-short one fading out).
+            let fading = w.fading.as_ref().map(|(h, weight)| (h, h.weight().min(*weight)));
+            let handling = w.handling.as_ref().map(|h| (h, h.weight()));
+            for (h, weight) in fading.into_iter().chain(handling) {
+                if weight > 0.0 {
+                    let over = rig.sample_frame(&h.clip, h.clip_time() * crate::FPS)?;
+                    frame = rig.layer(&frame, &over, upper, weight);
                 }
             }
             // Per-shot motion, applied as a change from the clip's first

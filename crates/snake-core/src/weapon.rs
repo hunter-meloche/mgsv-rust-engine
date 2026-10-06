@@ -229,6 +229,13 @@ fn index_in(seq: &[f32], v: f32) -> f32 {
 pub const EVENT_MAGAZINE_OUT: u32 = 0xec0d_deb1;
 pub const EVENT_MAGAZINE_IN: u32 = 0xffe0_d53a;
 
+/// Draw and holster motion events (names not resolved; identified by where
+/// the gun is): in the draw clips the hand closes on the holstered gun at
+/// `WEAPON_TO_HAND` (the pistol's grip is 4 cm from its holster there), in
+/// the holster clips the gun is back in its holster at `WEAPON_TO_HOLSTER`.
+pub const EVENT_WEAPON_TO_HAND: u32 = 0xf55c_c7aa;
+pub const EVENT_WEAPON_TO_HOLSTER: u32 = 0x634c_2eca;
+
 /// A weapon's reload clips: stand and crouch, for a magazine with rounds
 /// left (a quick change) and an empty one (with the bolt or slide). Prone
 /// and missing entries fall back to the standing clip.
@@ -263,6 +270,16 @@ pub struct WeaponRig {
     pub magazine: Option<MagazineRig>,
     /// Played on the upper body for each shot (recoil / cycling), if any.
     pub fire: Option<String>,
+    /// Drawing from the holster up to the aim, and from the aim back into
+    /// the holster (upper body), if the weapon has them.
+    pub draw: Option<String>,
+    pub holster_clip: Option<String>,
+    /// Where the gun rides when not in the hands: a skeleton bone and the
+    /// gun's transform relative to it (None: hidden).
+    pub holster: Option<(usize, (Quat, Vec3))>,
+    /// Frames of the draw and holster clips where the gun changes hands
+    /// (see [`WeaponRig::fit_hand_over`]).
+    pub hand_over: [Option<f32>; 2],
     /// Skeleton bone the gun hangs from and the body's connection point on it.
     pub hand_bone: usize,
     pub hand_offset: (Quat, Vec3),
@@ -279,6 +296,9 @@ pub struct WeaponClips<'a> {
     pub grids: [Option<&'a str>; 3],
     pub reload: ReloadNames<'a>,
     pub fire: Option<&'a str>,
+    /// Draw (holster to aim) and holster (aim to holster) clips.
+    pub draw: Option<&'a str>,
+    pub holster: Option<&'a str>,
 }
 
 impl WeaponRig {
@@ -311,6 +331,10 @@ impl WeaponRig {
             },
             magazine: None,
             fire: names.fire.map(str::to_string),
+            draw: names.draw.map(str::to_string),
+            holster_clip: names.holster.map(str::to_string),
+            holster: None,
+            hand_over: [None, None],
             hand_bone,
             hand_offset,
             hand_to_gun,
@@ -388,6 +412,73 @@ impl WeaponRig {
         );
         let rot = hr * self.hand_offset.0 * self.hand_to_gun;
         (rot, hp + hr * self.hand_offset.1)
+    }
+
+    /// The gun's transform in its holster in the pose's space, if it has one.
+    pub fn holstered(&self, pose: &Pose) -> Option<(Quat, Vec3)> {
+        let (bone, (r, t)) = self.holster?;
+        let (br, bp) = (pose.rotations[bone], pose.positions[bone]);
+        Some((br * r, bp + br * t))
+    }
+
+    /// A holster on `bone` where the draw clip finds the gun: the gun's
+    /// place in the hand at the draw's `WEAPON_TO_HAND` event, relative to
+    /// the bone (for holsters the body has no connection point for, like
+    /// the thigh holster's helper bone).
+    pub fn holster_from_draw(
+        &self,
+        rig: &HumanRig,
+        skel: &Skeleton,
+        clips: &crate::ClipLibrary,
+        bone: usize,
+    ) -> Result<(Quat, Vec3), String> {
+        let name = self.draw.as_deref().ok_or("no draw clip")?;
+        let clip = clips.get(name).ok_or_else(|| format!("missing clip {name}"))?;
+        let frame = clip
+            .events
+            .iter()
+            .find(|e| e.name == EVENT_WEAPON_TO_HAND)
+            .and_then(|e| e.frames.first())
+            .ok_or_else(|| format!("{name}: no weapon-to-hand event"))?;
+        let pose = rig.pose(skel, &clip, *frame as f32)?;
+        let (gr, gp) = self.gun_transform(&pose);
+        let (br, bp) = (pose.rotations[bone], pose.positions[bone]);
+        let bi = br.inverse();
+        Ok((bi * gr, bi * (gp - bp)))
+    }
+
+    /// Where the gun changes hands in the draw and holster clips: the frame,
+    /// up to the clip's own event, where the gun in the hand comes closest
+    /// to the holstered gun (centimetres plus a third of the degrees).
+    /// MGSV's events sit a few frames later than that in some clips (the
+    /// rifle's holster event comes after the hand has turned the gun 57
+    /// degrees away from its sling); changing hands there swings the gun.
+    pub fn fit_hand_over(&mut self, rig: &HumanRig, skel: &Skeleton, clips: &crate::ClipLibrary) -> Result<(), String> {
+        let names = [(&self.draw, EVENT_WEAPON_TO_HAND), (&self.holster_clip, EVENT_WEAPON_TO_HOLSTER)];
+        let mut found = [None, None];
+        for (k, (name, event)) in names.into_iter().enumerate() {
+            let Some(name) = name else { continue };
+            let clip = clips.get(name).ok_or_else(|| format!("missing clip {name}"))?;
+            let last = clip
+                .events
+                .iter()
+                .find(|e| e.name == event)
+                .and_then(|e| e.frames.first())
+                .map_or(clip.frame_count, |&f| u32::from(f).min(clip.frame_count));
+            let mut best = (f32::MAX, last as f32);
+            for f in 0..=last {
+                let pose = rig.pose(skel, &clip, f as f32)?;
+                let Some((sr, sp)) = self.holstered(&pose) else { break };
+                let (gr, gp) = self.gun_transform(&pose);
+                let score = (gp - sp).length() * 100.0 + gr.angle_between(sr).to_degrees() / 3.0;
+                if score < best.0 {
+                    best = (score, f as f32);
+                }
+            }
+            found[k] = Some(best.1);
+        }
+        self.hand_over = found;
+        Ok(())
     }
 
     /// Bilinearly blended aim pose for `yaw` (left positive) and `pitch`

@@ -22,6 +22,14 @@ pub struct Options {
     pub frames: Option<usize>,
     pub shot: Option<std::path::PathBuf>,
     pub auto: bool,
+    /// Scripted draw and holster check: aim the rifle and lower it, switch
+    /// to the pistol, aim and lower it.
+    pub draw_test: bool,
+    /// Also save every this many frames (`<shot>_<frame>.png`).
+    pub shot_every: Option<usize>,
+    /// Look from this many degrees around Snake (the render camera only;
+    /// his aim still follows the play camera).
+    pub view_yaw: Option<f32>,
 }
 
 const WIDTH: usize = 960;
@@ -162,6 +170,18 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
             cam_pitch = 0.05;
             input.aim_pitch = -(cam_pitch - ctl.recoil);
         }
+        if opts.draw_test {
+            let f = total_frames;
+            input = Input { camera_yaw: cam_yaw, ..Input::default() };
+            input.switch_to = match f {
+                1 => Some(0),
+                170 => Some(1),
+                _ => None,
+            };
+            input.aim = (20..110).contains(&f) || (190..280).contains(&f);
+            cam_pitch = 0.05;
+            input.aim_pitch = -cam_pitch;
+        }
         // Stick-style: diagonal input is not faster.
         let len = input.move_x.hypot(input.move_y);
         if len > 1.0 {
@@ -202,7 +222,14 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
         );
         let right = Vec3::new(-cam_yaw.cos(), 0.0, cam_yaw.sin());
         let focus = cam_target + right * (0.45 + 0.2 * zoom);
-        let eye = focus - forward * (3.2 - 1.3 * zoom);
+        let mut eye = focus - forward * (3.2 - 1.3 * zoom);
+        let mut focus = focus;
+        if let Some(deg) = opts.view_yaw {
+            // A fixed view around Snake at his waist.
+            let yaw = cam_yaw + deg.to_radians();
+            focus = ctl.position + Vec3::new(0.0, 1.0, 0.0);
+            eye = focus - Vec3::new(yaw.sin(), -0.15, yaw.cos()) * 2.6;
+        }
         let view = Mat4::look_at_rh(eye, focus, Vec3::Y);
         let fov = 55.0 - 15.0 * zoom;
         let proj =
@@ -300,18 +327,10 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
                 );
             }
         }
-        // Weapons: the one in use in the hands while aiming/reloading; others
-        // (and the one in use when lowered) on their holster points, if any.
+        // Weapons: the one in use in the hands while drawn; others (and the
+        // one in use when holstered) on their holster points, if any.
         for (i, g) in assets.weapons.iter().enumerate() {
-            let in_hand = ctl.current == Some(i) && ctl.weapon_in_hand();
-            let (gr, gp) = if in_hand {
-                g.rig.gun_transform(&pose)
-            } else if let Some((bone, (r, t))) = g.back {
-                (
-                    pose.rotations[bone] * r,
-                    pose.positions[bone] + pose.rotations[bone] * t,
-                )
-            } else {
+            let Some((gr, gp, _)) = ctl.gun_place(i, &pose) else {
                 continue;
             };
             let skinned = g.model.skin(&g.rest);
@@ -373,6 +392,13 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
             raster.crosshair(0xFFFFFF);
         }
         window.update_with_buffer(&raster.color, WIDTH, HEIGHT)?;
+        if let (Some(k), Some(path)) = (opts.shot_every, &opts.shot) {
+            if total_frames % k == 0 {
+                let stem = path.with_extension("");
+                let file = format!("{}_{total_frames:04}.png", stem.display());
+                crate::raster::save_png(&raster, std::path::Path::new(&file))?;
+            }
+        }
         if opts.frames.is_some_and(|n| total_frames >= n) {
             if let Some(path) = &opts.shot {
                 crate::raster::save_png(&raster, path)?;

@@ -331,8 +331,30 @@ than in the clips themselves (MRS-4 quick change 2.9 s, rounds in at 1.8 s;
 full reload 6 s, rounds in at 3.3 s). Mesh groups the game hides (the MRS-4's
 rail light) are no longer exported.
 
+Drawing and holstering: the guns ride on Snake's body and come out with
+MGSV's own motions. Aiming (or reloading) from holstered plays the draw
+clip on the upper body (`snapasr_s_fre0_st` for the rifle,
+`snaphg01_s_fre0_st` for the pistol), after a short reach for the gun since
+the clips start with the hand on it; letting go plays the holster clip
+(`..._fre0_ed`), which ends in the idle arms. The rifle hangs on its sling
+at the left hip (the body's `CNP_ASRROOT` on `SKL_300_ASRROOT`); the pistol
+sits in the right thigh holster, on the helper bone `SKL_534_RHOL_HLP`,
+which has no connection point, so the gun's place on it is taken from the
+draw clip at the frame the hand closes on it (barrel straight down). The
+clips mark the hand-over with two unnamed motion events (`f55cc7aa` draw,
+`634c2eca` holster; found by where the gun is). The gun changes hands where
+it comes closest to its holster up to that event: the rifle's holster event
+comes after the hand has already turned the rifle 57 degrees away from the
+sling, which swung it. Its transform then blends between hand and holster
+over 0.12 s. A weapon switch puts the gun in the hand away first, then
+draws the other one if Snake is still aiming. Prone (MGSV has standing
+clips only) the gun changes hands at once. Firing waits until the draw is
+done. `mgsv draw-probe` prints the hand-to-holster distance per clip frame
+and runs draws, holsters and switches through the controller; `mgsv play
+--draw-test --view-yaw 140 --shot f.png --shot-every 3` renders them.
+
 Testing hooks: `Data/SKSE/Plugins/snake_control.txt` (`enabled=1`, `mode=2`,
-`stance=prone` (once: X and sneak decide again when it is reached), `move=run`, `aim=1`, `fire=1`, `reload=1`, `weapon=1`, `speed=0`, `flash=0`, `launch=0`, `draw=0` to keep hands
+`stance=prone` (once: X and sneak decide again when it is reached), `move=run`, `aim=1`, `fire=1`, `reload=1`, `weapon=1`, `tempo=0.25` (Snake's tempo, for slow-motion checks), `speed=0`, `flash=0`, `launch=0`, `draw=0` to keep hands
 sheathed, `dump=1` to log the camera) drives the plugin without key presses.
 Log: `Documents/My Games/Skyrim Special Edition/SKSE/SnakeSKSE.log`.
 

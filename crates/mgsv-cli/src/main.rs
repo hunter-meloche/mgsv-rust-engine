@@ -280,6 +280,15 @@ enum Cmd {
         /// Scripted input instead of the keyboard.
         #[arg(long)]
         auto: bool,
+        /// Scripted draw and holster check (rifle, then pistol).
+        #[arg(long)]
+        draw_test: bool,
+        /// Also save every N frames as `<shot>_<frame>.png`.
+        #[arg(long)]
+        shot_every: Option<usize>,
+        /// Render from this many degrees around Snake (90: his right side).
+        #[arg(long, allow_hyphen_values = true)]
+        view_yaw: Option<f32>,
     },
     /// Dump Skyrim's character skeleton (from Skyrim - Meshes0.bsa): node
     /// tree with rest transforms and model-space positions.
@@ -310,6 +319,10 @@ enum Cmd {
     /// per frame of a clip, the muzzle direction and how far the rifle's
     /// left-hand grip is from the animated left hand.
     WeaponProbe { clip: String },
+    /// Development probe: for each weapon's draw and holster clips, per
+    /// frame, how far the gun in the hand is from the gun in its holster
+    /// (position cm, angle degrees), with the clips' motion events.
+    DrawProbe,
     AnimProbe {
         /// .mtar (PACKAGE.fpk:INNER)
         path: String,
@@ -994,7 +1007,8 @@ fn run() -> Result<()> {
         }
         Cmd::AimProbe { clip } => aim_probe(&vfs, &clip),
         Cmd::WeaponProbe { clip } => weapon_probe(&vfs, &clip),
-        Cmd::Play { frames, shot, auto } => {
+        Cmd::DrawProbe => draw_probe(&vfs),
+        Cmd::Play { frames, shot, auto, draw_test, shot_every, view_yaw } => {
             let assets = snake_runtime::SnakeAssets::load(&vfs)?;
             for w in &assets.weapons {
                 println!("equipped {:?}", w.stats);
@@ -1016,7 +1030,7 @@ fn run() -> Result<()> {
                     }
                 }
             }
-            play::run(assets, play::Options { frames, shot, auto })
+            play::run(assets, play::Options { frames, shot, auto, draw_test, shot_every, view_yaw })
         }
         Cmd::AnimCheck { verbose, poles } => {
             if poles {
@@ -1545,6 +1559,110 @@ fn weapon_probe(vfs: &Vfs, name: &str) -> Result<()> {
         "mean grip-to-left-hand {:.3} m",
         total / (clip.frame_count + 1) as f32
     );
+    Ok(())
+}
+
+fn draw_probe(vfs: &Vfs) -> Result<()> {
+    use snake_core::Input;
+    let assets = snake_runtime::SnakeAssets::load(vfs)?;
+    // The clips: how far the gun in the hand is from its holster per frame.
+    for w in &assets.weapons {
+        let Some(holster) = w.rig.holster else { continue };
+        for name in [&w.rig.draw, &w.rig.holster_clip].into_iter().flatten() {
+            let clip = assets.clips.get(name).context("no clip")?;
+            let ev: Vec<String> = clip.events.iter().map(|e| format!("{:08x}@{:?}", e.name, e.frames)).collect();
+            println!("== {} {name} ({} frames): {}; hands over at {:?}", w.name, clip.frame_count, ev.join(" "), w.rig.hand_over);
+            for f in 0..=clip.frame_count {
+                let pose = assets.rig.pose(&assets.skel, &clip, f as f32).map_err(anyhow::Error::msg)?;
+                let (gr, gp) = w.rig.gun_transform(&pose);
+                let (b, (hr, ht)) = holster;
+                let (br, bp) = (pose.rotations[b], pose.positions[b]);
+                let (sr, sp) = (br * hr, bp + br * ht);
+                println!("  {f:>3} gun-holster {:>5.1} cm {:>6.1} deg", (gp - sp).length() * 100.0, gr.angle_between(sr).to_degrees());
+            }
+        }
+    }
+    // The clips' own fastest joint motion per 60 Hz tick, for comparison.
+    for w in &assets.weapons {
+        for name in [&w.rig.draw, &w.rig.holster_clip].into_iter().flatten() {
+            let clip = assets.clips.get(name).context("no clip")?;
+            let (mut max, mut at, mut bone) = (0.0f32, 0.0f32, 0usize);
+            let mut prev: Option<fox_anim::Pose> = None;
+            let mut f = 0.0f32;
+            while f <= clip.frame_count as f32 {
+                let pose = assets.rig.pose(&assets.skel, &clip, f).map_err(anyhow::Error::msg)?;
+                if let Some(p) = &prev {
+                    for (k, (a, b)) in p.rotations.iter().zip(&pose.rotations).enumerate().take(21) {
+                        let d = a.angle_between(*b).to_degrees();
+                        if d > max {
+                            (max, at, bone) = (d, f, k);
+                        }
+                    }
+                }
+                prev = Some(pose);
+                f += 0.5;
+            }
+            println!("{name}: fastest joint {max:.1} deg/tick at frame {at:.1} (bone {bone})");
+        }
+    }
+    // The controller: draw, holster and switch, per tick where the gun is
+    // and the largest per-tick gun and joint movement.
+    let mut ctl = assets.controller()?;
+    let dt = 1.0 / 60.0;
+    let world = snake_core::FlatGround { height: 0.0 };
+    let aim = Input { aim: true, ..Default::default() };
+    let steps: Vec<(&str, f32, Input)> = vec![
+        ("settle", 0.5, Input { switch_to: Some(0), ..Default::default() }),
+        ("aim", 1.0, aim),
+        ("release", 1.2, Input::default()),
+        ("aim again", 0.15, aim),
+        ("release mid-draw", 0.1, Input::default()),
+        ("aim mid-holster", 1.0, aim),
+        ("switch while aiming", 1.5, Input { switch_to: Some(1), ..aim }),
+        ("release", 1.5, Input::default()),
+        ("run and aim", 1.0, Input { move_y: 1.0, aim: true, ..Default::default() }),
+        ("run", 1.5, Input { move_y: 1.0, ..Default::default() }),
+    ];
+    let mut prev: Option<(fox_anim::Pose, fox_anim::Vec3)> = None;
+    let mut t = 0.0;
+    for (label, secs, input) in steps {
+        let n = (secs / dt).round() as usize;
+        let (mut gun_max, mut joint_max, mut swaps) = (0.0f32, 0.0f32, 0);
+        let mut last_hand = ctl.weapon_in_hand();
+        for k in 0..n {
+            let mut i = input;
+            if k > 0 {
+                i.switch_to = None;
+            }
+            ctl.update(&assets.rig, &assets.clips, &world, dt, &i);
+            let pose = ctl.pose(&assets.rig, &assets.skel).map_err(anyhow::Error::msg)?;
+            t += dt;
+            let cur = ctl.current.context("no weapon")?;
+            let (_, gp, _) = ctl.gun_place(cur, &pose).context("gun not shown")?;
+            if let Some((pp, pg)) = &prev {
+                gun_max = gun_max.max((gp - *pg).length() * 100.0);
+                // Body joints (the fingers snap into a grip in MGSV's clips too).
+                let j = pp.rotations.iter().zip(&pose.rotations).take(21).map(|(a, b)| a.angle_between(*b).to_degrees()).fold(0.0f32, f32::max);
+                joint_max = joint_max.max(j);
+                if j > 20.0 {
+                    let (k, _) = pp.rotations.iter().zip(&pose.rotations).take(21).map(|(a, b)| a.angle_between(*b).to_degrees()).enumerate().fold((0, 0.0f32), |m, (k, d)| if d > m.1 { (k, d) } else { m });
+                    println!("      {t:>5.2}s joint {k} turned {j:.1} deg");
+                }
+            }
+            if ctl.weapon_in_hand() != last_hand {
+                swaps += 1;
+                last_hand = ctl.weapon_in_hand();
+                println!("    {t:>5.2}s {} {}", assets.weapons[cur].name, if last_hand { "to the hand" } else { "to the holster" });
+            }
+            prev = Some((pose, gp));
+        }
+        println!(
+            "{label:<22} until {t:>5.2}s: weapon {}, in hand {}, aiming {}; gun moved up to {gun_max:.1} cm/tick, joints {joint_max:.1} deg/tick, {swaps} hand-overs",
+            ctl.current.map_or("-", |i| assets.weapons[i].name),
+            ctl.weapon_in_hand(),
+            ctl.aiming()
+        );
+    }
     Ok(())
 }
 

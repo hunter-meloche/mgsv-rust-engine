@@ -1404,6 +1404,7 @@ struct Control {
     int body = 1;        // show Snake's own body
     int reload = 0;      // reload once
     int dive = 0;        // dive once
+    float tempo = 0;     // set Snake's tempo once (e.g. 0.3 for slow-motion checks)
     bool dump = false;   // log the camera once (diagnostics)
     int probe = 0;       // 1: log the player's process / character controller objects once
 };
@@ -1440,6 +1441,7 @@ void PollControl(int curStance) {
         else if (k == "body") g_control.body = std::atoi(v.c_str());
         else if (k == "reload") g_control.reload = std::atoi(v.c_str());
         else if (k == "dive") g_control.dive = std::atoi(v.c_str());
+        else if (k == "tempo") g_control.tempo = static_cast<float>(std::atof(v.c_str()));
         else if (k.rfind("Camera", 0) == 0 || k.rfind("AimCamera", 0) == 0) {
             std::lock_guard<std::mutex> lock(g_cameraOverrideMutex);
             g_cameraOverrides[std::wstring(k.begin(), k.end())] = static_cast<float>(std::atof(v.c_str()));
@@ -2100,6 +2102,10 @@ void SnakeThread() {
         in.switch_to = -1;
         for (int w = 0; w < 2; ++w)
             if (weaponKeys[w].Pressed(focused)) in.switch_to = w;
+        if (g_control.tempo > 0) {
+            g_snake.player_set_tempo(g_player, g_control.tempo);
+            g_control.tempo = 0;
+        }
         if (g_control.weapon >= 0) {
             in.switch_to = g_control.weapon;
             g_control.weapon = -1;

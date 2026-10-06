@@ -118,14 +118,24 @@ Snake's body: `mgsv skyrim-export` also writes `meshes\snake\snake_body.nif`
 (body, face and bionic arm, 54 shapes) as a Skyrim SE skinned mesh in the
 layout of the vanilla body meshes (vertex-less BSTriShape,
 BSDismemberSkinInstance, NiSkinData, NiSkinPartition holding the vertices).
-It is bound to the 20 core skeleton bones the in-game third-person skeleton
-has; every Snake bone maps through the retarget table (fingers, toes and
-twists fold into their parents). The retarget now also places every joint Snake
-drives where Snake's is, so the skeleton takes his proportions and the
-mesh needs no joint fix-ups: `mgsv skyrim-body-check` skins the export with
-the retargeted skeleton over a scripted run and compares with Snake's own
-skinning, 0.2-0.4 cm mean error (max ~14 cm at the hands, whose fingers the
-third-person skeleton cannot move). The plugin loads it, points each skin
+It is bound to 50 bones: the 20 core bones the in-game third-person skeleton
+has, plus the 30 finger bones. Every Snake bone maps through the retarget
+table; toes and twists fold into their parents. The live third-person
+skeleton has no finger bones, so the export also writes each hand's 15 as a
+node tree in Snake's rest pose, relative to the hand
+(`meshes\snake\snake_fingers_l.nif` / `_r.nif`, root `SnakeFingers L/R`).
+The plugin attaches each tree under the live hand before binding the body's
+skin. The retarget output already has the finger bones, driven by Snake's,
+so they take his MGSV finger poses, including his grip on each gun. The
+world pass brings a tree's root up to its hand before the fingers. The
+layout check skips the finger bones and runs once per skeleton.
+
+The retarget also places every joint Snake drives where Snake's is, so the
+skeleton takes his proportions and the mesh needs no joint fix-ups.
+`mgsv skyrim-body-check` skins the export with the retargeted skeleton over
+a scripted run and compares it with Snake's own skinning: mean 0.0 cm, max
+0.2 cm idle and running, 1.4 cm aiming, 4 cm crawling. The hands are exact;
+before the finger bones they were off by about 14 cm. The plugin loads it, points each skin
 instance's bones at the live skeleton (the bone count comes from the skin
 data, +0x58: `numMatrices` stays 0 until the shape has rendered) and
 attaches it to the player's 3D root; in Snake mode it is shown and Skyrim's

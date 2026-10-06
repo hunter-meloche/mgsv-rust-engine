@@ -498,6 +498,67 @@ fn finish_nif(types: &[&str], blocks: &[(u16, Vec<u8>)], strings: &[String]) -> 
     w.0
 }
 
+/// A node of [`write_node_tree`]: local transform relative to its parent
+/// (another node, or the file's root).
+#[derive(Clone, Debug)]
+pub struct TreeNode {
+    pub name: String,
+    pub parent: Option<usize>,
+    pub rotation: [[f32; 3]; 3],
+    pub translation: [f32; 3],
+}
+
+/// A NIF file holding only `NiNode`s: `nodes` (parents before children)
+/// under a root named `root_name`. Used for bones the in-game skeleton
+/// lacks, which the plugin attaches under a live bone.
+pub fn write_node_tree(root_name: &str, nodes: &[TreeNode]) -> Vec<u8> {
+    let mut strings = vec![root_name.to_string()];
+    strings.extend(nodes.iter().map(|n| n.name.clone()));
+    let children = |parent: Option<usize>| -> Vec<i32> {
+        nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.parent == parent)
+            .map(|(i, _)| 1 + i as i32)
+            .collect()
+    };
+    let mut blocks: Vec<(u16, Vec<u8>)> = Vec::new();
+    let mut root = W::default();
+    root.av_object(0);
+    let top = children(None);
+    root.u32(top.len() as u32);
+    for c in top {
+        root.i32(c);
+    }
+    root.u32(0); // effects
+    blocks.push((0, root.0));
+    for (i, node) in nodes.iter().enumerate() {
+        let mut n = W::default();
+        n.i32(1 + i as i32); // name
+        n.u32(0); // extra data
+        n.i32(-1); // controller
+        n.u32(0x0008_000E); // flags, as in vanilla meshes
+        for v in node.translation {
+            n.f32(v);
+        }
+        for row in node.rotation {
+            for v in row {
+                n.f32(v);
+            }
+        }
+        n.f32(1.0); // scale
+        n.i32(-1); // collision
+        let kids = children(Some(i));
+        n.u32(kids.len() as u32);
+        for c in kids {
+            n.i32(c);
+        }
+        n.u32(0); // effects
+        blocks.push((0, n.0));
+    }
+    finish_nif(&["NiNode"], &blocks, &strings)
+}
+
 /// A NIF file with `shapes` under an `NiNode` named `root_name`.
 pub fn write_static_nif(root_name: &str, shapes: &[Shape]) -> Vec<u8> {
     let mut strings = vec![root_name.to_string()];
@@ -681,6 +742,19 @@ mod tests {
         assert_eq!(alpha_link(2), 8);
         assert_eq!(alpha_link(9), -1);
         assert_eq!(block(8)[12..15], [0xEC, 0x12, 128]);
+    }
+
+    #[test]
+    fn node_tree_reads_back() {
+        let id = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let node = |name: &str, parent| TreeNode { name: name.into(), parent, rotation: id, translation: [1.0, 2.0, 3.0] };
+        let data = write_node_tree("Fingers", &[node("A0", None), node("A1", Some(0)), node("B0", None)]);
+        let nif = crate::Nif::parse(&data).unwrap();
+        assert_eq!(nif.blocks.len(), 4);
+        assert!(nif.blocks.iter().all(|b| b.0 == "NiNode"));
+        assert_eq!(nif.strings, vec!["Fingers", "A0", "A1", "B0"]);
+        let root = nif.root().unwrap();
+        assert_eq!(root.name, "Fingers");
     }
 
     #[test]

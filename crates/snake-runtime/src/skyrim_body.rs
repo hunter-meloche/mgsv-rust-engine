@@ -28,6 +28,11 @@ use crate::{read_any, snake_rig, SNAKE_ARM, SNAKE_BODY, SNAKE_FACE};
 
 const UNITS_PER_METER: f32 = 70.0;
 
+/// Finger bones of each hand (left, right) for the third-person skeleton,
+/// which has none at runtime: node chains the plugin attaches under the
+/// live hand bones (relative to `Data\meshes`).
+pub const FINGER_MESHES: [&str; 2] = [r"snake\snake_fingers_l.nif", r"snake\snake_fingers_r.nif"];
+
 /// Skyrim mesh path of Snake's body (relative to `Data\meshes`).
 pub const BODY_MESH: &str = r"snake\snake_body.nif";
 /// Snake's arms for the first-person skeleton.
@@ -141,6 +146,7 @@ pub fn export_snake_body(vfs: &Vfs, skyrim_dir: &Path, data_dir: &Path, report: 
         ));
         report.files.push(path);
     }
+    export_fingers(vfs, skyrim_dir, &mesh_dir, report)?;
     // Body textures of earlier exports that are no longer used (they are
     // named after their contents' settings).
     for entry in std::fs::read_dir(&tex_dir)?.flatten() {
@@ -150,6 +156,51 @@ pub fn export_snake_body(vfs: &Vfs, skyrim_dir: &Path, data_dir: &Path, report: 
             std::fs::remove_file(&path)?;
             report.notes.push(format!("removed old {name}"));
         }
+    }
+    Ok(())
+}
+
+/// The finger bones of each hand as node trees (FINGER_MESHES): every
+/// retarget bone below the hand, with its local transform in Snake's rest
+/// pose (the body's bind pose), relative to the hand. The plugin attaches
+/// each under the live hand and poses the bones like the rest.
+fn export_fingers(vfs: &Vfs, skyrim_dir: &Path, mesh_dir: &Path, report: &mut ExportReport) -> Result<()> {
+    let (skel, _) = snake_rig(vfs)?;
+    let nif = skyrim_data::Nif::parse(&skyrim_data::read_install_file(skyrim_dir, skyrim_data::CHARACTER_SKELETON)?)?;
+    let retarget = SkyrimRetarget::new(&nif, &skel)?;
+    let links = retarget.bone_links();
+    let model = retarget.model_transforms(&fox_anim::Pose::rest(&skel));
+    for (side, hand_name) in [("l", "NPC L Hand [LHnd]"), ("r", "NPC R Hand [RHnd]")] {
+        let hand = links.iter().position(|l| l.0 == hand_name).context("no hand in the retarget table")?;
+        // Bones below the hand, parent-first (retarget order is).
+        let mut inside = vec![false; links.len()];
+        inside[hand] = true;
+        let mut nodes: Vec<nif_write::TreeNode> = Vec::new();
+        let mut node_of: HashMap<usize, usize> = HashMap::new();
+        for (i, (name, parent, _)) in links.iter().enumerate() {
+            let Some(p) = *parent else { continue };
+            if !inside[p] {
+                continue;
+            }
+            inside[i] = true;
+            let (pq, pt) = (model[p].1, model[p].2);
+            let (q, t) = (model[i].1, model[i].2);
+            let local_q = (pq.inverse() * q).normalize();
+            let local_t = pq.inverse() * (t - pt);
+            let m = fox_anim::glam::Mat3::from_quat(local_q);
+            nodes.push(nif_write::TreeNode {
+                name: name.clone(),
+                parent: node_of.get(&p).copied(),
+                rotation: [m.row(0).to_array(), m.row(1).to_array(), m.row(2).to_array()],
+                translation: local_t.to_array(),
+            });
+            node_of.insert(i, nodes.len() - 1);
+        }
+        let file = format!("snake_fingers_{side}.nif");
+        let path = mesh_dir.join(&file);
+        std::fs::write(&path, nif_write::write_node_tree(&format!("SnakeFingers {}", side.to_uppercase()), &nodes))?;
+        report.notes.push(format!("{file}: {} finger bones under {hand_name}", nodes.len()));
+        report.files.push(path);
     }
     Ok(())
 }
@@ -177,7 +228,8 @@ pub fn build_body(
     let mut core: Vec<usize> = Vec::new();
     for (i, (name, _, _)) in links.iter().enumerate() {
         let wanted = match view {
-            BodyView::ThirdPerson => CORE_BONES.contains(&name.as_str()),
+            // The core bones and the fingers (shipped as FINGER_MESHES).
+            BodyView::ThirdPerson => CORE_BONES.contains(&name.as_str()) || name.contains("Finger"),
             BodyView::FirstPersonArms => is_arm_bone(name),
         };
         if wanted && !core.contains(&i) {

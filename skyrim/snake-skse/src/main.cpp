@@ -545,6 +545,10 @@ void CheckLayout() {
     for (size_t i = 0; i < g_nodes.size(); ++i) {
         void* node = g_nodes[i];
         if (!node) continue;
+        // Finger bones are the plugin's own (attached under the hands, see
+        // FingerSlot); Skyrim has not updated their world transforms yet.
+        const char* nodeName = Name(node);
+        if (nodeName && strstr(nodeName, "Finger")) continue;
         void* parent = At<void*>(node, kParent);
         if (!parent) continue;
         float* pr = &At<float>(parent, kWorldRot);
@@ -2379,6 +2383,7 @@ std::mutex g_hookMutex;  // the player's hook state (try-locked, never waited on
 float g_lastPos[3] = {0, 0, 0};
 bool g_havePos = false;
 void* g_cachedRoot = nullptr;
+std::atomic<bool> g_resolveNodes{false};  // re-find the retarget bones (finger bones were attached)
 std::vector<SnakeQuat> g_hookRot;
 std::vector<SnakeVec3> g_hookTr;
 std::vector<uint8_t> g_hookHas;
@@ -2700,6 +2705,45 @@ struct BodySlot {
 };
 BodySlot g_bodies[2] = {{"snake\\snake_body.nif"}, {"snake\\snake_arms_1p.nif"}};  // per view (0 third person, 1 first)
 
+// Fingers: the in-game third-person skeleton has no finger bones, so the
+// export ships each hand's finger bones as a node tree (rest pose relative
+// to the hand) and they are attached under the live hands before the body's
+// skin is bound to them. Snake's pose then reaches them like any other bone
+// (the retarget output has them), so his hands grip as in MGSV.
+struct FingerSlot {
+    const char* mesh;
+    const char* hand;
+    std::atomic<void*> node{nullptr};    // the tree's root ("SnakeFingers L/R")
+    std::atomic<void*> parent{nullptr};  // live hand it is attached to
+};
+FingerSlot g_fingers[2] = {{"snake\\snake_fingers_l.nif", "NPC L Hand [LHnd]"}, {"snake\\snake_fingers_r.nif", "NPC R Hand [RHnd]"}};
+
+// Main thread: attach both finger trees under `skeleton`'s hands.
+void AttachFingers(void* skeleton) {
+    for (FingerSlot& f : g_fingers) {
+        void* hand = FindNode(skeleton, f.hand);
+        if (!hand || f.parent == hand) continue;
+        if (!f.node) {
+            void* node = nullptr;
+            uint32_t err = SafeDemand(f.mesh, &node);
+            if (err != 0 || !node) {
+                Log("fingers %s: error %u (run mgsv skyrim-export)", f.mesh, err);
+                continue;
+            }
+            f.node = node;
+        }
+        if (!SafeAttach(hand, f.node)) {
+            Log("fingers %s: attaching faulted", f.mesh);
+            continue;
+        }
+        f.parent = hand;
+        Log("fingers %s attached under %s", f.mesh, f.hand);
+    }
+    g_resolveNodes = true;
+}
+
+bool IsFingerRoot(void* node) { return node && (node == g_fingers[0].node || node == g_fingers[1].node); }
+
 // Point every skin instance under `node` at the bones of `skeleton`.
 int RebindSkin(void* node, void* skeleton, void* rootParent) {
     int rebound = 0;
@@ -2759,6 +2803,7 @@ public:
             b.node = node;
         }
         void* body = b.node;
+        if (view_ == 0) AttachFingers(skeleton);
         int rebound = RebindSkin(body, skeleton, root);
         if (!SafeAttach(root, body)) {
             b.failed = true;
@@ -2830,6 +2875,16 @@ void WriteWorlds(const std::vector<void*>& nodes, size_t n) {
         if (!node) continue;
         void* parent = At<void*>(node, kParent);
         if (!parent) continue;
+        if (IsFingerRoot(parent)) {
+            // The finger tree's root (identity under the hand, not a
+            // retarget bone): bring its world up to the hand's first.
+            void* hand = At<void*>(parent, kParent);
+            if (hand) {
+                memcpy(&At<float>(parent, kWorldRot), &At<float>(hand, kWorldRot), 9 * sizeof(float));
+                memcpy(&At<float>(parent, kWorldPos), &At<float>(hand, kWorldPos), 3 * sizeof(float));
+                At<float>(parent, kWorldScale) = At<float>(hand, kWorldScale);
+            }
+        }
         float prot[9], ppos[3];
         memcpy(prot, &At<float>(parent, kWorldRot), sizeof prot);
         memcpy(ppos, &At<float>(parent, kWorldPos), sizeof ppos);
@@ -2869,7 +2924,8 @@ void FollowTurn(void* player);
 void ApplySnake(void* player, float delta) {
     void* root = Get3D(player, false);
     if (!root) return;
-    if (root != g_cachedRoot) {
+    bool newRoot = root != g_cachedRoot;
+    if (newRoot || g_resolveNodes.exchange(false)) {
         g_nodes.clear();
         int missing = 0;
         for (auto& n : g_boneNames) {
@@ -2899,7 +2955,9 @@ void ApplySnake(void* player, float delta) {
             Log("recovered %d bones via skinned geometry; %d not in the third-person skeleton (first-person only)",
                 recovered, missing - recovered);
         }
-        CheckLayout();
+        // Once per skeleton, before Snake's pose is written to it (a
+        // re-resolve for the attached fingers keeps the verdict).
+        if (newRoot) CheckLayout();
         g_hookFrames = 0;
     }
 

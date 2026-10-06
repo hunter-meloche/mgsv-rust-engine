@@ -232,9 +232,10 @@ is replayed as a fresh press through the handler's own ProcessButton on the
 main thread. That is vtable slot 6 on this runtime: slots 2-5 are the base
 class's shared no-ops, and CommonLib's slot 4 is SE's. The event is the
 first real one Ctrl sends, or until then one built from any key's button
-event, with the pooled "Sneak" control id and Ctrl's key code. A refused
-toggle (it happens now and then) is retried every 0.3 s. Only after 10
-refusals in a row is the flag written directly. Ctrl taps and holds count
+event, with the pooled "Sneak" control id and Ctrl's key code. Skyrim refuses toggles
+while the hands are drawn or sheathed (just after aiming) and for a moment
+after. No toggle is tried during that, and a refused one is retried every
+0.3 s. Only after 20 refusals in a row is the flag written directly. Ctrl taps and holds count
 from the stance Snake is heading for, so quick taps chain (prone -> crouch
 -> stand) while a transition still plays. Prone, Snake gets a hidden +20 Sneak (`CrawlSneakBonus` in snake.ini;
 MGSV keeps its stance camouflage values in code rather than data, only the

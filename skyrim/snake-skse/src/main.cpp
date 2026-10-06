@@ -1626,7 +1626,9 @@ void RequestCrawlBonus(bool on) {
 // is SE's). Until Ctrl has been pressed once there is no copy, and the flag
 // is written directly. A replay that changes nothing (Skyrim refuses a
 // toggle now and then, e.g. right after the previous one) is retried every
-// 0.3 s; only after 10 failures in a row is the flag written directly.
+// 0.3 s, and none is tried while hands are drawn or sheathed (Skyrim refuses
+// then, and for a moment after); only after 20 refusals in a row (6 s) is
+// the flag written directly.
 
 std::atomic<int> g_sneakSyncWanted{-1};
 std::atomic<bool> g_sneakSyncQueued{false};
@@ -1701,6 +1703,10 @@ public:
         if (want < 0 || !player || !controls || !g_haveSneakTemplate || g_sneakToggleBroken) return;
         int before = (At<uint32_t>(player, kActorState1) >> 9) & 1;
         if (before == want) return;
+        // Skyrim refuses sneak toggles while hands are drawn or sheathed
+        // (after aiming) and for a moment after: wait for that to end.
+        int weapon = WeaponStateOf(player);
+        if (weapon != kSheathed && weapon != kDrawn) return;
         alignas(16) uint8_t event[0x30];
         CopySneakTemplate(event);
         At<void*>(event, 0x10) = nullptr;  // next event
@@ -1708,10 +1714,11 @@ public:
         At<float>(event, 0x2C) = 0.0f;     // held for: just now
         bool ok = SafeToggleSneak(g_sneakHandler, event, reinterpret_cast<char*>(controls) + 0x24);
         int after = (At<uint32_t>(player, kActorState1) >> 9) & 1;
-        Log("sneak: Skyrim's toggle %s, sneaking %d -> %d (want %d)", ok ? "ran" : "faulted", before, after, want);
+        Log("sneak: Skyrim's toggle %s, sneaking %d -> %d (want %d, weapon state %d)", ok ? "ran" : "faulted", before, after, want,
+            WeaponStateOf(player));
         if (after != before) {
             g_sneakToggleFailures = 0;
-        } else if (++g_sneakToggleFailures >= 10) {
+        } else if (++g_sneakToggleFailures >= 20) {
             g_sneakToggleBroken = true;
             Log("sneak: Skyrim's toggle keeps having no effect; writing the sneak flag directly from now on");
         }

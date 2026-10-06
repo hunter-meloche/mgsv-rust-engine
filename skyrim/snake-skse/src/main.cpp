@@ -317,6 +317,11 @@ using UpdateAnimationFn = void (*)(void* self, float delta);
 UpdateAnimationFn g_originalUpdateAnimation = nullptr;
 std::vector<void*> g_nodes;
 bool g_layoutOk = false;
+// The layout check passed once this session: the memory layout it guards is
+// the runtime's, so later skeletons (after loading a save, whose world
+// transforms Skyrim has not updated yet) need not pass again.
+bool g_layoutVerified = false;
+int g_layoutRetries = 0;  // checks of the current skeleton so far
 
 bool Readable(const void* p, size_t n) {
     MEMORY_BASIC_INFORMATION mbi{};
@@ -579,9 +584,15 @@ void CheckLayout() {
         errA = (std::max)(errA, ea), errB = (std::max)(errB, eb), errPos = (std::max)(errPos, ep);
         ++checked;
     }
-    g_layoutOk = checked > 0 && errA < 0.02 && errPos < 0.5;
+    bool ok = checked > 0 && errA < 0.02 && errPos < 0.5;
+    if (ok) g_layoutVerified = true;
+    g_layoutOk = ok || g_layoutVerified;
+    ++g_layoutRetries;
     Log("layout check over %d bones: rot err (P*L) %.4f [worst %s], rot err (transposed) %.4f, pos err %.3f -> %s", checked,
-        errA, worst, errB, errPos, g_layoutOk ? "OK, writes allowed" : "MISMATCH, writes disabled");
+        errA, worst, errB, errPos,
+        ok ? "OK, writes allowed"
+           : g_layoutVerified ? "mismatch (world transforms not updated yet; layout verified earlier), writes allowed"
+                              : "MISMATCH, writes disabled until a later check passes");
 }
 
 // ---- firing (Skyrim projectiles) -------------------------------------------------
@@ -3087,8 +3098,18 @@ void ApplySnake(void* player, float delta) {
         }
         // Once per skeleton, before Snake's pose is written to it (a
         // re-resolve for the attached fingers keeps the verdict).
-        if (newRoot) CheckLayout();
+        if (newRoot) {
+            g_layoutRetries = 0;
+            CheckLayout();
+        }
         g_hookFrames = 0;
+    }
+    // A failed check is retried every half second (a skeleton just loaded
+    // has stale world transforms), up to 20 times.
+    static int layoutWait = 0;
+    if (!g_layoutOk && !g_nodes.empty() && g_layoutRetries < 20 && ++layoutWait >= 30) {
+        layoutWait = 0;
+        CheckLayout();
     }
 
     // Player speed for Snake's gait.
@@ -3500,6 +3521,9 @@ void OnMessage(SKSEMessagingInterface::Message* msg) {
     }
     if (msg->type == SKSEMessagingInterface::kMessage_DataLoaded) {
         Log("Skyrim data loaded");
+        // A control file left by a test run would force its settings (aim
+        // off, a stance) on play: start without one.
+        if (DeleteFileW((PluginDir() + L"\\snake_control.txt").c_str())) Log("removed a leftover snake_control.txt");
         if (LoadSnakeDll() && OpenRuntime() && InstallHook()) {
             bool lib = LoadAddressLibrary();
             if (lib && !InstallInputHook()) Log("could not hook the attack/block handler");

@@ -1617,25 +1617,31 @@ void RequestCrawlBonus(bool on) {
 // of step (open after standing up, shut after diving prone), and the graph
 // events "sneakStart"/"sneakStop" did not fix it. Ctrl is blocked from the
 // handler in Snake mode (it sets Snake's stance), so the hook keeps a copy of
-// the first real "Sneak" button event, and whenever Skyrim's sneak state
+// the first real "Sneak" button event; until then one is built from the
+// first button event of any key (seen by the attack handler's hook) with
+// the pooled "Sneak" control id and Ctrl's key code. Whenever Skyrim's sneak state
 // differs from Snake's the copy is replayed (as a fresh press) through the
 // handler's own ProcessButton on the main thread: vtable slot 6 on this
 // runtime (slots 2-5 are the base class's shared no-ops; CommonLib's slot 4
 // is SE's). Until Ctrl has been pressed once there is no copy, and the flag
-// is written directly; it is again if a replayed toggle ever changes
-// nothing.
+// is written directly. A replay that changes nothing (Skyrim refuses a
+// toggle now and then, e.g. right after the previous one) is retried every
+// 0.3 s; only after 10 failures in a row is the flag written directly.
 
 std::atomic<int> g_sneakSyncWanted{-1};
 std::atomic<bool> g_sneakSyncQueued{false};
 std::atomic<bool> g_haveSneakTemplate{false};
-std::atomic<bool> g_sneakToggleBroken{false};  // a replay changed nothing: write the flag instead
+std::atomic<bool> g_sneakToggleBroken{false};  // replays keep changing nothing: write the flag instead
+int g_sneakToggleFailures = 0;                  // replays in a row that changed nothing (main thread)
 std::mutex g_sneakTemplateMutex;
 uint8_t g_sneakTemplate[0x30];
 void* g_sneakHandler = nullptr;
 
 // From the sneak handler's CanProcess: keep the first "Sneak" button event.
+bool g_sneakTemplateReal = false;  // the template is a real "Sneak" event (input threads)
+
 void CaptureSneakEvent(void* handler, void* event) {
-    if (g_haveSneakTemplate || !event) return;
+    if (g_sneakTemplateReal || !event) return;
     const char* name = RttiName(event);
     if (!name || !strstr(name, "ButtonEvent") || !Readable(event, 0x30)) return;
     const char* id = At<const char*>(event, 0x18);  // IDEvent control id (BSFixedString)
@@ -1645,8 +1651,29 @@ void CaptureSneakEvent(void* handler, void* event) {
         memcpy(g_sneakTemplate, event, sizeof g_sneakTemplate);
         g_sneakHandler = handler;
     }
+    g_sneakTemplateReal = true;
     g_haveSneakTemplate = true;
     Log("sneak: kept Skyrim's Sneak button event; sneaking now toggles through its own handler");
+}
+
+// From the attack handler's CanProcess (it is offered every input event):
+// until a real "Sneak" event is seen, build one from any button event.
+void BuildSneakEvent(void* event) {
+    if (g_haveSneakTemplate || !event || !g_sneakHandler || !g_fire.projectile) return;
+    const char* name = RttiName(event);
+    if (!name || !strstr(name, "ButtonEvent") || !Readable(event, 0x30)) return;
+    const char* sneakId = SafePooled("Sneak", At<const char*>(g_fire.projectile, kModelPath));
+    if (!sneakId) return;
+    {
+        std::lock_guard<std::mutex> lock(g_sneakTemplateMutex);
+        memcpy(g_sneakTemplate, event, sizeof g_sneakTemplate);
+        At<uint32_t>(g_sneakTemplate, 0x08) = 0;              // keyboard
+        At<uint32_t>(g_sneakTemplate, 0x0C) = 0;              // button event
+        At<const char*>(g_sneakTemplate, 0x18) = sneakId;     // control id
+        At<uint32_t>(g_sneakTemplate, 0x20) = 0x1D;           // Left Ctrl
+    }
+    g_haveSneakTemplate = true;
+    Log("sneak: built a Sneak button event; sneaking toggles through Skyrim's own handler");
 }
 
 void CopySneakTemplate(uint8_t* out) {
@@ -1682,9 +1709,11 @@ public:
         bool ok = SafeToggleSneak(g_sneakHandler, event, reinterpret_cast<char*>(controls) + 0x24);
         int after = (At<uint32_t>(player, kActorState1) >> 9) & 1;
         Log("sneak: Skyrim's toggle %s, sneaking %d -> %d (want %d)", ok ? "ran" : "faulted", before, after, want);
-        if (after == before) {
+        if (after != before) {
+            g_sneakToggleFailures = 0;
+        } else if (++g_sneakToggleFailures >= 10) {
             g_sneakToggleBroken = true;
-            Log("sneak: Skyrim's toggle had no effect; writing the sneak flag directly from now on");
+            Log("sneak: Skyrim's toggle keeps having no effect; writing the sneak flag directly from now on");
         }
     }
     void Dispose() override { delete this; }
@@ -1915,12 +1944,14 @@ void SnakeThread() {
             }
             if (!ctrlHoldDone && ctrlHeld >= kHoldSeconds) {
                 ctrlHoldDone = true;
-                wantStance = cur.stance == 2 ? 0 : 2;
+                wantStance = wantStance == 2 ? 0 : 2;
                 Log("stance: Ctrl held -> %s", wantStance == 2 ? "prone" : "stand");
             }
         } else if (ctrlHeld >= 0) {
             if (!ctrlHoldDone) {
-                wantStance = cur.stance == 2 ? 1 : cur.stance == 1 ? 0 : 1;
+                // From the stance Snake is heading for, so quick taps chain
+                // (prone -> crouch -> stand) while a transition still plays.
+                wantStance = wantStance == 2 ? 1 : wantStance == 1 ? 0 : 1;
                 Log("stance: Ctrl tapped -> %s", wantStance == 1 ? "crouch" : "stand");
             }
             ctrlHeld = -1;
@@ -3123,8 +3154,10 @@ void HookReadyWeapon(void* attackHandler) {
     void* sneak = At<void*>(controls, (slot + 2) * 8);
     const char* sneakName = sneak ? RttiName(sneak) : nullptr;
     if (sneakName && strstr(sneakName, "Sneak") &&
-        HookCanProcess(sneak, reinterpret_cast<void*>(&HookedSneakCanProcess), g_originalSneakCanProcess))
+        HookCanProcess(sneak, reinterpret_cast<void*>(&HookedSneakCanProcess), g_originalSneakCanProcess)) {
+        g_sneakHandler = sneak;
         Log("hooked %s::CanProcess: Ctrl sets Snake's stance in Snake mode", sneakName);
+    }
     else
         Log("sneak: handler not found (slot %d holds %s)", slot + 2, sneakName ? sneakName : "?");
     // The sprint handler, before the ready-weapon one (checked by name).
@@ -3143,6 +3176,7 @@ void HookReadyWeapon(void* attackHandler) {
 
 bool HookedAttackCanProcess(void* self, void* event) {
     if (!g_readySearched.exchange(true)) HookReadyWeapon(self);
+    BuildSneakEvent(event);
     if (g_enabled) return false;
     return g_originalAttackCanProcess(self, event);
 }

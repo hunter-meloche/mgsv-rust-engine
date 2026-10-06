@@ -167,7 +167,7 @@ containers (`fox_data::wwise::Hirc::render_layers`) and mixes the layers
 at 48 kHz; the plugin plays them on a pool of 24 XAudio2 voices. The ground
 is stone (`ROCKA`) in interiors and soil (`SOILA`) outdoors; Skyrim's
 per-ground material and wet ground are not read yet. Volume: `FoleyVolume`
-(percent) in snake.ini, and `FootstepVolume` (percent of that, default 25) for the feet and hands on the ground, which played far louder than the rest of the game. `mgsv bank-events` and `mgsv sound-render` list and
+(percent) in snake.ini, `FootstepVolume` (percent of that, default 100) for the feet and hands on the ground, and `RattleVolume` (default 25) for the suit and weapon rattle, which played far louder than the rest of the game. `mgsv bank-events` and `mgsv sound-render` list and
 render the bank's events to WAV with chosen switches.
 
 The retarget also places every joint Snake drives where Snake's is, so the

@@ -39,7 +39,10 @@ ShotVolume=70
 ; Footsteps, suit and weapon rattle, dive landing (MGSV's own sounds), percent.
 FoleyVolume=100
 ; Footsteps and hands on the ground while crawling, percent of FoleyVolume.
-FootstepVolume=25
+FootstepVolume=100
+; Suit and weapon rattle (with each step, raising and switching weapons),
+; percent of FoleyVolume.
+RattleVolume=25
 ; MGSV's camera in Snake mode (Skyrim's [Camera] settings, game units,
 ; restored when Snake mode ends; AimCamera=0 keeps Skyrim's camera).
 ; Fixed distance behind Snake (no wheel zoom), side and height offsets:

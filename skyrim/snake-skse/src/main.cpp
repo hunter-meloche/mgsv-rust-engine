@@ -1185,9 +1185,10 @@ void PlayShot(int weapon) {
 // played through a pool of voices here (each keeps its copy of the samples
 // while it plays). The surface is MGSV's footstep symbol for the ground:
 // stone (ROCKA) in interiors, soil (SOILA) outdoors. Volume: snake.ini
-// FoleyVolume (percent, default 100) for all of it, and FootstepVolume
-// (percent of that, default 25) for the feet and the hands on the ground,
-// which played far louder than the rest of the game.
+// FoleyVolume (percent, default 100) for all of it, FootstepVolume (percent
+// of that, default 100) for the feet and the hands on the ground, and
+// RattleVolume (default 25) for the suit and weapon rattle, which played far
+// louder than the rest of the game.
 
 struct FoleyVoice {
     IXAudio2SourceVoice* voice = nullptr;
@@ -1196,7 +1197,8 @@ struct FoleyVoice {
 std::vector<FoleyVoice> g_foleyVoices;
 size_t g_foleyNext = 0;
 float g_foleyLevel = 1.0f;     // voice volume for foley (FoleyVolume over the master)
-float g_footstepLevel = 0.25f;  // FootstepVolume
+float g_footstepLevel = 1.0f;  // FootstepVolume
+float g_rattleLevel = 0.25f;   // RattleVolume
 
 void SetUpFoley() {
     if (!g_audio || !g_snake.player_foley) return;
@@ -1210,7 +1212,8 @@ void SetUpFoley() {
     std::wstring ini = PluginDir() + L"\\snake.ini";
     float master = GetPrivateProfileIntW(L"Snake", L"ShotVolume", 70, ini.c_str()) / 100.0f;
     float volume = GetPrivateProfileIntW(L"Snake", L"FoleyVolume", 100, ini.c_str()) / 100.0f;
-    g_footstepLevel = GetPrivateProfileIntW(L"Snake", L"FootstepVolume", 25, ini.c_str()) / 100.0f;
+    g_footstepLevel = GetPrivateProfileIntW(L"Snake", L"FootstepVolume", 100, ini.c_str()) / 100.0f;
+    g_rattleLevel = GetPrivateProfileIntW(L"Snake", L"RattleVolume", 25, ini.c_str()) / 100.0f;
     // The mastering voice carries ShotVolume; foley has its own level.
     g_foleyLevel = master > 0.01f ? volume / master : volume;
     for (int k = 0; k < 24; ++k) {
@@ -1218,7 +1221,8 @@ void SetUpFoley() {
         if (FAILED(g_audio->CreateSourceVoice(&v.voice, &f))) break;
         g_foleyVoices.push_back(std::move(v));
     }
-    Log("foley: %zu voices, volume %.2f, footsteps %.2f", g_foleyVoices.size(), volume, g_footstepLevel);
+    Log("foley: %zu voices, volume %.2f, footsteps %.2f, rattle %.2f", g_foleyVoices.size(), volume, g_footstepLevel,
+        g_rattleLevel);
 }
 
 void PlayFoley(const SnakeSound& sound) {
@@ -1235,9 +1239,12 @@ void PlayFoley(const SnakeSound& sound) {
     g_foleyNext = (pick - g_foleyVoices.data() + 1) % g_foleyVoices.size();
     pick->voice->Stop();
     pick->voice->FlushSourceBuffers();
-    // Kinds 0-3: feet and hands on the ground (SnakeSound.kind).
-    bool footstep = sound.kind >= 0 && sound.kind <= 3;
-    pick->voice->SetVolume(g_foleyLevel * (footstep ? g_footstepLevel : 1.0f));
+    // SnakeSound.kind: 0-3 feet and hands on the ground, 4-5 suit and weapon
+    // rattle.
+    float level = sound.kind >= 0 && sound.kind <= 3 ? g_footstepLevel
+                  : sound.kind == 4 || sound.kind == 5  ? g_rattleLevel
+                                                        : 1.0f;
+    pick->voice->SetVolume(g_foleyLevel * level);
     pick->samples.assign(sound.samples, sound.samples + size_t(sound.frames) * 2);
     XAUDIO2_BUFFER buf{};
     buf.Flags = XAUDIO2_END_OF_STREAM;

@@ -38,6 +38,76 @@ pub struct SkinnedModel {
 }
 
 impl SkinnedModel {
+    /// Model bones the skeleton lacks but which sit on one of its joints
+    /// follow that joint instead of riding rigidly on their nearest named
+    /// ancestor. Snake's bionic arm has its own (unnamed) finger bones, one
+    /// within a few millimetres of each human finger joint plus an extra
+    /// knuckle at the base of each finger; bound to the hand, its fingers
+    /// stayed straight whatever the animation did. Each such bone binds to
+    /// the skeleton joint under its ancestor's bone nearest to it (relative
+    /// to that ancestor, so models authored in their own space match), 3 cm
+    /// at most; where a bone and its child land on the same joint, the bone
+    /// takes that joint's parent (the knuckle stays on the hand).
+    fn bind_proxies(model: &Fmdl, skel: &Skeleton, names: &[u32], binding: &mut [(u16, Vec3)]) {
+        let world = |k: usize| {
+            let w = model.bones[k].world_position;
+            Vec3::new(w[0], w[1], w[2])
+        };
+        let is_under = |mut c: usize, a: usize| {
+            while let Some(p) = skel.bones[c].parent {
+                if p == a {
+                    return true;
+                }
+                c = p;
+            }
+            false
+        };
+        // Model ancestor bound by name, and the proxies' chosen joints.
+        let mut proxy: Vec<Option<(usize, usize)>> = vec![None; model.bones.len()];
+        for i in 0..model.bones.len() {
+            if skel.find(names[i]).is_some() {
+                continue;
+            }
+            let mut cur = usize::try_from(model.bones[i].parent).ok();
+            let anchor = loop {
+                match cur {
+                    Some(k) if skel.find(names[k]).is_some() => break Some(k),
+                    Some(k) => cur = usize::try_from(model.bones[k].parent).ok(),
+                    None => break None,
+                }
+            };
+            let Some(anchor) = anchor else { continue };
+            let a = skel.find(names[anchor]).expect("bound by name");
+            let rel = world(i) - world(anchor);
+            let best = (0..skel.bones.len())
+                .filter(|&c| is_under(c, a))
+                .map(|c| (c, ((skel.bones[c].rest_model - skel.bones[a].rest_model) - rel).length()))
+                .min_by(|x, y| x.1.total_cmp(&y.1));
+            if let Some((c, d)) = best.filter(|b| b.1 < 0.03) {
+                let _ = d;
+                proxy[i] = Some((anchor, c));
+            }
+        }
+        // A bone on the same joint as its child takes the joint's parent.
+        for i in 0..model.bones.len() {
+            let Some((anchor, c)) = proxy[i] else { continue };
+            let child_same = (0..model.bones.len())
+                .any(|k| usize::try_from(model.bones[k].parent).ok() == Some(i) && proxy[k].map(|p| p.1) == Some(c));
+            if child_same {
+                let a = skel.find(names[anchor]).expect("bound by name");
+                let up = skel.bones[c].parent.unwrap_or(a);
+                proxy[i] = Some((anchor, up));
+            }
+        }
+        for (i, p) in proxy.iter().enumerate() {
+            let Some((anchor, c)) = *p else { continue };
+            let a = skel.find(names[anchor]).expect("bound by name");
+            // Rest position of the joint in the model's own space.
+            let rest = world(anchor) + (skel.bones[c].rest_model - skel.bones[a].rest_model);
+            binding[i] = (c as u16, rest);
+        }
+    }
+
     pub fn bind(model: &Fmdl, skel: &Skeleton) -> Result<Self, String> {
         let names: Vec<u32> = model
             .bones
@@ -63,6 +133,7 @@ impl SkinnedModel {
             }
             binding.push(found.ok_or_else(|| format!("model bone {i} has no bound ancestor"))?);
         }
+        Self::bind_proxies(model, skel, &names, &mut binding);
 
         let mut meshes = Vec::with_capacity(model.meshes.len());
         for m in &model.meshes {

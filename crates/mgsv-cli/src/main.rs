@@ -323,6 +323,13 @@ enum Cmd {
     /// through the player controller: per stretch, the speed, clip and the
     /// largest per-tick joint rotation.
     StanceProbe,
+    /// Development probe: close-ups of Snake's hands on each weapon at its
+    /// standing aim grid's centre (extracted/hands_<weapon>_<view>.png).
+    HandView,
+    /// Development probe: each finger joint's bend (degrees from the rest
+    /// pose) in clips, by name from the player archives or `ARCHIVE:CLIP`
+    /// (an .mtar inside a package, then the clip's short name).
+    FingerProbe { clips: Vec<String> },
     /// Development probe: for each weapon's draw and holster clips, per
     /// frame, how far the gun in the hand is from the gun in its holster
     /// (position cm, angle degrees), with the clips' motion events.
@@ -1032,6 +1039,8 @@ fn run() -> Result<()> {
         Cmd::WeaponProbe { clip } => weapon_probe(&vfs, &clip),
         Cmd::DrawProbe => draw_probe(&vfs),
         Cmd::StanceProbe => stance_probe(&vfs),
+        Cmd::HandView => hand_view(&vfs),
+        Cmd::FingerProbe { clips } => finger_probe(&vfs, &clips),
         Cmd::Play { frames, shot, auto, draw_test, shot_every, view_yaw } => {
             let assets = snake_runtime::SnakeAssets::load(&vfs)?;
             for w in &assets.weapons {
@@ -1583,6 +1592,92 @@ fn weapon_probe(vfs: &Vfs, name: &str) -> Result<()> {
         "mean grip-to-left-hand {:.3} m",
         total / (clip.frame_count + 1) as f32
     );
+    Ok(())
+}
+
+fn finger_probe(vfs: &Vfs, names: &[String]) -> Result<()> {
+    let (skel, rig) = snake_rig(vfs)?;
+    let mut lib = player_clip_library(vfs)?;
+    let mut wanted = Vec::new();
+    for n in names {
+        // PACKAGE.fpk:INNER.mtar#clip loads that archive too.
+        if let Some((archive, clip)) = n.split_once('#') {
+            let data = snake_runtime::read_any(vfs, archive)?;
+            let m = fox_data::mtar::Mtar::parse(&data)?;
+            for i in 0..m.entries.len() {
+                let Ok(c) = m.clip(&data, i) else { continue };
+                let name = vfs.dictionary.resolve(m.entries[i].hash).0;
+                let short = name.rsplit('/').next().unwrap_or(&name).trim_end_matches(".gani").to_string();
+                lib.insert(&short, c);
+            }
+            wanted.push(clip.to_string());
+        } else {
+            wanted.push(n.clone());
+        }
+    }
+    // Finger bones: Snake's skeleton lists them after the legs, 16 per hand.
+    for clip_name in &wanted {
+        let clip = lib.get(clip_name).with_context(|| format!("no clip {clip_name}"))?;
+        let f = clip.frame_count as f32 / 2.0;
+        let pose = rig.pose(&skel, &clip, f).map_err(anyhow::Error::msg)?;
+        for (side, range) in [("L", 21..37), ("R", 37..53)] {
+            let out: Vec<String> = range
+                .map(|b| {
+                    let parent = skel.bones[b].parent.unwrap_or(0);
+                    let local = pose.rotations[parent].inverse() * pose.rotations[b];
+                    format!("{:>3.0}", local.angle_between(fox_anim::Quat::IDENTITY).to_degrees())
+                })
+                .collect();
+            println!("{clip_name:<34} {side}: {}", out.join(" "));
+        }
+        // Rotation axis of each left finger joint (local, model axes at rest).
+        if std::env::var("FINGER_AXES").is_ok() {
+            for b in 21..37 {
+                let parent = skel.bones[b].parent.unwrap_or(0);
+                let local = pose.rotations[parent].inverse() * pose.rotations[b];
+                let (axis, angle) = local.to_axis_angle();
+                let dir = (skel.bones[b].rest_model - skel.bones[parent].rest_model).normalize_or_zero();
+                println!("   bone {b} from {parent}: dir {dir:.2} | axis {axis:.2} angle {:.0}", angle.to_degrees());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn hand_view(vfs: &Vfs) -> Result<()> {
+    use fox_anim::glam::{Mat4, Vec3};
+    let assets = snake_runtime::SnakeAssets::load(vfs)?;
+    let find = |n: &str| assets.skel.find(fox_hash::str_code32(n.as_bytes())).unwrap();
+    let (lh, rh) = (find("SKL_013_LHAND"), find("SKL_023_RHAND"));
+    for (wi, w) in assets.weapons.iter().enumerate() {
+        let grid = w.rig.grids[0].as_ref().context("no grid")?;
+        let clip = assets.clips.get(&grid.clip).context("no grid clip")?;
+        let frame = w.rig.aim_frame(&assets.rig, grid, &clip, 0.0, 0.0).map_err(anyhow::Error::msg)?;
+        let pose = assets.rig.solve(&assets.skel, &frame);
+        let mut tris: Vec<([Vec3; 3], Vec3)> = Vec::new();
+        for (model, color) in &assets.parts {
+            let skinned = model.skin(&pose);
+            for (mesh, vs) in model.meshes.iter().zip(&skinned) {
+                tris.extend(mesh.indices.chunks_exact(3).map(|t| ([vs[t[0] as usize], vs[t[1] as usize], vs[t[2] as usize]], *color)));
+            }
+        }
+        let (gr, gp) = w.rig.gun_transform(&pose);
+        let skinned = w.model.skin(&w.rest);
+        for (m, vs) in w.model.meshes.iter().zip(&skinned) {
+            let vs: Vec<Vec3> = vs.iter().map(|v| gp + gr * *v).collect();
+            tris.extend(m.indices.chunks_exact(3).map(|t| ([vs[t[0] as usize], vs[t[1] as usize], vs[t[2] as usize]], Vec3::new(0.15, 0.15, 0.2))));
+        }
+        let focus = (pose.positions[lh] + pose.positions[rh]) * 0.5;
+        let views = [("left", Vec3::new(1.0, 0.1, 0.2)), ("right", Vec3::new(-1.0, 0.1, 0.2)), ("below", Vec3::new(0.3, -1.0, 0.4)), ("front", Vec3::new(0.2, 0.2, 1.0))];
+        for (label, dir) in views {
+            let mut r = crate::raster::Raster::new(480, 480);
+            r.clear(Vec3::new(0.3, 0.4, 0.5), Vec3::new(0.3, 0.4, 0.5));
+            let eye = focus + dir.normalize() * 0.55;
+            let vp = Mat4::perspective_rh(45f32.to_radians(), 1.0, 0.02, 10.0) * Mat4::look_at_rh(eye, focus, Vec3::Y);
+            r.draw(&vp, Some(dir.normalize()), tris.iter().copied());
+            crate::raster::save_png(&r, std::path::Path::new(&format!("extracted/hands_{wi}_{label}.png")))?;
+        }
+    }
     Ok(())
 }
 

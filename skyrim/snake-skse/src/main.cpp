@@ -1433,6 +1433,7 @@ struct Control {
     int reload = 0;      // reload once
     int dive = 0;        // dive once
     float tempo = 0;     // set Snake's tempo once (e.g. 0.3 for slow-motion checks)
+    float aimYaw = 0;    // aim this many degrees left of the camera (to see Snake's front or side)
     bool dump = false;   // log the camera once (diagnostics)
     int probe = 0;       // 1: log the player's process / character controller objects once
 };
@@ -1470,6 +1471,7 @@ void PollControl(int curStance) {
         else if (k == "reload") g_control.reload = std::atoi(v.c_str());
         else if (k == "dive") g_control.dive = std::atoi(v.c_str());
         else if (k == "tempo") g_control.tempo = static_cast<float>(std::atof(v.c_str()));
+        else if (k == "aimyaw") g_control.aimYaw = static_cast<float>(std::atof(v.c_str()));
         else if (k.rfind("Camera", 0) == 0 || k.rfind("AimCamera", 0) == 0) {
             std::lock_guard<std::mutex> lock(g_cameraOverrideMutex);
             g_cameraOverrides[std::wstring(k.begin(), k.end())] = static_cast<float>(std::atof(v.c_str()));
@@ -2260,7 +2262,7 @@ void SnakeThread() {
         bool stick = ReadMoveInput(ix, iy) && ix * ix + iy * iy > 0.01f;
         if (owning && g_cameraYawValid) {
             if (in.aim) {
-                in.camera_yaw = headingSum - g_cameraYaw;
+                in.camera_yaw = headingSum - g_cameraYaw + g_control.aimYaw * 0.0174533f;
             } else if (moving && stick) {
                 in.camera_yaw = headingSum - (g_cameraYaw + std::atan2(ix, iy));
                 in.move_x = 0;

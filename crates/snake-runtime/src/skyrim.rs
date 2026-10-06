@@ -140,6 +140,17 @@ const FINGERS: [[&str; 3]; 5] = [
     ["114_{s}F51", "115_{s}F52", "116_{s}F53"],
 ];
 
+/// Bones Skyrim's skeleton does not have, added to the output under another
+/// output bone: (name, parent, driving Snake bone). The strap hanging at
+/// Snake's back, which MGSV simulates (snake_core::strap); the plugin
+/// attaches these as node trees like the fingers.
+pub const EXTRA_BONES: [(&str, &str, &str); 4] = [
+    ("Snake Strap A", "NPC Pelvis [Pelv]", "SKL_310_BELT_A"),
+    ("Snake Strap B", "Snake Strap A", "SKL_311_BELT_B"),
+    ("Snake Strap C", "Snake Strap B", "SKL_312_BELT_C"),
+    ("Snake Strap D", "Snake Strap C", "SKL_313_BELT_D"),
+];
+
 #[derive(Clone, Debug)]
 struct Bone {
     name: String,
@@ -310,6 +321,30 @@ impl SkyrimRetarget {
                 source,
                 aligned,
             });
+        }
+        // Extra bones: their rest is Snake's (rotation identity in Skyrim
+        // axes, the joint where his is), so the driving bone's rotation
+        // carries over unchanged (aligned = identity).
+        let mut rest_of: Vec<(Quat, Vec3)> = Vec::new();
+        for b in &bones {
+            let block = block_of(&b.name).context("output bone not in the skeleton")?;
+            rest_of.push(compute(block, &parents, &local, &mut model));
+        }
+        for (name, parent_name, sn) in EXTRA_BONES {
+            let Some(src) = snake_bone(sn) else { continue };
+            let Some(parent) = bones.iter().position(|b| b.name == parent_name) else { continue };
+            let (parent_rot, parent_pos) = rest_of[parent];
+            let pos = fox_to_sky(snake_rest(src)) * UNITS_PER_METER;
+            bones.push(Bone {
+                name: name.to_string(),
+                parent: Some(parent),
+                parent_rest_model: parent_rot,
+                rest_local_rot: parent_rot.inverse(),
+                rest_local_pos: parent_rot.inverse() * (pos - parent_pos),
+                source: Some(src),
+                aligned: Quat::IDENTITY,
+            });
+            rest_of.push((Quat::IDENTITY, pos));
         }
         let waist = snake_bone("SKL_000_WAIST").context("Snake waist")?;
         if bones.is_empty() {

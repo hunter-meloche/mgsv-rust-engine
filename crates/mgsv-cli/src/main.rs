@@ -458,12 +458,13 @@ fn run() -> Result<()> {
                 m.material_instances.len(),
                 m.textures.len()
             )?;
-            for (i, b) in m.bones.iter().enumerate().take(12) {
+            for (i, b) in m.bones.iter().enumerate() {
                 writeln!(
                     out,
-                    "  bone {i:>3} {} parent {}",
+                    "  bone {i:>3} {} parent {} at {:.3?}",
                     m.name(b.name, &names),
-                    b.parent
+                    b.parent,
+                    &b.world_position[..3]
                 )?;
             }
             for (i, g) in m.mesh_groups.iter().enumerate() {

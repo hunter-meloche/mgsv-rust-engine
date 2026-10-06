@@ -179,6 +179,8 @@ pub struct SnakePlayer {
     assets: Arc<SnakeAssets>,
     controller: Controller,
     pose: Pose,
+    /// The strap at Snake's back, simulated on top of the pose.
+    strap: Option<snake_core::strap::StrapSim>,
     /// Shots fired during updates, until the host takes them.
     shots: Vec<snake_core::Shot>,
 }
@@ -372,10 +374,12 @@ pub unsafe extern "C" fn snake_player_new(rt: *const SnakeRuntime) -> *mut Snake
         let assets = rt.assets.clone();
         let controller = assets.controller().map_err(|e| format!("{e:#}"))?;
         let pose = controller.pose(&assets.rig, &assets.skel)?;
+        let strap = snake_core::strap::StrapSim::new(&assets.skel);
         Ok(Box::into_raw(Box::new(SnakePlayer {
             assets,
             controller,
             pose,
+            strap,
             shots: Vec::new(),
         })))
     })
@@ -429,6 +433,9 @@ pub unsafe extern "C" fn snake_player_update(
         p.controller
             .update(&p.assets.rig, &p.assets.clips, collision, dt, &input);
         p.pose = p.controller.pose(&p.assets.rig, &p.assets.skel)?;
+        if let Some(strap) = p.strap.as_mut() {
+            strap.step(&mut p.pose, p.controller.position, p.controller.rotation(), dt);
+        }
         p.controller.track_magazine(&p.pose);
         let shots = p.controller.take_shots(&p.pose, collision);
         p.shots.extend(shots);

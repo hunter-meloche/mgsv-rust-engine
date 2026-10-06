@@ -32,6 +32,9 @@ const UNITS_PER_METER: f32 = 70.0;
 /// which has none at runtime: node chains the plugin attaches under the
 /// live hand bones (relative to `Data\meshes`).
 pub const FINGER_MESHES: [&str; 2] = [r"snake\snake_fingers_l.nif", r"snake\snake_fingers_r.nif"];
+/// The strap at Snake's back (`skyrim::EXTRA_BONES`, simulated by
+/// snake_core::strap), attached under the live pelvis.
+pub const STRAP_MESH: &str = r"snake\snake_strap.nif";
 
 /// Skyrim mesh path of Snake's body (relative to `Data\meshes`).
 pub const BODY_MESH: &str = r"snake\snake_body.nif";
@@ -160,26 +163,33 @@ pub fn export_snake_body(vfs: &Vfs, skyrim_dir: &Path, data_dir: &Path, report: 
     Ok(())
 }
 
-/// The finger bones of each hand as node trees (FINGER_MESHES): every
-/// retarget bone below the hand, with its local transform in Snake's rest
-/// pose (the body's bind pose), relative to the hand. The plugin attaches
-/// each under the live hand and poses the bones like the rest.
+/// Bones the live third-person skeleton lacks, as node trees: each hand's
+/// fingers (FINGER_MESHES) and the strap (STRAP_MESH). Every retarget bone
+/// below the tree's live parent whose name matches, with its local
+/// transform in Snake's rest pose (the body's bind pose). The plugin
+/// attaches each tree under its live parent and poses the bones like the
+/// rest.
 fn export_fingers(vfs: &Vfs, skyrim_dir: &Path, mesh_dir: &Path, report: &mut ExportReport) -> Result<()> {
     let (skel, _) = snake_rig(vfs)?;
     let nif = skyrim_data::Nif::parse(&skyrim_data::read_install_file(skyrim_dir, skyrim_data::CHARACTER_SKELETON)?)?;
     let retarget = SkyrimRetarget::new(&nif, &skel)?;
     let links = retarget.bone_links();
     let model = retarget.model_transforms(&fox_anim::Pose::rest(&skel));
-    for (side, hand_name) in [("l", "NPC L Hand [LHnd]"), ("r", "NPC R Hand [RHnd]")] {
-        let hand = links.iter().position(|l| l.0 == hand_name).context("no hand in the retarget table")?;
-        // Bones below the hand, parent-first (retarget order is).
+    for (file, root_name, hand_name, wanted) in [
+        ("snake_fingers_l.nif", "SnakeFingers L", "NPC L Hand [LHnd]", "Finger"),
+        ("snake_fingers_r.nif", "SnakeFingers R", "NPC R Hand [RHnd]", "Finger"),
+        ("snake_strap.nif", "SnakeStrap", "NPC Pelvis [Pelv]", "Snake Strap"),
+    ] {
+        let hand = links.iter().position(|l| l.0 == hand_name).context("live parent not in the retarget table")?;
+        // Matching bones below the live parent, parent-first (retarget
+        // order is).
         let mut inside = vec![false; links.len()];
         inside[hand] = true;
         let mut nodes: Vec<nif_write::TreeNode> = Vec::new();
         let mut node_of: HashMap<usize, usize> = HashMap::new();
         for (i, (name, parent, _)) in links.iter().enumerate() {
             let Some(p) = *parent else { continue };
-            if !inside[p] {
+            if !inside[p] || !name.contains(wanted) {
                 continue;
             }
             inside[i] = true;
@@ -196,10 +206,9 @@ fn export_fingers(vfs: &Vfs, skyrim_dir: &Path, mesh_dir: &Path, report: &mut Ex
             });
             node_of.insert(i, nodes.len() - 1);
         }
-        let file = format!("snake_fingers_{side}.nif");
-        let path = mesh_dir.join(&file);
-        std::fs::write(&path, nif_write::write_node_tree(&format!("SnakeFingers {}", side.to_uppercase()), &nodes))?;
-        report.notes.push(format!("{file}: {} finger bones under {hand_name}", nodes.len()));
+        let path = mesh_dir.join(file);
+        std::fs::write(&path, nif_write::write_node_tree(root_name, &nodes))?;
+        report.notes.push(format!("{file}: {} bones under {hand_name}", nodes.len()));
         report.files.push(path);
     }
     Ok(())
@@ -228,8 +237,11 @@ pub fn build_body(
     let mut core: Vec<usize> = Vec::new();
     for (i, (name, _, _)) in links.iter().enumerate() {
         let wanted = match view {
-            // The core bones and the fingers (shipped as FINGER_MESHES).
-            BodyView::ThirdPerson => CORE_BONES.contains(&name.as_str()) || name.contains("Finger"),
+            // The core bones, the fingers (FINGER_MESHES) and the strap
+            // (STRAP_MESH).
+            BodyView::ThirdPerson => {
+                CORE_BONES.contains(&name.as_str()) || name.contains("Finger") || name.starts_with("Snake Strap")
+            }
             BodyView::FirstPersonArms => is_arm_bone(name),
         };
         if wanted && !core.contains(&i) {

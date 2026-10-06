@@ -16,6 +16,7 @@
 
 pub mod controller;
 pub mod motion;
+pub mod strap;
 pub mod weapon;
 pub mod world;
 

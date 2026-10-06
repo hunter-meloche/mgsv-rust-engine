@@ -130,6 +130,20 @@ so they take his MGSV finger poses, including his grip on each gun. The
 world pass brings a tree's root up to its hand before the fingers. The
 layout check skips the finger bones and runs once per skeleton.
 
+The strap hanging at Snake's back moves under physics, as in MGSV. It is a
+four-bone chain, `SKL_310_BELT_A`..`D`, which MGSV simulates rather than
+animates. `snake_core::strap` steps it at 120 Hz with MGSV's own parameters
+from `sna0_main0_body.sim` (a Fox `SimOnPhysics` dataset):
+- link masses 0.2/0.2/0.2/0.8 kg, damped;
+- the top joint limited to 35 degrees from hanging slightly back, the
+  others to 90 degrees from their parent link;
+- collision capsules on the waist, thighs and shins;
+- the ground, so it lies on the legs when Snake is prone;
+- inertia coefficient 0.6: 60% of Snake's movement reaches it as inertia.
+The retarget adds the four bones as `Snake Strap A`..`D` under `NPC Pelvis`
+(`EXTRA_BONES`). The export ships them as `meshes\snake\snake_strap.nif`,
+and the plugin attaches the tree under the live pelvis like the fingers.
+
 The retarget also places every joint Snake drives where Snake's is, so the
 skeleton takes his proportions and the mesh needs no joint fix-ups.
 `mgsv skyrim-body-check` skins the export with the retargeted skeleton over

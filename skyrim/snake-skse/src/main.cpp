@@ -548,7 +548,7 @@ void CheckLayout() {
         // Finger bones are the plugin's own (attached under the hands, see
         // FingerSlot); Skyrim has not updated their world transforms yet.
         const char* nodeName = Name(node);
-        if (nodeName && strstr(nodeName, "Finger")) continue;
+        if (nodeName && (strstr(nodeName, "Finger") || strstr(nodeName, "Snake Strap"))) continue;
         void* parent = At<void*>(node, kParent);
         if (!parent) continue;
         float* pr = &At<float>(parent, kWorldRot);
@@ -2716,7 +2716,11 @@ struct FingerSlot {
     std::atomic<void*> node{nullptr};    // the tree's root ("SnakeFingers L/R")
     std::atomic<void*> parent{nullptr};  // live hand it is attached to
 };
-FingerSlot g_fingers[2] = {{"snake\\snake_fingers_l.nif", "NPC L Hand [LHnd]"}, {"snake\\snake_fingers_r.nif", "NPC R Hand [RHnd]"}};
+// The strap hanging at Snake's back works the same way: its four bones
+// (simulated by snake.dll, as MGSV simulates them) hang under the pelvis.
+FingerSlot g_fingers[3] = {{"snake\\snake_fingers_l.nif", "NPC L Hand [LHnd]"},
+                           {"snake\\snake_fingers_r.nif", "NPC R Hand [RHnd]"},
+                           {"snake\\snake_strap.nif", "NPC Pelvis [Pelv]"}};
 
 // Main thread: attach both finger trees under `skeleton`'s hands.
 void AttachFingers(void* skeleton) {
@@ -2742,7 +2746,12 @@ void AttachFingers(void* skeleton) {
     g_resolveNodes = true;
 }
 
-bool IsFingerRoot(void* node) { return node && (node == g_fingers[0].node || node == g_fingers[1].node); }
+bool IsFingerRoot(void* node) {
+    if (!node) return false;
+    for (FingerSlot& f : g_fingers)
+        if (node == f.node) return true;
+    return false;
+}
 
 // Point every skin instance under `node` at the bones of `skeleton`.
 int RebindSkin(void* node, void* skeleton, void* rootParent) {

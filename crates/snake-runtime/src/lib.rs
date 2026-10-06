@@ -4,6 +4,7 @@
 
 use std::path::Path;
 
+pub mod foley;
 pub mod skyrim;
 pub mod skyrim_body;
 pub mod skyrim_export;

@@ -52,12 +52,22 @@ impl Playing {
 
     /// Advance by `frames`, returning the root motion covered (in the root's
     /// frame at the old time). Looping clips wrap; others clamp at the end.
-    fn advance(&mut self, rig: &HumanRig, frames: f32) -> (Quat, Vec3) {
+    /// The motion events whose frames are passed (from inclusive, to
+    /// exclusive) go to `crossed` (event name hashes).
+    fn advance(&mut self, rig: &HumanRig, frames: f32, crossed: &mut Vec<u32>) -> (Quat, Vec3) {
         let len = self.length();
         let mut total = (Quat::IDENTITY, Vec3::ZERO);
         let mut remaining = frames;
         while remaining > 1e-6 && len > 0.0 {
             let to = (self.time + remaining).min(len);
+            for e in &self.clip.events {
+                for &f in &e.frames {
+                    let f = f as f32;
+                    if f >= self.time && f < to {
+                        crossed.push(e.name);
+                    }
+                }
+            }
             total = compose(total, rig.root_motion(&self.clip, self.time, to));
             remaining -= to - self.time;
             self.time = to;
@@ -87,6 +97,9 @@ pub struct MotionPlayer {
     previous: Option<(Playing, f32, f32)>,
     /// Playback speed multiplier.
     pub speed: f32,
+    /// Motion events of the current clip passed since the last
+    /// [`MotionPlayer::take_crossed`].
+    crossed: Vec<u32>,
 }
 
 impl MotionPlayer {
@@ -100,7 +113,19 @@ impl MotionPlayer {
             },
             previous: None,
             speed: 1.0,
+            crossed: Vec::new(),
         }
+    }
+
+    /// Motion events (name hashes) the current clip passed since the last
+    /// call.
+    pub fn take_crossed(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.crossed)
+    }
+
+    /// Whether the current clip has a motion event named `name`.
+    pub fn current_has_event(&self, name: u32) -> bool {
+        self.current.clip.events.iter().any(|e| e.name == name && !e.frames.is_empty())
     }
 
     /// Switch to a clip, crossfading over `fade` seconds.
@@ -150,11 +175,11 @@ impl MotionPlayer {
     /// Advance by `dt` seconds; returns the blended root motion.
     pub fn advance(&mut self, rig: &HumanRig, dt: f32) -> (Quat, Vec3) {
         let frames = dt * FPS * self.speed;
-        let cur = self.current.advance(rig, frames);
+        let cur = self.current.advance(rig, frames, &mut self.crossed);
         let Some((prev, elapsed, dur)) = &mut self.previous else {
             return cur;
         };
-        let old = prev.advance(rig, frames);
+        let old = prev.advance(rig, frames, &mut Vec::new());
         *elapsed += dt;
         let w = (*elapsed / *dur).clamp(0.0, 1.0);
         let done = *elapsed >= *dur;

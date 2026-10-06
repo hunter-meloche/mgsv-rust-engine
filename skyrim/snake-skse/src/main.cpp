@@ -108,6 +108,7 @@ struct SnakeApi {
     decltype(&snake_weapon_magazine_mesh) weapon_magazine_mesh = nullptr;
     decltype(&snake_player_set_unlimited_magazines) player_set_unlimited_magazines = nullptr;
     decltype(&snake_player_set_tempo) player_set_tempo = nullptr;
+    decltype(&snake_player_foley) player_foley = nullptr;
     decltype(&snake_player_clip) player_clip = nullptr;
     decltype(&snake_retarget_magazine_place) retarget_magazine_place = nullptr;
     decltype(&snake_player_new) player_new = nullptr;
@@ -151,6 +152,7 @@ bool LoadSnakeDll() {
     RESOLVE(weapon_magazine_mesh, "snake_weapon_magazine_mesh");
     RESOLVE(player_set_unlimited_magazines, "snake_player_set_unlimited_magazines");
     RESOLVE(player_set_tempo, "snake_player_set_tempo");
+    RESOLVE(player_foley, "snake_player_foley");
     RESOLVE(player_clip, "snake_player_clip");
     RESOLVE(retarget_magazine_place, "snake_retarget_magazine_place");
     RESOLVE(player_new, "snake_player_new");
@@ -1078,6 +1080,8 @@ bool ReadWav(const std::wstring& path, ShotSound& out) {
     return haveFmt && !out.data.empty();
 }
 
+void SetUpFoley();
+
 void SetUpSounds() {
     if (FAILED(XAudio2Create(&g_audio, 0, XAUDIO2_DEFAULT_PROCESSOR)) || !g_audio) {
         Log("sound: XAudio2 unavailable");
@@ -1117,6 +1121,7 @@ void SetUpSounds() {
         if (g_shotSounds[i].empty()) Log("sound: no shot sound for %s (%s.wav)", id.c_str(), Narrow(base).c_str());
     }
     Log("sound: volume %.2f", volume);
+    SetUpFoley();
 }
 
 // Muzzle flash: the exported gun mesh has four flash shapes
@@ -1157,6 +1162,75 @@ void PlayShot(int weapon) {
     buf.AudioBytes = static_cast<UINT32>(s.data.size());
     buf.pAudioData = s.data.data();
     if (SUCCEEDED(v->SubmitSourceBuffer(&buf))) v->Start();
+}
+
+// ---- foley ------------------------------------------------------------------------
+//
+// Snake's footsteps, hands on the ground, suit and gear rattle, weapon
+// rattle and the chest landing on a dive: rendered by snake.dll from MGSV's
+// own sound bank with MGSV's switches (surface, action), 48 kHz stereo, and
+// played through a pool of voices here (each keeps its copy of the samples
+// while it plays). The surface is MGSV's footstep symbol for the ground:
+// stone (ROCKA) in interiors, soil (SOILA) outdoors. Volume: snake.ini
+// FoleyVolume (percent, default 100).
+
+struct FoleyVoice {
+    IXAudio2SourceVoice* voice = nullptr;
+    std::vector<int16_t> samples;
+};
+std::vector<FoleyVoice> g_foleyVoices;
+size_t g_foleyNext = 0;
+
+void SetUpFoley() {
+    if (!g_audio || !g_snake.player_foley) return;
+    WAVEFORMATEX f{};
+    f.wFormatTag = WAVE_FORMAT_PCM;
+    f.nChannels = 2;
+    f.nSamplesPerSec = 48000;
+    f.wBitsPerSample = 16;
+    f.nBlockAlign = 4;
+    f.nAvgBytesPerSec = 48000 * 4;
+    std::wstring ini = PluginDir() + L"\\snake.ini";
+    float master = GetPrivateProfileIntW(L"Snake", L"ShotVolume", 70, ini.c_str()) / 100.0f;
+    float volume = GetPrivateProfileIntW(L"Snake", L"FoleyVolume", 100, ini.c_str()) / 100.0f;
+    for (int k = 0; k < 24; ++k) {
+        FoleyVoice v;
+        if (FAILED(g_audio->CreateSourceVoice(&v.voice, &f))) break;
+        // The mastering voice carries ShotVolume; foley has its own level.
+        v.voice->SetVolume(master > 0.01f ? volume / master : volume);
+        g_foleyVoices.push_back(std::move(v));
+    }
+    Log("foley: %zu voices, volume %.2f", g_foleyVoices.size(), volume);
+}
+
+void PlayFoley(const SnakeSound& sound) {
+    if (g_foleyVoices.empty() || !sound.samples || !sound.frames) return;
+    // A free voice, else the oldest one.
+    FoleyVoice* pick = nullptr;
+    for (size_t k = 0; k < g_foleyVoices.size() && !pick; ++k) {
+        FoleyVoice& v = g_foleyVoices[(g_foleyNext + k) % g_foleyVoices.size()];
+        XAUDIO2_VOICE_STATE st{};
+        v.voice->GetState(&st, XAUDIO2_VOICE_NOSAMPLESPLAYED);
+        if (st.BuffersQueued == 0) pick = &v;
+    }
+    if (!pick) pick = &g_foleyVoices[g_foleyNext % g_foleyVoices.size()];
+    g_foleyNext = (pick - g_foleyVoices.data() + 1) % g_foleyVoices.size();
+    pick->voice->Stop();
+    pick->voice->FlushSourceBuffers();
+    pick->samples.assign(sound.samples, sound.samples + size_t(sound.frames) * 2);
+    XAUDIO2_BUFFER buf{};
+    buf.Flags = XAUDIO2_END_OF_STREAM;
+    buf.AudioBytes = static_cast<UINT32>(pick->samples.size() * sizeof(int16_t));
+    buf.pAudioData = reinterpret_cast<const BYTE*>(pick->samples.data());
+    if (SUCCEEDED(pick->voice->SubmitSourceBuffer(&buf))) pick->voice->Start();
+}
+
+// MGSV's footstep surface for where the player is: stone floors inside,
+// soil outside (TESObjectCELL flags +0x40, bit 0 interior).
+const char* GroundSurface(void* player) {
+    void* cell = player ? PlayerCell(player) : nullptr;
+    if (!cell || !Readable(cell, 0x48)) return "SOILA";
+    return (At<uint16_t>(cell, 0x40) & 1) ? "ROCKA" : "SOILA";
 }
 
 // ---- movement speed ---------------------------------------------------------------
@@ -2281,6 +2355,15 @@ void SnakeThread() {
                         RequestSpeedMult(want);
                         sinceSpeedChange = 0;
                     }
+                }
+            }
+            if (g_snake.player_foley && !g_foleyVoices.empty()) {
+                SnakeSound sounds[16];
+                const char* surface = GroundSurface(ThePlayer());
+                uint32_t n = g_snake.player_foley(g_runtime, g_player, surface, 0, sounds, 16);
+                for (uint32_t s = 0; s < n; ++s) {
+                    PlayFoley(sounds[s]);
+                    if (g_control.trace) Log("trace: foley kind %d, %.2f s, %s", sounds[s].kind, sounds[s].frames / 48000.0, surface);
                 }
             }
             SnakeShot shots[16];

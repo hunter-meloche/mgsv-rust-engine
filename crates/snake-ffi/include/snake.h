@@ -118,6 +118,19 @@ void snake_player_status(const SnakePlayer *p, SnakeStatus *out);
 uint32_t snake_player_clip(const SnakePlayer *p, char *buf, uint32_t len);
 /* Unlimited magazines: reloads never use up the reserve. */
 void snake_player_set_unlimited_magazines(SnakePlayer *p, int32_t on);
+/* One rendered foley sound: 48 kHz stereo 16-bit interleaved samples. */
+typedef struct {
+    const int16_t *samples;
+    uint32_t frames; /* sample pairs */
+    int32_t kind;    /* 0 foot ground, 1 foot leave, 2 hand ground, 3 hand leave,
+                        4 suit rattle, 5 weapon rattle, 6 chest landing */
+} SnakeSound;
+/* Snake's foley since the last call, rendered from MGSV's sound bank for
+ * ground `surface` (MGSV footstep symbol: SOILA, ROCKA, WOODA, IRONA, GRASA,
+ * GRAVA, SANDA, ...) and `wet` ground. Up to `max` sounds; samples valid until
+ * the next call. Returns the count. */
+uint32_t snake_player_foley(const SnakeRuntime *rt, SnakePlayer *p, const char *surface, int32_t wet,
+                            SnakeSound *out, uint32_t max);
 /* Tempo of all of Snake's motion (1 = MGSV's; 1.5 = half again as fast,
  * reloads included; the fire rate is unchanged). */
 void snake_player_set_tempo(SnakePlayer *p, float tempo);

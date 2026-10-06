@@ -15,6 +15,7 @@
 //! world transform and skeleton [`fox_anim::Pose`].
 
 pub mod controller;
+pub mod foley;
 pub mod motion;
 pub mod strap;
 pub mod weapon;

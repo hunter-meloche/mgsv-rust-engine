@@ -34,6 +34,22 @@ pub fn short_id(name: &str) -> u32 {
 const TYPE_SOUND: u8 = 2;
 const TYPE_ACTION: u8 = 3;
 const TYPE_EVENT: u8 = 4;
+const TYPE_RANDOM: u8 = 5;
+const TYPE_SWITCH: u8 = 6;
+const TYPE_MIXER: u8 = 7;
+const TYPE_BLEND: u8 = 9;
+
+/// Switch states for [`Hirc::render_layers`]: switch group id -> value id.
+pub type Switches = HashMap<u32, u32>;
+
+/// A switch container: its group, default value and the children of each
+/// value.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SwitchContainer {
+    pub group: u32,
+    pub default: u32,
+    pub values: Vec<(u32, Vec<u32>)>,
+}
 
 /// The `HIRC` objects of a bank: id -> (type, payload).
 pub struct Hirc<'a> {
@@ -106,6 +122,184 @@ impl<'a> Hirc<'a> {
 
     pub fn is_empty(&self) -> bool {
         self.objects.is_empty()
+    }
+
+    /// Ids of every event in the bank.
+    pub fn event_ids(&self) -> impl Iterator<Item = u32> + '_ {
+        self.objects.iter().filter(|(_, (t, _))| *t == TYPE_EVENT).map(|(id, _)| *id)
+    }
+
+    /// The banks of an `.sbp` (it can hold several), each bank's objects.
+    pub fn parse_all(data: &'a [u8]) -> Vec<Self> {
+        let mut out = Vec::new();
+        let mut from = 0;
+        while let Some(at) = data[from..].windows(4).position(|w| w == b"HIRC") {
+            if let Ok(h) = Self::parse(&data[from + at..]) {
+                out.push(h);
+            }
+            from += at + 4;
+        }
+        out
+    }
+
+    /// A container's children: the first `u32` count followed by that many
+    /// ids of objects in the bank, after the node's base parameters (at
+    /// least `from` bytes in). Returns their offset and the ids.
+    fn children(&self, b: &[u8], from: usize) -> Option<(usize, Vec<u32>)> {
+        for k in from..b.len().saturating_sub(8) {
+            let n = u32_at(b, k)? as usize;
+            if n == 0 || n > 512 || k + 4 + 4 * n > b.len() {
+                continue;
+            }
+            let ids: Option<Vec<u32>> = (0..n).map(|i| u32_at(b, k + 4 + 4 * i)).collect();
+            let ids = ids?;
+            if ids.iter().all(|i| self.objects.contains_key(i)) {
+                return Some((k, ids));
+            }
+        }
+        None
+    }
+
+    /// Switch container `id`: (group type u8, group id, default value,
+    /// continuous-validation u8) precede its children; the per-value
+    /// packages (`u32` count; value id, `u32` count, child ids) follow.
+    pub fn switch_container(&self, id: u32) -> Option<SwitchContainer> {
+        let &(TYPE_SWITCH, b) = self.objects.get(&id)? else { return None };
+        let mut from = 10;
+        while let Some((k, ids)) = self.children(b, from) {
+            let group = u32_at(b, k - 9)?;
+            let default = u32_at(b, k - 5)?;
+            let mut p = k + 4 + 4 * ids.len();
+            let count = u32_at(b, p)? as usize;
+            p += 4;
+            let mut values = Vec::new();
+            let mut ok = count <= 512;
+            for _ in 0..count.min(512) {
+                let (Some(value), Some(n)) = (u32_at(b, p), u32_at(b, p + 4)) else {
+                    ok = false;
+                    break;
+                };
+                p += 8;
+                if n > 512 {
+                    ok = false;
+                    break;
+                }
+                let nodes: Option<Vec<u32>> = (0..n as usize).map(|i| u32_at(b, p + 4 * i)).collect();
+                let Some(nodes) = nodes else {
+                    ok = false;
+                    break;
+                };
+                p += 4 * n as usize;
+                values.push((value, nodes));
+            }
+            if ok {
+                return Some(SwitchContainer { group, default, values });
+            }
+            from = k + 1;
+        }
+        None
+    }
+
+    /// Volume (dB) and pitch (cents) of a container's base parameters.
+    fn container_props(&self, b: &[u8]) -> (f32, f32) {
+        let parse = || -> Option<(f32, f32)> {
+            let mut at = 1; // override parent FX
+            let fx = *b.get(at)? as usize;
+            at += 1;
+            if fx > 0 {
+                at += 1 + fx * 7;
+            }
+            at += 4 + 4 + 2; // bus, parent, priority flags
+            let (list, _) = props(b, at)?;
+            // Implausible lists mean another layout: no offsets then.
+            if list.len() > 32 {
+                return None;
+            }
+            let vol = prop(&list, 0x00).map(f32::from_bits).unwrap_or(0.0);
+            let pitch = prop(&list, 0x02).map(f32::from_bits).unwrap_or(0.0);
+            (vol.is_finite() && vol.abs() < 96.0 && pitch.is_finite() && pitch.abs() < 4800.0).then_some((vol, pitch))
+        };
+        parse().unwrap_or((0.0, 0.0))
+    }
+
+    /// The sounds object `id` plays under `switches`: switch containers
+    /// take the set value (else their default), random/sequence containers
+    /// one child chosen by `pick(n)`, blend containers and mixers all of
+    /// them; container volumes and pitches add up along the way.
+    fn resolve(
+        &self,
+        id: u32,
+        switches: &Switches,
+        pick: &mut dyn FnMut(usize) -> usize,
+        volume: f32,
+        pitch: f32,
+        depth: usize,
+        out: &mut Vec<(u32, f32, f32)>,
+    ) {
+        if depth > 12 {
+            return;
+        }
+        let Some(&(kind, b)) = self.objects.get(&id) else { return };
+        match kind {
+            TYPE_SOUND => out.push((id, volume, pitch)),
+            TYPE_SWITCH => {
+                let Some(sw) = self.switch_container(id) else { return };
+                let (v, p) = self.container_props(b);
+                let value = switches.get(&sw.group).copied().unwrap_or(sw.default);
+                if let Some((_, nodes)) = sw.values.iter().find(|(val, _)| *val == value) {
+                    for &n in nodes {
+                        self.resolve(n, switches, pick, volume + v, pitch + p, depth + 1, out);
+                    }
+                }
+            }
+            TYPE_RANDOM => {
+                let Some((_, ids)) = self.children(b, 10) else { return };
+                let (v, p) = self.container_props(b);
+                let chosen = ids[pick(ids.len()).min(ids.len() - 1)];
+                self.resolve(chosen, switches, pick, volume + v, pitch + p, depth + 1, out);
+            }
+            TYPE_BLEND | TYPE_MIXER => {
+                let Some((_, ids)) = self.children(b, 10) else { return };
+                let (v, p) = self.container_props(b);
+                for n in ids {
+                    self.resolve(n, switches, pick, volume + v, pitch + p, depth + 1, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Like [`Hirc::event_layers`], but play actions on containers are
+    /// resolved too (see `resolve`): what event `id` sounds like with
+    /// `switches` set.
+    pub fn render_layers(&self, id: u32, switches: &Switches, pick: &mut dyn FnMut(usize) -> usize) -> Option<Vec<Layer>> {
+        let &(TYPE_EVENT, b) = self.objects.get(&id)? else { return None };
+        let n = u32_at(b, 0)? as usize;
+        let mut layers = Vec::new();
+        for k in 0..n {
+            let Some(&(TYPE_ACTION, a)) = self.objects.get(&u32_at(b, 4 + 4 * k)?) else { continue };
+            let kind = u16::from_le_bytes([a[0], a[1]]) >> 8;
+            if kind != 0x04 {
+                continue;
+            }
+            let target = u32_at(a, 2)?;
+            let (list, _) = props(a, 7)?;
+            let delay = prop(&list, 0x0E).unwrap_or(0) as f32 / 1000.0;
+            let mut sounds = Vec::new();
+            self.resolve(target, switches, pick, 0.0, 0.0, 0, &mut sounds);
+            for (sound, vol, cents) in sounds {
+                let Some((wem, v, c)) = self.sound(sound) else { continue };
+                layers.push(Layer {
+                    sound,
+                    wem,
+                    volume_db: v + vol,
+                    pitch_cents: c + cents,
+                    delay,
+                    stop: None,
+                });
+            }
+        }
+        Some(layers)
     }
 
     pub fn has_event(&self, id: u32) -> bool {

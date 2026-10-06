@@ -385,6 +385,9 @@ pub struct Controller {
     /// The current weapon's magazine (root space) and whether it is in the
     /// left hand; see [`Controller::track_magazine`].
     magazine: Option<(Quat, Vec3, bool)>,
+    /// Foley the controller makes itself (raising the gun, switching
+    /// weapons), until taken.
+    foley: Vec<crate::foley::Foley>,
 }
 
 impl Controller {
@@ -418,6 +421,7 @@ impl Controller {
             unlimited_magazines: false,
             tempo: 1.0,
             magazine: None,
+            foley: Vec::new(),
         })
     }
 
@@ -471,6 +475,47 @@ impl Controller {
 
     pub fn aiming(&self) -> bool {
         self.state == State::Aim
+    }
+
+    fn push_handling_foley(&mut self) {
+        use crate::foley::{Foley, FoleyKind};
+        let action = self.foley_action();
+        for kind in [FoleyKind::RattleWeapon, FoleyKind::RattleSuit] {
+            self.foley.push(Foley { kind, left: false, action });
+        }
+    }
+
+    /// Foley the controller made itself since the last call: raising the
+    /// gun to aim and switching weapons rattle the gear.
+    pub fn take_foley(&mut self) -> Vec<crate::foley::Foley> {
+        std::mem::take(&mut self.foley)
+    }
+
+    /// Motion events (name hashes) the current clip passed since the last
+    /// call (see [`crate::foley`]).
+    pub fn take_motion_events(&mut self) -> Vec<u32> {
+        self.player.take_crossed()
+    }
+
+    /// Whether the current clip marks its own foot contacts.
+    pub fn clip_has_foot_events(&self) -> bool {
+        self.player.current_has_event(crate::foley::event("left_foot_ground"))
+            || self.player.current_has_event(crate::foley::event("right_foot_ground"))
+    }
+
+    /// The movement Snake's foley sounds are chosen for (MGSV's action
+    /// switch values).
+    pub fn foley_action(&self) -> crate::foley::FoleyAction {
+        use crate::foley::FoleyAction as A;
+        match (self.stance, self.gait, &self.state) {
+            (_, _, State::Changing { to: Stance::Prone }) => A::Cp,
+            (Stance::Prone, _, _) => A::Cr,
+            (Stance::Crouch, Gait::Run | Gait::Dash, _) => A::RnC,
+            (Stance::Crouch, _, _) => A::WkC,
+            (Stance::Stand, Gait::Dash, _) => A::Dh,
+            (Stance::Stand, Gait::Run, _) => A::Rn,
+            (Stance::Stand, _, _) => A::Wk,
+        }
     }
 
     /// The clip currently playing (for debugging / HUD).
@@ -619,6 +664,8 @@ impl Controller {
                     w.firing = None;
                 }
                 self.current = Some(i);
+                // Handling the gear: suit and weapon rattle.
+                self.push_handling_foley();
             }
         }
         self.update_weapon(dt, input);
@@ -626,6 +673,10 @@ impl Controller {
         let can_aim = self.weapon().is_some_and(|w| w.grids[slot].is_some());
         let aim_now = input.aim && can_aim && !matches!(self.state, State::Changing { .. });
         if aim_now {
+            if self.state != State::Aim {
+                // Bringing the gun up.
+                self.push_handling_foley();
+            }
             self.state = State::Aim;
         } else if self.state == State::Aim {
             // Lower the weapon: back to plain locomotion.

@@ -144,6 +144,32 @@ The retarget adds the four bones as `Snake Strap A`..`D` under `NPC Pelvis`
 (`EXTRA_BONES`). The export ships them as `meshes\snake\snake_strap.nif`,
 and the plugin attaches the tree under the live pelvis like the fingers.
 
+Foley: Snake's footsteps, hands on the ground, suit and gear rattle,
+weapon rattle and the chest landing on a dive play from MGSV's own sound
+bank, chosen the way MGSV's `SoundTppPlayer.lua` and `motion/setup.lua`
+choose them:
+- footsteps and hands: `FOOT_GROUND_L`..`ARM_LEAVE_R` with
+  `player_type_switch` = `nom` and `foot_step_switch` = surface + action
+  (`SOILA_Rn`, `ROCKA_cr`, ...); actions `Wk`, `WkC`, `Rn`, `RnC`, `Dh`
+  (dash), `cr` (crawl), `cp` (getting down prone);
+- suit rattle `sfx_p_rtl_suit_nom_wk` (`rattle_suit_switch` = action) with
+  every step and stance change;
+- weapon rattle `RATTLE_WEAPON` (`rattle_weapon_switch` = `ar00_rn`, ...)
+  for rifles; MGSV's handguns have no rattle;
+- the dive: hands, then the chest landing `Ref_P_Chest_Ground`;
+- raising the gun to aim and switching weapons rattle the suit and gun.
+Clips with motion events (stance changes, the dive, the crawl) play them at
+their frames (`left_foot_ground`, `rattle_suit`, `slide`, ...); the
+locomotion loops have none in the archive (MGSV's motion graph adds them),
+so steps there are found in the pose, a foot coming down to its lowest
+height. `snake_runtime::foley` resolves the Wwise switch and random
+containers (`fox_data::wwise::Hirc::render_layers`) and mixes the layers
+at 48 kHz; the plugin plays them on a pool of 24 XAudio2 voices. The ground
+is stone (`ROCKA`) in interiors and soil (`SOILA`) outdoors; Skyrim's
+per-ground material and wet ground are not read yet. Volume: `FoleyVolume`
+(percent) in snake.ini. `mgsv bank-events` and `mgsv sound-render` list and
+render the bank's events to WAV with chosen switches.
+
 The retarget also places every joint Snake drives where Snake's is, so the
 skeleton takes his proportions and the mesh needs no joint fix-ups.
 `mgsv skyrim-body-check` skins the export with the retargeted skeleton over

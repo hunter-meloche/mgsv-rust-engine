@@ -963,6 +963,7 @@ version = "0.1.0"
 dependencies = [
  "fox-anim",
  "fox-data",
+ "fox-hash",
 ]
 
 [[package]]

@@ -173,6 +173,9 @@ pub struct SnakeRuntime {
     /// Skyrim mesh path of each weapon's magazine (empty if none).
     magazine_meshes: Vec<CString>,
     weapon_names: Vec<CString>,
+    /// MGSV's common sound bank, for Snake's foley (None if it failed to
+    /// load).
+    foley: std::sync::Mutex<Option<snake_runtime::foley::FoleyBank>>,
 }
 
 pub struct SnakePlayer {
@@ -181,6 +184,12 @@ pub struct SnakePlayer {
     pose: Pose,
     /// The strap at Snake's back, simulated on top of the pose.
     strap: Option<snake_core::strap::StrapSim>,
+    /// Foley requests since the host last took them, and the tracker that
+    /// finds footsteps in clips without motion events.
+    foley_tracker: Option<snake_core::foley::FoleyTracker>,
+    foley: Vec<snake_core::foley::Foley>,
+    /// Rendered foley handed to the host (valid until the next call).
+    foley_pcm: Vec<(Vec<i16>, i32)>,
     /// Shots fired during updates, until the host takes them.
     shots: Vec<snake_core::Shot>,
 }
@@ -270,12 +279,15 @@ pub unsafe extern "C" fn snake_runtime_open(
             .iter()
             .map(|w| CString::new(w.name).unwrap_or_default())
             .collect();
+        // Foley is optional: without the bank Snake is just quiet.
+        let foley = snake_runtime::foley::FoleyBank::load(&vfs).ok();
         Ok(Box::into_raw(Box::new(SnakeRuntime {
             assets: Arc::new(assets),
             bone_names,
             weapon_meshes,
             magazine_meshes,
             weapon_names,
+            foley: std::sync::Mutex::new(foley),
         })))
     })
 }
@@ -375,11 +387,15 @@ pub unsafe extern "C" fn snake_player_new(rt: *const SnakeRuntime) -> *mut Snake
         let controller = assets.controller().map_err(|e| format!("{e:#}"))?;
         let pose = controller.pose(&assets.rig, &assets.skel)?;
         let strap = snake_core::strap::StrapSim::new(&assets.skel);
+        let foley_tracker = snake_core::foley::FoleyTracker::new(&assets.skel);
         Ok(Box::into_raw(Box::new(SnakePlayer {
             assets,
             controller,
             pose,
             strap,
+            foley_tracker,
+            foley: Vec::new(),
+            foley_pcm: Vec::new(),
             shots: Vec::new(),
         })))
     })
@@ -435,6 +451,19 @@ pub unsafe extern "C" fn snake_player_update(
         p.pose = p.controller.pose(&p.assets.rig, &p.assets.skel)?;
         if let Some(strap) = p.strap.as_mut() {
             strap.step(&mut p.pose, p.controller.position, p.controller.rotation(), dt);
+        }
+        let crossed = p.controller.take_motion_events();
+        let handling = p.controller.take_foley();
+        p.foley.extend(handling);
+        if let Some(t) = p.foley_tracker.as_mut() {
+            let moving = p.controller.gait != Gait::Idle;
+            let has_feet = p.controller.clip_has_foot_events();
+            let action = p.controller.foley_action();
+            t.update(&crossed, has_feet, moving, action, &p.pose, dt, &mut p.foley);
+            // Nobody is taking them: keep only the latest.
+            if p.foley.len() > 64 {
+                p.foley.drain(..p.foley.len() - 64);
+            }
         }
         p.controller.track_magazine(&p.pose);
         let shots = p.controller.take_shots(&p.pose, collision);
@@ -602,6 +631,68 @@ pub unsafe extern "C" fn snake_player_set_unlimited_magazines(p: *mut SnakePlaye
     if let Some(p) = unsafe { p.as_mut() } {
         p.controller.unlimited_magazines = on != 0;
     }
+}
+
+/// One rendered foley sound: 48 kHz stereo 16-bit samples (interleaved).
+#[repr(C)]
+pub struct SnakeSound {
+    pub samples: *const i16,
+    /// Sample frames (pairs).
+    pub frames: u32,
+    /// What made it (snake_core::foley::FoleyKind).
+    pub kind: i32,
+}
+
+/// Snake's foley since the last call (footsteps, hands, suit and weapon
+/// rattle, the chest landing), rendered from MGSV's sound bank for ground
+/// `surface` (an MGSV footstep symbol: SOILA, ROCKA, WOODA, IRONA, GRASA,
+/// GRAVA, SANDA, ...) and `wet` ground. Writes up to `max` sounds to `out`;
+/// their samples stay valid until the next call. Returns the count.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_player_foley(
+    rt: *const SnakeRuntime,
+    p: *mut SnakePlayer,
+    surface: *const c_char,
+    wet: i32,
+    out: *mut SnakeSound,
+    max: u32,
+) -> u32 {
+    guard(0, || {
+        // SAFETY: valid pointers or null; `surface` NUL-terminated or null.
+        let (rt, p) = unsafe { (rt.as_ref().ok_or("null runtime")?, p.as_mut().ok_or("null player")?) };
+        let surface = if surface.is_null() {
+            "SOILA".to_string()
+        } else {
+            unsafe { CStr::from_ptr(surface) }.to_string_lossy().into_owned()
+        };
+        p.foley_pcm.clear();
+        let pending = std::mem::take(&mut p.foley);
+        let mut bank = rt.foley.lock().map_err(|_| "foley bank poisoned")?;
+        let Some(bank) = bank.as_mut() else { return Ok(0) };
+        let weapon = p
+            .controller
+            .weapon()
+            .and_then(|w| snake_runtime::foley::weapon_symbol(&w.stats.sound_set));
+        for f in pending {
+            if p.foley_pcm.len() >= max as usize {
+                break;
+            }
+            if let Some(pcm) = bank.render(&f, &surface, wet != 0, weapon) {
+                p.foley_pcm.push((pcm.samples, f.kind as i32));
+            }
+        }
+        for (k, (samples, kind)) in p.foley_pcm.iter().enumerate() {
+            // SAFETY: the caller provides room for `max` entries.
+            unsafe {
+                *out.add(k) = SnakeSound {
+                    samples: samples.as_ptr(),
+                    frames: (samples.len() / 2) as u32,
+                    kind: *kind,
+                };
+            }
+        }
+        Ok(p.foley_pcm.len() as u32)
+    })
 }
 
 /// Tempo of all of Snake's motion (1 = MGSV's; 1.5 = half again as fast,

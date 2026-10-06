@@ -149,6 +149,32 @@ enum Cmd {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Which of the given hashes (hex, one per line in HASHES) are Wwise
+    /// events of the .sbp packages matching FILTER (archive path substring).
+    BankEvents {
+        #[arg(long)]
+        hashes: PathBuf,
+        filter: String,
+        /// Also print every event id (bank, id).
+        #[arg(long)]
+        list: bool,
+    },
+    /// Render a Wwise event with switches set (containers resolved) to a
+    /// .wav, e.g. --event FOOT_GROUND_L --switch foot_step_switch=SOILA_Rn.
+    SoundRender {
+        #[arg(long, default_value = "/Assets/tpp/sound/asset/common_bank_01.sbp")]
+        bank: String,
+        #[arg(long)]
+        event: String,
+        /// GROUP=VALUE (names, hashed like Wwise does).
+        #[arg(long)]
+        switch: Vec<String>,
+        /// Random choice seed.
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Decode a texture (archive path of the .ftex) to a .png (largest mip).
     TexPng {
         path: String,
@@ -659,6 +685,68 @@ fn run() -> Result<()> {
         Cmd::SoundExport { bank, wem, out: path } => {
             snake_runtime::skyrim_export::export_sound(&vfs, &bank, wem, &path)?;
             writeln!(out, "wrote {}", path.display())?;
+            Ok(())
+        }
+        Cmd::BankEvents { hashes, filter, list } => {
+            let wanted: std::collections::HashSet<u32> = std::fs::read_to_string(&hashes)?
+                .lines()
+                .filter_map(|l| u32::from_str_radix(l.trim().trim_start_matches("0x"), 16).ok())
+                .collect();
+            let banks: Vec<String> = vfs
+                .iter()
+                .map(|(h, _)| vfs.dictionary.resolve(h).0)
+                .filter(|p| p.ends_with(".sbp") && p.contains(&filter))
+                .collect();
+            let mut found = std::collections::BTreeMap::new();
+            for bank in &banks {
+                let Ok(data) = vfs.read(bank) else { continue };
+                let mut events = 0;
+                for h in fox_data::wwise::Hirc::parse_all(&data) {
+                    for id in h.event_ids() {
+                        events += 1;
+                        if list {
+                            writeln!(out, "event {bank} {id:08x}")?;
+                        }
+                        if wanted.contains(&id) {
+                            found.entry(id).or_insert_with(Vec::new).push(bank.clone());
+                        }
+                    }
+                }
+                writeln!(out, "{bank}: {events} events")?;
+            }
+            for (id, in_banks) in &found {
+                writeln!(out, "{id:08x} is an event in {}", in_banks.join(", "))?;
+            }
+            writeln!(out, "{} of {} hashes are events", found.len(), wanted.len())?;
+            Ok(())
+        }
+        Cmd::SoundRender { bank, event, switch, seed, out: path } => {
+            use fox_data::wwise::{short_id, Hirc, Switches};
+            let data = snake_runtime::read_any(&vfs, &bank)?;
+            let hircs = Hirc::parse_all(&data);
+            let id = short_id(&event);
+            let hirc = hircs.iter().find(|h| h.has_event(id)).with_context(|| format!("no event {event}"))?;
+            let mut switches = Switches::new();
+            for s in &switch {
+                let (g, v) = s.split_once('=').context("--switch GROUP=VALUE")?;
+                switches.insert(short_id(g), short_id(v));
+            }
+            let mut state = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let mut pick = |n: usize| {
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                ((state >> 33) as usize) % n.max(1)
+            };
+            let layers = hirc.render_layers(id, &switches, &mut pick).context("not an event")?;
+            for l in &layers {
+                writeln!(out, "  sound {:08x} wem {} {:+.1} dB {:+.0} cents delay {:.3}", l.sound, l.wem, l.volume_db, l.pitch_cents, l.delay)?;
+            }
+            anyhow::ensure!(!layers.is_empty(), "{event} plays nothing with these switches");
+            let pcm = fox_data::wwise::mix(&fox_data::sbp::SoundBank::parse(&data)?, &layers)?;
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::write(&path, pcm.to_wav())?;
+            writeln!(out, "wrote {} ({:.2} s)", path.display(), pcm.samples.len() as f32 / 2.0 / 48000.0)?;
             Ok(())
         }
         Cmd::SoundEvent { bank, event, out: path } => {

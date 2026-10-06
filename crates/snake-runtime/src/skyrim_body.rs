@@ -36,6 +36,12 @@ pub const FINGER_MESHES: [&str; 2] = [r"snake\snake_fingers_l.nif", r"snake\snak
 /// snake_core::strap), attached under the live pelvis.
 pub const STRAP_MESH: &str = r"snake\snake_strap.nif";
 
+/// Name of the exported shape for mesh `mesh` of Snake's `part` model
+/// (`body`, `face`, `arm`), e.g. `snake_body:16`.
+pub fn shape_name(part: &str, mesh: usize) -> String {
+    format!("snake_{part}:{mesh}")
+}
+
 /// Skyrim mesh path of Snake's body (relative to `Data\meshes`).
 pub const BODY_MESH: &str = r"snake\snake_body.nif";
 /// Snake's arms for the first-person skeleton.
@@ -413,7 +419,7 @@ pub fn build_body(
             }
             shapes.push(SkinnedShape {
                 shape: Shape {
-                    name: format!("snake_{part}:{i}"),
+                    name: shape_name(part, i),
                     positions: pick(&positions, &used),
                     normals: pick(&normals, &used),
                     tangents: pick(&tangents, &used),

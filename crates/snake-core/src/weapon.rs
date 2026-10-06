@@ -277,6 +277,9 @@ pub struct WeaponRig {
     /// Where the gun rides when not in the hands: a skeleton bone and the
     /// gun's transform relative to it (None: hidden).
     pub holster: Option<(usize, (Quat, Vec3))>,
+    /// The holster encloses the gun (a closed holster on the body): it is
+    /// not shown there.
+    pub holster_hides: bool,
     /// Frames of the draw and holster clips where the gun changes hands
     /// (see [`WeaponRig::fit_hand_over`]).
     pub hand_over: [Option<f32>; 2],
@@ -334,6 +337,7 @@ impl WeaponRig {
             draw: names.draw.map(str::to_string),
             holster_clip: names.holster.map(str::to_string),
             holster: None,
+            holster_hides: false,
             hand_over: [None, None],
             hand_bone,
             hand_offset,

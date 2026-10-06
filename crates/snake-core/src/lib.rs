@@ -17,6 +17,7 @@
 pub mod controller;
 pub mod foley;
 pub mod motion;
+pub mod sling;
 pub mod strap;
 pub mod weapon;
 pub mod world;

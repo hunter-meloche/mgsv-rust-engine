@@ -337,10 +337,21 @@ clip on the upper body (`snapasr_s_fre0_st` for the rifle,
 `snaphg01_s_fre0_st` for the pistol), after a short reach for the gun since
 the clips start with the hand on it; letting go plays the holster clip
 (`..._fre0_ed`), which ends in the idle arms. The rifle hangs on its sling
-at the left hip (the body's `CNP_ASRROOT` on `SKL_300_ASRROOT`); the pistol
-sits in the right thigh holster, on the helper bone `SKL_534_RHOL_HLP`,
-which has no connection point, so the gun's place on it is taken from the
-draw clip at the frame the hand closes on it (barrel straight down). The
+at the left hip (the body's `CNP_ASRROOT` on `SKL_300_ASRROOT`). The sling
+bone swings as MGSV simulates it (`sna0_main0_asr.sim`, `snake_core::sling`):
+the rifle's centre of mass, 13.6 cm from the joint, hangs under gravity
+within 35 degrees of the waist's reference direction, out of the left
+thigh, with angular damping 0.8 and no inertia from Snake's own movement;
+fixed to the waist it tipped out behind him when crouching. The pistol's
+right-thigh holster is closed: MGSV models the holstered gun into Snake's
+body (its grip shows at the back of the holster; mesh 16, in a mesh group
+under the holster's), so the pistol is hidden in there and that grip is
+shown only while the pistol is in it (`snake_weapon_holster_shape`; the
+plugin hides the shape while the gun is out). The gun's place inside the
+holster is on its helper bone `SKL_534_RHOL_HLP` (no connection point):
+turned as the draw clip holds it where the hand closes on it (barrel
+down), and moved into the holster mesh (the body mesh skinned to that
+bone), its top 12 cm centred on the holster's top. The
 clips mark the hand-over with two unnamed motion events (`f55cc7aa` draw,
 `634c2eca` holster; found by where the gun is). The gun changes hands where
 it comes closest to its holster up to that event: the rifle's holster event

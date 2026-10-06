@@ -88,6 +88,10 @@ uint32_t snake_weapon_count(const SnakeRuntime *rt);
 const char *snake_weapon_mesh(const SnakeRuntime *rt, uint32_t i);
 /* Display name of weapon i (e.g. "AM MRS-4"), or NULL. */
 const char *snake_weapon_name(const SnakeRuntime *rt, uint32_t i);
+/* Name of the k-th shape of Snake's body mesh that shows weapon i in its
+ * closed holster (NULL past the last); show them only while the weapon is in
+ * there (snake_retarget_weapon_place returns 0). */
+const char *snake_weapon_holster_shape(const SnakeRuntime *rt, uint32_t i, uint32_t k);
 /* Skyrim mesh path of weapon i's magazine (frame: the gun's CNP_AMMO), or
  * NULL if it has none. */
 const char *snake_weapon_magazine_mesh(const SnakeRuntime *rt, uint32_t i);

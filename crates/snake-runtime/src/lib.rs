@@ -40,6 +40,10 @@ pub struct LoadedWeapon {
     pub stats: snake_core::WeaponStats,
     /// Attachment, clips and holster (`rig.holster`).
     pub rig: snake_core::WeaponRig,
+    /// Meshes of Snake's body model that show the gun in its closed holster
+    /// (the pistol grip at the back of the thigh holster): drawn only while
+    /// the gun is in there.
+    pub holster_meshes: Vec<usize>,
     pub color: fox_anim::Vec3,
 }
 
@@ -159,9 +163,11 @@ pub struct WeaponDef {
 pub enum Holster {
     /// A bone and the body's connection point on it.
     Cnp(&'static str, &'static str),
-    /// A bone, with the gun where MGSV's draw clip takes it from (Snake's
-    /// thigh holster has a helper bone but no connection point).
-    Draw(&'static str),
+    /// A closed holster on Snake's body (the body mesh skinned to this
+    /// bone): the gun sits inside it, hidden, upright as MGSV's draw clip
+    /// takes it out (Snake's thigh holster has a helper bone but no
+    /// connection point).
+    Enclosed(&'static str),
 }
 
 pub const WEAPONS: [WeaponDef; 2] = [
@@ -217,7 +223,7 @@ pub const WEAPONS: [WeaponDef; 2] = [
             draw: Some("snaphg01_s_fre0_st"),
             holster: Some("snaphg01_s_fre0_ed"),
         },
-        holster: Some(Holster::Draw("SKL_534_RHOL_HLP")),
+        holster: Some(Holster::Enclosed("SKL_534_RHOL_HLP")),
         color: [0.28, 0.27, 0.25],
     },
 ];
@@ -295,11 +301,18 @@ pub fn load_weapon(
     let model = fox_data::Fmdl::parse(&read_any(vfs, def.model)?)?;
     let gun_skel = fox_anim::Skeleton::from_fmdl(&model);
     let skinned = fox_anim::SkinnedModel::bind(&model, &gun_skel).map_err(anyhow::Error::msg)?;
+    let mut holster_meshes = Vec::new();
     weapon_rig.holster = match def.holster {
         Some(Holster::Cnp(b, c)) => Some((bone(b)?, cnp(&body, c)?)),
-        Some(Holster::Draw(b)) => {
+        Some(Holster::Enclosed(b)) => {
             let b = bone(b)?;
-            Some((b, weapon_rig.holster_from_draw(rig, skel, clips, b).map_err(anyhow::Error::msg)?))
+            let on_bone = weapon_rig.holster_from_draw(rig, skel, clips, b).map_err(anyhow::Error::msg)?;
+            let gun = skinned.skin(&fox_anim::Pose::rest(&gun_skel)).concat();
+            let body = fox_data::Fmdl::parse(&read_any(vfs, SNAKE_BODY)?)?;
+            weapon_rig.holster_hides = true;
+            let (place, meshes) = inside_holster(&body, skel, b, on_bone, &gun).with_context(|| format!("{}: holster", def.id))?;
+            holster_meshes = meshes;
+            Some((b, place))
         }
         None => None,
     };
@@ -311,8 +324,71 @@ pub fn load_weapon(
         rest: fox_anim::Pose::rest(&gun_skel),
         stats,
         rig: weapon_rig,
+        holster_meshes,
         color: fox_anim::Vec3::from_array(def.color),
     })
+}
+
+/// The gun's place on holster bone `bone` moved into the holster: the body
+/// mesh with the most vertices skinned to `bone`. In the rest pose the top
+/// 12 cm of the gun (`gun`: vertices in its own frame), turned as `on_bone`
+/// turns it, is centred on the top 12 cm of the holster, 2 cm below its
+/// top edge. Also returns the body meshes in mesh groups under the
+/// holster's own group: the holstered gun MGSV models into the holster.
+fn inside_holster(
+    body: &fox_data::Fmdl,
+    skel: &fox_anim::Skeleton,
+    bone: usize,
+    on_bone: (fox_anim::Quat, fox_anim::Vec3),
+    gun: &[fox_anim::Vec3],
+) -> Result<((fox_anim::Quat, fox_anim::Vec3), Vec<usize>)> {
+    use fox_anim::Vec3;
+    let skinned_to_bone = |m: &fox_data::fmdl::Mesh| -> Vec<Vec3> {
+        let group = body.bone_groups.get(m.bone_group as usize);
+        m.positions
+            .iter()
+            .zip(m.bone_weights.iter().zip(&m.bone_indices))
+            .filter(|(_, (w, ix))| {
+                (0..4).any(|k| w[k] > 0 && group.and_then(|g| g.get(ix[k] as usize)) == Some(&(bone as u16)))
+            })
+            .map(|(p, _)| Vec3::from_array(*p))
+            .collect()
+    };
+    let (holster_mesh, holster) = body
+        .meshes
+        .iter()
+        .map(|m| skinned_to_bone(m))
+        .enumerate()
+        .max_by_key(|(_, v)| v.len())
+        .filter(|(_, v)| !v.is_empty())
+        .context("no mesh skinned to the holster bone")?;
+    let group = body.mesh_group_of(holster_mesh);
+    let under_holster = |mesh: usize| {
+        let mut cur = body.mesh_group_of(mesh).filter(|g| Some(*g) != group);
+        for _ in 0..16 {
+            let Some(g) = cur else { return false };
+            if Some(g) == group {
+                return true;
+            }
+            cur = body.mesh_groups.get(g as usize).and_then(|mg| u16::try_from(mg.parent).ok());
+        }
+        false
+    };
+    let contents = (0..body.meshes.len()).filter(|&m| under_holster(m)).collect();
+    // Top edge and the centre of the top 12 cm (x, z) of a vertex set.
+    let top = |vs: &[Vec3]| {
+        let y = vs.iter().fold(f32::MIN, |a, v| a.max(v.y));
+        let upper: Vec<&Vec3> = vs.iter().filter(|v| v.y > y - 0.12).collect();
+        let c = upper.iter().fold(Vec3::ZERO, |a, v| a + **v) / upper.len() as f32;
+        Vec3::new(c.x, y, c.z)
+    };
+    // Rest pose: bones unrotated at their rest positions.
+    let bone_rest = skel.bones[bone].rest_model;
+    let (r, t) = on_bone;
+    let placed: Vec<Vec3> = gun.iter().map(|v| bone_rest + t + r * *v).collect();
+    let (h, g) = (top(&holster), top(&placed));
+    let shift = Vec3::new(h.x - g.x, h.y - 0.02 - g.y, h.z - g.z);
+    Ok(((r, t + shift), contents))
 }
 
 pub const SNAKE_CNP: &str = "/Assets/tpp/pack/player/parts/plparts_normal.fpk:/Assets/tpp/chara/sna/Scenes/sna0_main0_def.fcnp";

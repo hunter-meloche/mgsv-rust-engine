@@ -173,6 +173,8 @@ pub struct SnakeRuntime {
     /// Skyrim mesh path of each weapon's magazine (empty if none).
     magazine_meshes: Vec<CString>,
     weapon_names: Vec<CString>,
+    /// Per weapon, the body shapes that show it in its closed holster.
+    holster_shapes: Vec<Vec<CString>>,
     /// MGSV's common sound bank, for Snake's foley (None if it failed to
     /// load).
     foley: std::sync::Mutex<Option<snake_runtime::foley::FoleyBank>>,
@@ -184,6 +186,8 @@ pub struct SnakePlayer {
     pose: Pose,
     /// The strap at Snake's back, simulated on top of the pose.
     strap: Option<snake_core::strap::StrapSim>,
+    /// The rifle's sling at Snake's left hip, simulated like the strap.
+    sling: Option<snake_core::sling::SlingSim>,
     /// Foley requests since the host last took them, and the tracker that
     /// finds footsteps in clips without motion events.
     foley_tracker: Option<snake_core::foley::FoleyTracker>,
@@ -279,6 +283,16 @@ pub unsafe extern "C" fn snake_runtime_open(
             .iter()
             .map(|w| CString::new(w.name).unwrap_or_default())
             .collect();
+        let holster_shapes = assets
+            .weapons
+            .iter()
+            .map(|w| {
+                w.holster_meshes
+                    .iter()
+                    .map(|&m| CString::new(snake_runtime::skyrim_body::shape_name("body", m)).unwrap_or_default())
+                    .collect()
+            })
+            .collect();
         // Foley is optional: without the bank Snake is just quiet.
         let foley = snake_runtime::foley::FoleyBank::load(&vfs).ok();
         Ok(Box::into_raw(Box::new(SnakeRuntime {
@@ -287,6 +301,7 @@ pub unsafe extern "C" fn snake_runtime_open(
             weapon_meshes,
             magazine_meshes,
             weapon_names,
+            holster_shapes,
             foley: std::sync::Mutex::new(foley),
         })))
     })
@@ -352,6 +367,18 @@ pub unsafe extern "C" fn snake_weapon_name(rt: *const SnakeRuntime, i: u32) -> *
         .map_or(std::ptr::null(), |s| s.as_ptr())
 }
 
+/// Name of the `k`-th shape of Snake's body mesh that shows weapon `i` in
+/// its closed holster (null past the last): the host shows these only
+/// while the weapon is in there (snake_retarget_weapon_place returns 0).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snake_weapon_holster_shape(rt: *const SnakeRuntime, i: u32, k: u32) -> *const c_char {
+    // SAFETY: valid pointer or null.
+    unsafe { rt.as_ref() }
+        .and_then(|r| r.holster_shapes.get(i as usize))
+        .and_then(|v| v.get(k as usize))
+        .map_or(std::ptr::null(), |s| s.as_ptr())
+}
+
 /// Skyrim mesh path of weapon `i`'s magazine, or null if it has none.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snake_weapon_magazine_mesh(rt: *const SnakeRuntime, i: u32) -> *const c_char {
@@ -387,12 +414,14 @@ pub unsafe extern "C" fn snake_player_new(rt: *const SnakeRuntime) -> *mut Snake
         let controller = assets.controller().map_err(|e| format!("{e:#}"))?;
         let pose = controller.pose(&assets.rig, &assets.skel)?;
         let strap = snake_core::strap::StrapSim::new(&assets.skel);
+        let sling = snake_core::sling::SlingSim::new(&assets.skel);
         let foley_tracker = snake_core::foley::FoleyTracker::new(&assets.skel);
         Ok(Box::into_raw(Box::new(SnakePlayer {
             assets,
             controller,
             pose,
             strap,
+            sling,
             foley_tracker,
             foley: Vec::new(),
             foley_pcm: Vec::new(),
@@ -449,6 +478,9 @@ pub unsafe extern "C" fn snake_player_update(
         p.controller
             .update(&p.assets.rig, &p.assets.clips, collision, dt, &input);
         p.pose = p.controller.pose(&p.assets.rig, &p.assets.skel)?;
+        if let Some(sling) = p.sling.as_mut() {
+            sling.step(&mut p.pose, dt);
+        }
         if let Some(strap) = p.strap.as_mut() {
             strap.step(&mut p.pose, p.controller.position, p.controller.rotation(), dt);
         }

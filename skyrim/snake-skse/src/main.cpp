@@ -106,6 +106,7 @@ struct SnakeApi {
     decltype(&snake_weapon_muzzle) weapon_muzzle = nullptr;
     decltype(&snake_weapon_name) weapon_name = nullptr;
     decltype(&snake_weapon_magazine_mesh) weapon_magazine_mesh = nullptr;
+    decltype(&snake_weapon_holster_shape) weapon_holster_shape = nullptr;
     decltype(&snake_player_set_unlimited_magazines) player_set_unlimited_magazines = nullptr;
     decltype(&snake_player_set_tempo) player_set_tempo = nullptr;
     decltype(&snake_player_foley) player_foley = nullptr;
@@ -150,6 +151,7 @@ bool LoadSnakeDll() {
     RESOLVE(weapon_muzzle, "snake_weapon_muzzle");
     RESOLVE(weapon_name, "snake_weapon_name");
     RESOLVE(weapon_magazine_mesh, "snake_weapon_magazine_mesh");
+    RESOLVE(weapon_holster_shape, "snake_weapon_holster_shape");
     RESOLVE(player_set_unlimited_magazines, "snake_player_set_unlimited_magazines");
     RESOLVE(player_set_tempo, "snake_player_set_tempo");
     RESOLVE(player_foley, "snake_player_foley");
@@ -2660,8 +2662,11 @@ void HandLocal(int place, const SnakeVec3& pos, const SnakeQuat& rot, void* hand
 // transform here, as for the bones, made the renderer draw it as a flat
 // fog-coloured silhouette on some frames. In first person a holstered gun
 // is not shown.
+void ShowHolsterContents();  // below, after the body slots
+
 void PlaceGun(int view, void* hand, void* spine) {
     if (!hand) return;
+    if (view == 0) ShowHolsterContents();
     int count = g_gunCount;
     bool attached = count > 0;
     for (int i = 0; i < count; ++i) {
@@ -2793,6 +2798,33 @@ struct BodySlot {
     std::vector<void*> hidden;  // Skyrim nodes we hid (restored when Snake mode ends)
 };
 BodySlot g_bodies[2] = {{"snake\\snake_body.nif"}, {"snake\\snake_arms_1p.nif"}};  // per view (0 third person, 1 first)
+
+// The pistol's thigh holster is closed: MGSV models the holstered gun into
+// Snake's body (its grip shows at the back of the holster) and shows that
+// part only while the gun is in there. Per weapon, those shapes of the
+// third-person body (named by snake_weapon_holster_shape), found once per
+// body node.
+constexpr int kMaxHolsterShapes = 4;
+void* g_holsterShapes[4][kMaxHolsterShapes] = {};
+void* g_holsterShapesBody = nullptr;
+
+void ShowHolsterContents() {
+    void* body = g_bodies[0].node;
+    if (!body || !g_snake.weapon_holster_shape) return;
+    int count = g_gunCount;
+    if (body != g_holsterShapesBody) {
+        g_holsterShapesBody = body;
+        for (int i = 0; i < count && i < 4; ++i)
+            for (int k = 0; k < kMaxHolsterShapes; ++k) {
+                const char* name = g_snake.weapon_holster_shape(g_runtime, i, k);
+                g_holsterShapes[i][k] = name ? FindNode(body, name) : nullptr;
+                if (name) Log("holster contents of weapon %d: %s %s", i, name, g_holsterShapes[i][k] ? "found" : "missing");
+            }
+    }
+    for (int i = 0; i < count && i < 4; ++i)
+        for (void* shape : g_holsterShapes[i])
+            if (shape) SetHidden(shape, g_hookGunPlace[i] != 0);
+}
 
 // Fingers: the in-game third-person skeleton has no finger bones, so the
 // export ships each hand's finger bones as a node tree (rest pose relative

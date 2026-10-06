@@ -65,6 +65,7 @@ const HELP: &str = "WASD move, Shift dash, Ctrl walk, C crouch, Z prone, RMB aim
 
 pub fn run(assets: Assets, opts: Options) -> Result<()> {
     let mut ctl = assets.controller()?;
+    let mut sling = snake_core::sling::SlingSim::new(&assets.skel);
 
     let mut window = Window::new(
         "Snake (mgsv play)",
@@ -179,6 +180,10 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
                 _ => None,
             };
             input.aim = (20..110).contains(&f) || (190..280).contains(&f);
+            // Then crouch-walk and go prone with the pistol holstered.
+            input.crouch = f == 300;
+            input.move_y = if (330..420).contains(&f) || (500..560).contains(&f) { 1.0 } else { 0.0 };
+            input.prone = f == 440;
             cam_pitch = 0.05;
             input.aim_pitch = -cam_pitch;
         }
@@ -237,9 +242,12 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
         let vp = proj * view;
 
         // Pose and skin.
-        let pose = ctl
+        let mut pose = ctl
             .pose(&assets.rig, &assets.skel)
             .map_err(anyhow::Error::msg)?;
+        if let Some(sling) = sling.as_mut() {
+            sling.step(&mut pose, TICK);
+        }
         let (rot, pos) = (ctl.rotation(), ctl.position);
 
         // Shots leave the muzzle toward what the crosshair covers.
@@ -307,9 +315,21 @@ pub fn run(assets: Assets, opts: Options) -> Result<()> {
             }),
         );
         let to_world = |v: Vec3| rot * v + pos;
-        for (model, color) in &assets.parts {
+        // The holstered gun MGSV models into a closed holster shows only
+        // while the gun is in there.
+        let out_of_holster: Vec<usize> = assets
+            .weapons
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| ctl.gun_place(*i, &pose).is_some())
+            .flat_map(|(_, w)| w.holster_meshes.iter().copied())
+            .collect();
+        for (part, (model, color)) in assets.parts.iter().enumerate() {
             let skinned = model.skin(&pose);
-            for (mesh, verts) in model.meshes.iter().zip(&skinned) {
+            for (k, (mesh, verts)) in model.meshes.iter().zip(&skinned).enumerate() {
+                if part == 0 && out_of_holster.contains(&k) {
+                    continue;
+                }
                 let world_v: Vec<Vec3> = verts.iter().map(|v| to_world(*v)).collect();
                 raster.draw(
                     &vp,

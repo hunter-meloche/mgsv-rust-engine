@@ -1130,15 +1130,19 @@ impl Controller {
 
     /// Weapon `i`'s transform in `pose`'s space and whether it is in the
     /// hand: in the hand, in its holster, or between the two just after it
-    /// changed hands. None when it is holstered and has no holster.
+    /// changed hands. None when it is holstered and has no holster, or its
+    /// holster hides it.
     pub fn gun_place(&self, i: usize, pose: &Pose) -> Option<(Quat, Vec3, bool)> {
         let w = self.weapons.get(i)?;
         let current = self.current == Some(i);
         let in_hand = current && w.drawn;
         let hand = w.rig.gun_transform(pose);
         let holster = w.rig.holstered(pose);
-        let (from, to) = if in_hand { (holster, hand) } else { (Some(hand), holster?) };
         let s = if current { (w.since_swap / SWAP_BLEND).clamp(0.0, 1.0) } else { 1.0 };
+        if !in_hand && w.rig.holster_hides && s >= 1.0 {
+            return None;
+        }
+        let (from, to) = if in_hand { (holster, hand) } else { (Some(hand), holster?) };
         let s = s * s * (3.0 - 2.0 * s);
         let (r, p) = match from {
             Some((fr, fp)) if s < 1.0 => (fr.slerp(to.0, s), fp.lerp(to.1, s)),

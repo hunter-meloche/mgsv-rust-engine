@@ -529,6 +529,25 @@ fn run() -> Result<()> {
                     mesh.uvs[0].iter().fold([f32::MAX; 2], |a, u| [a[0].min(u[0]), a[1].min(u[1])]),
                     mesh.uvs[0].iter().fold([f32::MIN; 2], |a, u| [a[0].max(u[0]), a[1].max(u[1])]),
                 )?;
+                // Bones the mesh is weighted to, and its bounds.
+                let lo = mesh.positions.iter().fold([f32::MAX; 3], |a, p| [a[0].min(p[0]), a[1].min(p[1]), a[2].min(p[2])]);
+                let hi = mesh.positions.iter().fold([f32::MIN; 3], |a, p| [a[0].max(p[0]), a[1].max(p[1]), a[2].max(p[2])]);
+                let group = m.bone_groups.get(mesh.bone_group as usize);
+                let mut used = std::collections::BTreeSet::new();
+                for (w, ix) in mesh.bone_weights.iter().zip(&mesh.bone_indices) {
+                    for k in 0..4 {
+                        if w[k] > 0 {
+                            if let Some(&b) = group.and_then(|g| g.get(ix[k] as usize)) {
+                                used.insert(b);
+                            }
+                        }
+                    }
+                }
+                let bones: Vec<String> = used
+                    .iter()
+                    .map(|&b| m.bones.get(b as usize).map_or(format!("#{b}"), |bone| m.name(bone.name, &names).to_string()))
+                    .collect();
+                writeln!(out, "           bounds {lo:.2?}..{hi:.2?}, bones {}", bones.join(" "))?;
             }
             for (i, (min, max)) in m.bounding_boxes.iter().enumerate() {
                 writeln!(
@@ -1605,6 +1624,55 @@ fn draw_probe(vfs: &Vfs) -> Result<()> {
             println!("{name}: fastest joint {max:.1} deg/tick at frame {at:.1} (bone {bone})");
         }
     }
+    // Rest pose: the holstered guns against the body's meshes (bounds).
+    {
+        let rest = fox_anim::Pose::rest(&assets.skel);
+        let bbox = |vs: &[fox_anim::Vec3]| {
+            let lo = vs.iter().fold(fox_anim::Vec3::splat(f32::MAX), |a, v| a.min(*v));
+            let hi = vs.iter().fold(fox_anim::Vec3::splat(f32::MIN), |a, v| a.max(*v));
+            format!("{lo:.3}..{hi:.3}")
+        };
+        let body = assets.parts[0].0.skin(&rest);
+        for (k, vs) in body.iter().enumerate() {
+            println!("body mesh {k}: {} verts, {}", vs.len(), bbox(vs));
+        }
+        // Close-ups of the right hip: the holster meshes and the holstered
+        // pistol, from the side, the front and behind.
+        if let Some(w) = assets.weapons.get(1) {
+            use fox_anim::glam::{Mat4, Vec3};
+            let mut tris: Vec<([Vec3; 3], Vec3)> = Vec::new();
+            for (k, vs) in body.iter().enumerate() {
+                let c = match k {
+                    15 => Vec3::new(0.2, 0.7, 0.2),
+                    16 => Vec3::new(0.9, 0.2, 0.2),
+                    _ => Vec3::new(0.6, 0.55, 0.45),
+                };
+                let idx = &assets.parts[0].0.meshes[k].indices;
+                tris.extend(idx.chunks_exact(3).map(|t| ([vs[t[0] as usize], vs[t[1] as usize], vs[t[2] as usize]], c)));
+            }
+            if let Some((gr, gp)) = w.rig.holstered(&rest) {
+                let skinned = w.model.skin(&w.rest);
+                for (m, vs) in w.model.meshes.iter().zip(&skinned) {
+                    let vs: Vec<Vec3> = vs.iter().map(|v| gp + gr * *v).collect();
+                    tris.extend(m.indices.chunks_exact(3).map(|t| ([vs[t[0] as usize], vs[t[1] as usize], vs[t[2] as usize]], Vec3::new(0.15, 0.15, 0.2))));
+                }
+            }
+            let focus = Vec3::new(-0.2, -0.13, 0.05);
+            for (label, dir) in [("side", Vec3::new(-1.0, 0.1, 0.0)), ("front", Vec3::new(-0.3, 0.1, 1.0)), ("back", Vec3::new(-0.4, 0.1, -1.0))] {
+                let mut r = crate::raster::Raster::new(480, 480);
+                r.clear(Vec3::new(0.3, 0.4, 0.5), Vec3::new(0.3, 0.4, 0.5));
+                let eye = focus + dir.normalize() * 0.9;
+                let vp = Mat4::perspective_rh(40f32.to_radians(), 1.0, 0.05, 10.0) * Mat4::look_at_rh(eye, focus, Vec3::Y);
+                r.draw(&vp, Some(dir.normalize()), tris.iter().copied());
+                crate::raster::save_png(&r, std::path::Path::new(&format!("extracted/holster_{label}.png")))?;
+            }
+        }
+        for w in &assets.weapons {
+            let Some((gr, gp)) = w.rig.holstered(&rest) else { continue };
+            let vs: Vec<fox_anim::Vec3> = w.model.skin(&w.rest).iter().flatten().map(|v| gp + gr * *v).collect();
+            println!("{} holstered: {}, origin {gp:.3}, barrel {:.2}, up {:.2}, holster contents: body meshes {:?}", w.name, bbox(&vs), gr * fox_anim::Vec3::Z, gr * fox_anim::Vec3::Y, w.holster_meshes);
+        }
+    }
     // The controller: draw, holster and switch, per tick where the gun is
     // and the largest per-tick gun and joint movement.
     let mut ctl = assets.controller()?;
@@ -1623,7 +1691,7 @@ fn draw_probe(vfs: &Vfs) -> Result<()> {
         ("run and aim", 1.0, Input { move_y: 1.0, aim: true, ..Default::default() }),
         ("run", 1.5, Input { move_y: 1.0, ..Default::default() }),
     ];
-    let mut prev: Option<(fox_anim::Pose, fox_anim::Vec3)> = None;
+    let mut prev: Option<(fox_anim::Pose, Option<fox_anim::Vec3>)> = None;
     let mut t = 0.0;
     for (label, secs, input) in steps {
         let n = (secs / dt).round() as usize;
@@ -1638,9 +1706,12 @@ fn draw_probe(vfs: &Vfs) -> Result<()> {
             let pose = ctl.pose(&assets.rig, &assets.skel).map_err(anyhow::Error::msg)?;
             t += dt;
             let cur = ctl.current.context("no weapon")?;
-            let (_, gp, _) = ctl.gun_place(cur, &pose).context("gun not shown")?;
+            // None: hidden in a closed holster.
+            let gp = ctl.gun_place(cur, &pose).map(|g| g.1);
             if let Some((pp, pg)) = &prev {
-                gun_max = gun_max.max((gp - *pg).length() * 100.0);
+                if let (Some(a), Some(b)) = (gp, pg) {
+                    gun_max = gun_max.max((a - *b).length() * 100.0);
+                }
                 // Body joints (the fingers snap into a grip in MGSV's clips too).
                 let j = pp.rotations.iter().zip(&pose.rotations).take(21).map(|(a, b)| a.angle_between(*b).to_degrees()).fold(0.0f32, f32::max);
                 joint_max = joint_max.max(j);

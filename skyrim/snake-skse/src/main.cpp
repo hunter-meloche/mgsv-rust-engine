@@ -27,6 +27,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <atomic>
+#include <map>
 #include <mutex>
 #include <thread>
 #include <string>
@@ -1304,6 +1305,11 @@ struct Key {
 // Test/control file: Data/SKSE/Plugins/snake_control.txt, re-read when it
 // changes. Lines `key=value`: enabled=0|1, mode=0|1|2, stance=stand|crouch|prone,
 // move=auto|idle|walk|run|dash, aim=0|1.
+// Camera settings set live from the control file (see the camera section).
+std::mutex g_cameraOverrideMutex;
+std::map<std::wstring, float> g_cameraOverrides;
+std::atomic<bool> g_cameraDirty{false};
+
 struct Control {
     FILETIME stamp{};
     std::string move = "auto";
@@ -1356,6 +1362,11 @@ void PollControl(int curStance) {
         else if (k == "body") g_control.body = std::atoi(v.c_str());
         else if (k == "reload") g_control.reload = std::atoi(v.c_str());
         else if (k == "dive") g_control.dive = std::atoi(v.c_str());
+        else if (k.rfind("Camera", 0) == 0 || k.rfind("AimCamera", 0) == 0) {
+            std::lock_guard<std::mutex> lock(g_cameraOverrideMutex);
+            g_cameraOverrides[std::wstring(k.begin(), k.end())] = static_cast<float>(std::atof(v.c_str()));
+            g_cameraDirty = true;
+        }
         else if (k == "dump") g_control.dump = v == "1";
         else if (k == "probe") g_control.probe = std::atoi(v.c_str());
     }
@@ -1731,13 +1742,19 @@ void RequestSneakSync(int sneak) {
     if (g_tasks && !g_sneakSyncQueued.exchange(true)) g_tasks->AddTask(new SneakSyncTask());
 }
 
-// ---- aim camera -------------------------------------------------------------------
+// ---- camera -----------------------------------------------------------------------
 //
-// MGSV aims over Snake's right shoulder. Skyrim's over-the-shoulder offsets
-// for drawn hands (Skyrim.ini [Camera] fOverShoulderCombatPosX / PosZ) give
-// the same framing, and Skyrim reads them live, so in Snake mode the plugin
-// sets them (snake.ini AimCameraX / AimCameraZ, game units; AimCamera=0 to
-// leave them alone) and restores the player's own values afterwards.
+// MGSV's third-person camera: a fixed distance behind Snake (no zooming), a
+// little to his right and above, and aiming close over his right shoulder.
+// Skyrim's camera reads its [Camera] INI settings live, so in Snake mode the
+// plugin sets them and restores the player's own values afterwards:
+// distance = fVanityModeMinDist = fVanityModeMaxDist (the zoom range, so the
+// wheel no longer changes it), side / height = fOverShoulderPosX / PosZ,
+// aiming (drawn hands) = fOverShoulderCombatPosX / PosZ, pulled in by
+// fOverShoulderCombatAddY (positive pulls in; Skyrim reads the aiming values
+// when the hands are drawn). Values from snake.ini (Camera* / AimCamera* keys,
+// game units; AimCamera=0 leaves the camera alone); the control file can
+// override them live for tuning (same key names).
 // The settings are found by name: an INI Setting is {vtable, value, name},
 // so the object is the one in the exe's data whose +0x10 points at the
 // name string.
@@ -1746,7 +1763,22 @@ struct FloatSetting {
     float* value = nullptr;
     float original = 0;
 };
-FloatSetting g_aimCamX, g_aimCamZ;
+struct CameraSetting {
+    const char* name;      // Skyrim INI setting
+    const wchar_t* key;    // snake.ini key
+    float fallback;        // MGSV-like default
+    FloatSetting setting;
+};
+CameraSetting g_camera[] = {
+    {"fVanityModeMinDist:Camera", L"CameraDistance", 180, {}},
+    {"fVanityModeMaxDist:Camera", L"CameraDistance", 180, {}},
+    {"fOverShoulderPosX:Camera", L"CameraX", 35, {}},
+    {"fOverShoulderPosZ:Camera", L"CameraZ", 12, {}},
+    {"fOverShoulderCombatPosX:Camera", L"AimCameraX", 50, {}},
+    {"fOverShoulderCombatPosZ:Camera", L"AimCameraZ", -10, {}},
+    {"fOverShoulderCombatAddY:Camera", L"AimCameraAddY", 135, {}},
+};
+
 
 bool InImage(uintptr_t p, uintptr_t base, size_t size) { return p >= base && p < base + size; }
 
@@ -1782,6 +1814,38 @@ float* FindFloatSetting(const char* name) {
     return nullptr;
 }
 
+bool SafeFindFloatSetting(const char* name, FloatSetting& out);
+
+// Diagnostics (probe=7): every float INI setting of a section ("f...:Camera")
+// with its live value.
+void LogFloatSettings(const char* section) {
+    auto base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    auto dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+    auto nt = reinterpret_cast<IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+    IMAGE_SECTION_HEADER* first = IMAGE_FIRST_SECTION(nt);
+    std::string suffix = std::string(":") + section;
+    std::vector<std::string> names;
+    for (int i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
+        const IMAGE_SECTION_HEADER& sec = first[i];
+        if (sec.Characteristics & IMAGE_SCN_MEM_EXECUTE) continue;
+        auto* p = reinterpret_cast<const char*>(base + sec.VirtualAddress);
+        size_t n = sec.Misc.VirtualSize;
+        for (size_t k = 1; k + 4 < n; ++k) {
+            if (p[k] != 'f' || p[k - 1] != 0) continue;
+            size_t e = k;
+            while (e < n && e - k < 80 && p[e] >= 0x20 && p[e] < 0x7F) ++e;
+            if (e >= n || p[e] != 0) continue;
+            std::string str(p + k, e - k);
+            if (str.size() > suffix.size() && str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0) names.push_back(str);
+        }
+    }
+    for (const std::string& name : names) {
+        FloatSetting f;
+        if (SafeFindFloatSetting(name.c_str(), f)) Log("setting %s = %.3f", name.c_str(), *f.value);
+    }
+    Log("settings: %zu names in section %s", names.size(), section);
+}
+
 bool SafeFindFloatSetting(const char* name, FloatSetting& out) {
     __try {
         out.value = FindFloatSetting(name);
@@ -1794,22 +1858,44 @@ bool SafeFindFloatSetting(const char* name, FloatSetting& out) {
 
 void SetUpAimCamera() {
     if (!IniInt(L"AimCamera", 1)) {
-        Log("aim camera: off (snake.ini AimCamera=0)");
+        Log("camera: Skyrim's own (snake.ini AimCamera=0)");
         return;
     }
-    bool x = SafeFindFloatSetting("fOverShoulderCombatPosX:Camera", g_aimCamX);
-    bool z = SafeFindFloatSetting("fOverShoulderCombatPosZ:Camera", g_aimCamZ);
-    Log("aim camera: fOverShoulderCombatPosX %s (%.1f), fOverShoulderCombatPosZ %s (%.1f)", x ? "found" : "not found",
-        x ? g_aimCamX.original : 0.0f, z ? "found" : "not found", z ? g_aimCamZ.original : 0.0f);
+    for (CameraSetting& c : g_camera) {
+        bool found = SafeFindFloatSetting(c.name, c.setting);
+        Log("camera: %s %s (%.1f)", c.name, found ? "found" : "not found", found ? c.setting.original : 0.0f);
+    }
+}
+
+float CameraValue(const CameraSetting& c) {
+    {
+        std::lock_guard<std::mutex> lock(g_cameraOverrideMutex);
+        auto it = g_cameraOverrides.find(c.key);
+        if (it != g_cameraOverrides.end()) return it->second;
+    }
+    std::wstring ini = PluginDir() + L"\\snake.ini";
+    wchar_t buf[32] = {};
+    GetPrivateProfileStringW(L"Snake", c.key, L"", buf, 32, ini.c_str());
+    return buf[0] ? static_cast<float>(_wtof(buf)) : c.fallback;
 }
 
 // Snake's aim camera on (Snake mode) or the player's own values back.
 void ApplyAimCamera(bool snake) {
     static bool applied = false;
-    if (snake == applied) return;
+    bool dirty = g_cameraDirty.exchange(false);
+    if (snake == applied && !dirty) return;
     applied = snake;
-    if (g_aimCamX.value) *g_aimCamX.value = snake ? float(IniInt(L"AimCameraX", 120)) : g_aimCamX.original;
-    if (g_aimCamZ.value) *g_aimCamZ.value = snake ? float(IniInt(L"AimCameraZ", 0)) : g_aimCamZ.original;
+    for (CameraSetting& c : g_camera)
+        if (c.setting.value) *c.setting.value = snake ? CameraValue(c) : c.setting.original;
+    if (snake && dirty) {
+        std::string row;
+        char b[64];
+        for (const CameraSetting& c : g_camera) {
+            snprintf(b, sizeof b, " %ls=%.0f", c.key, c.setting.value ? *c.setting.value : -1.0f);
+            row += b;
+        }
+        Log("camera:%s", row.c_str());
+    }
 }
 
 void SnakeThread() {
@@ -1865,6 +1951,10 @@ void SnakeThread() {
         SnakeStatus cur{};
         g_snake.player_status(g_player, &cur);
         PollControl(cur.stance);
+        if (g_control.probe == 7) {
+            g_control.probe = 0;
+            LogFloatSettings("Camera");
+        }
         if (g_control.probe == 6 && g_tasks) {
             g_control.probe = 0;
             g_tasks->AddTask(new MemDumpTask());

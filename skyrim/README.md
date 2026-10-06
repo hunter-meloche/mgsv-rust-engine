@@ -47,15 +47,22 @@ Snake's grip each frame while aiming or reloading; otherwise it rides on
 its MGSV holster point (`CNP_ASRROOT`, at the left hip), placed relative to
 Skyrim's `NPC Spine2` (snake_retarget_weapon_place).
 
-Aim camera: in Snake mode, aiming frames Snake over his right shoulder as in
-MGSV, with Snake on the left and the gun in view. The plugin sets Skyrim's
-drawn-hands camera offsets (`fOverShoulderCombatPosX` / `PosZ`, read live by
-the game) to `AimCameraX` / `AimCameraZ` from snake.ini (default 120 / 0;
-`AimCamera=0` leaves them alone) and puts the player's own values back when
-Snake mode ends. It finds the settings by name: an INI setting is
-`{vtable, value, name}`, so it is the object in the exe's data whose `+0x10`
-points at the name string. After Snake mode ends, Skyrim's camera keeps the
-offset until the next draw or sheathe.
+Camera: in Snake mode the camera frames Snake as MGSV does. It sits a fixed
+180 units (2.6 m) behind him, with no wheel zoom, 35 to his right and 12 up.
+Aiming, it pulls in 135 close over his right shoulder (side 50, height -10),
+with Snake at the left of the frame. These values were matched against MGSV
+screenshots. MGSV keeps its camera values in code, not data. The plugin sets
+Skyrim's own [Camera] settings, which the game reads live. The distance is
+fVanityModeMinDist = fVanityModeMaxDist (the zoom range). The side and
+height are fOverShoulderPosX / PosZ. Aiming uses fOverShoulderCombatPosX /
+PosZ and fOverShoulderCombatAddY, which Skyrim reads when the hands are drawn;
+a positive AddY pulls the camera in (Skyrim's horse and dragon cameras use
+-300 and -600 to pull back). Settings are found by name: an INI Setting is
+`{vtable, value, name}`. The player's own values come back when Snake mode
+ends. Keys in snake.ini: `CameraDistance`, `CameraX`, `CameraZ`,
+`AimCameraX`, `AimCameraZ`, `AimCameraAddY`; `AimCamera=0` keeps Skyrim's
+camera. The control file takes the same keys live for tuning. Its
+`probe=7` lists every [Camera] setting with its value.
 
 First person: Snake's arm chains (clavicles down to the fingers; the
 first-person skeleton has finger bones, so his grip shows) drive the

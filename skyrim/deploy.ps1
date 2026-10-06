@@ -36,12 +36,18 @@ BulletDamage=48
 MoveSpeedScale=150
 ; Gunshot volume in percent.
 ShotVolume=70
-; Over-the-shoulder aim camera in Snake mode, as in MGSV (Skyrim's
-; fOverShoulderCombatPosX/PosZ while aiming, game units; restored when
-; Snake mode ends). AimCamera=0 keeps Skyrim's camera.
+; MGSV's camera in Snake mode (Skyrim's [Camera] settings, game units,
+; restored when Snake mode ends; AimCamera=0 keeps Skyrim's camera).
+; Fixed distance behind Snake (no wheel zoom), side and height offsets:
 AimCamera=1
-AimCameraX=120
-AimCameraZ=0
+CameraDistance=180
+CameraX=35
+CameraZ=12
+; Aiming, close over the right shoulder: side, height, and how far the
+; camera pulls in from CameraDistance (positive = closer).
+AimCameraX=50
+AimCameraZ=-10
+AimCameraAddY=135
 ; Reloads never run out (1), or use the weapon's reserve as in MGSV (0).
 UnlimitedMagazines=1
 ; Dash (MGSV's sprint) while this key is held: a Windows virtual-key code,

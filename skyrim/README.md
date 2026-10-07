@@ -248,12 +248,25 @@ Rolling: prone (lying still, crawling or aiming), holding the dash key
 rolls him that way, as in MGSV, with `snaprdy_c_roll_l_lp` / `r_lp`: a full
 turn in 36 frames, 1.2 m, about 1.5 m/s at tempo 1.5. It is entered at its
 frame closest to the current pose over the whole body (by the hands and feet
-alone a crawl blended in with the legs' IK flipping), rolls on while held, and
-is left belly down (frames 26 - 36) after at least most of a turn, into the
-idle, a crawl, or back into the prone aim if aiming is held (the gun stays in
-his hands meanwhile). The half-turn clips `l1` / `l2` chain seamlessly but
+alone a crawl blended in with the legs' IK flipping), rolls on while held, and,
+let go, stops on the first side it reaches: belly down into the idle, a crawl,
+or back into the prone aim if aiming is held (the gun stays in his hands
+meanwhile); or on his back. The half-turn clips `l1` / `l2` chain seamlessly but
 roll at 0.6 m/s, well below MGSV's speed. No stance changes or draws during a
 roll. The plugin passes the dash key through while prone.
+
+On his back: a roll let go half way over leaves Snake lying on his back,
+as in MGSV (`snapnon_p_idl`). Moving, he scoots about on his back with
+MGSV's eight scooting loops (`snapasr_p_fre0_wk_lp_*`, gun in hand): the
+loop whose own movement is closest to the wanted direction plays, and his
+body keeps its facing. Crouch gets him up into a crouch and the prone key
+(which from prone stands him up) standing, with MGSV's get-up clips
+(`snapasr_p_fre_p2q` / `p2s`, turning to face the way his feet pointed);
+rolling again turns him back over. There is no aiming on his back yet (no
+aim grid for it). Cross-fades between clips now blend the solved poses
+joint by joint, each joint relative to its parent, instead of the rig
+frames: blending IK targets and poles between very different poses (onto
+and off his back) flipped elbows over (up to 178 degrees in one tick).
 
 Tempo: `MoveSpeedScale` in snake.ini (percent, default 150) sets the
 tempo of all of Snake's motion: his controller advances by 1.5 x the real

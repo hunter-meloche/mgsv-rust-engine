@@ -43,6 +43,49 @@ impl Pose {
             ik_reach: Vec::new(),
         }
     }
+
+    /// Blend two solved poses joint by joint: `t` = 0 gives `a`, 1 gives
+    /// `b`. Each joint's rotation relative to its parent takes the shorter
+    /// way round, each joint's offset from
+    /// its parent (in the parent's frame) is interpolated, and positions are
+    /// rebuilt down the skeleton. Unlike blending rig frames (IK targets and
+    /// poles), a limb cannot flip its bend over halfway.
+    pub fn blend(skel: &Skeleton, a: &Pose, b: &Pose, t: f32) -> Pose {
+        let n = skel.bones.len();
+        let mut rotations: Vec<Quat> = Vec::with_capacity(n);
+        let mut positions: Vec<Vec3> = Vec::with_capacity(n);
+        for i in 0..n {
+            // Each joint relative to its parent (model space only at the
+            // root): a hand differs little from its forearm between two
+            // poses even when the whole arm has turned far round.
+            let local = |p: &Pose| match skel.bones[i].parent {
+                Some(q) => p.rotations[q].inverse() * p.rotations[i],
+                None => p.rotations[i],
+            };
+            let (ra, rb) = (local(a), local(b));
+            let rb = if ra.dot(rb) < 0.0 { -rb } else { rb };
+            let blended = ra.slerp(rb, t).normalize();
+            let rot = match skel.bones[i].parent {
+                Some(q) => (rotations[q] * blended).normalize(),
+                None => blended,
+            };
+            let pos = match skel.bones[i].parent {
+                Some(p) => {
+                    let la = a.rotations[p].inverse() * (a.positions[i] - a.positions[p]);
+                    let lb = b.rotations[p].inverse() * (b.positions[i] - b.positions[p]);
+                    positions[p] + rotations[p] * la.lerp(lb, t)
+                }
+                None => a.positions[i].lerp(b.positions[i], t),
+            };
+            rotations.push(rot);
+            positions.push(pos);
+        }
+        Pose {
+            rotations,
+            positions,
+            ik_reach: b.ik_reach.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

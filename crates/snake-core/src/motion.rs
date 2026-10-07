@@ -228,6 +228,20 @@ impl MotionPlayer {
         out
     }
 
+    /// The frames of the clips showing, oldest first, each with its fade-in
+    /// weight (the first one's is 1): to be solved and blended as poses
+    /// (see [`fox_anim::Pose::blend`]).
+    pub fn frames(&self, rig: &HumanRig) -> Result<Vec<(RigFrame, f32)>, String> {
+        let mut out = Vec::with_capacity(self.previous.len() + 1);
+        for (k, (layer, fade)) in self.previous.iter().enumerate() {
+            let w = if k == 0 { 1.0 } else { Self::weight(*fade) };
+            out.push((rig.sample_frame(&layer.clip, layer.time)?, w));
+        }
+        let w = if out.is_empty() { 1.0 } else { Self::weight(self.fade) };
+        out.push((rig.sample_frame(&self.current.clip, self.current.time)?, w));
+        Ok(out)
+    }
+
     /// The blended rig frame at the current time.
     pub fn frame(&self, rig: &HumanRig) -> Result<RigFrame, String> {
         let cur = rig.sample_frame(&self.current.clip, self.current.time)?;

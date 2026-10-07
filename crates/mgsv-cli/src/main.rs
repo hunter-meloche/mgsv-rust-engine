@@ -1789,6 +1789,9 @@ fn stance_probe(vfs: &Vfs) -> Result<()> {
         ("crawl", 1.0, run),
         ("crawl into roll", 1.5, Input { sprint: true, move_x: 1.0, ..Default::default() }),
         ("side, no dash", 1.5, Input { move_x: -1.0, ..Default::default() }),
+        ("aim prone", 1.5, Input { aim: true, ..Default::default() }),
+        ("aim: roll right", 1.5, Input { aim: true, sprint: true, move_x: 1.0, ..Default::default() }),
+        ("aim held", 1.5, Input { aim: true, ..Default::default() }),
         ("stop", 1.0, Input::default()),
     ];
     let mut prev: Option<fox_anim::Pose> = None;

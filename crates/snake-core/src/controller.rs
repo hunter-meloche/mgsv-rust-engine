@@ -453,26 +453,21 @@ enum State {
     },
     /// Weapon raised: strafing locomotion, body follows the camera.
     Aim,
-    /// Rolling sideways while prone (dash + left or right).
+    /// Rolling sideways while prone (dash + left or right), for `rolled`
+    /// seconds so far.
     Roll {
         left: bool,
-        stage: RollStage,
+        rolled: f32,
     },
 }
 
-/// MGSV's prone roll (`snaprdy_c_roll_*`) in half turns: `1` turns Snake
-/// from his belly onto his back, `2` from his back onto his belly, 0.6 m
-/// sideways each. Each ends exactly where the other starts (the poses
-/// match to millimetres), so a held roll chains them; `_lp` matches
-/// neither (it is not part of this roll). A roll is always a full turn,
-/// ending on his belly.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum RollStage {
-    /// `1`: onto his back.
-    Over,
-    /// `2`: back onto his belly.
-    Back,
-}
+/// MGSV's prone roll, `snaprdy_c_roll_l_lp` / `r_lp`: a full turn in 36
+/// frames (1.2 m, belly down at frames 26 - 36), rolled on while held. The
+/// half-turn clips `l1` / `l2` (belly to back and back, 0.6 m in 30 frames
+/// each) chain seamlessly but roll at 0.6 m/s against the loop's 1 m/s,
+/// well below MGSV's rolling speed. A roll is at least nearly a full turn
+/// and is left belly down.
+const ROLL_BELLY: std::ops::RangeInclusive<f32> = 26.0..=36.0;
 
 fn roll_clip(left: bool, part: &str) -> String {
     format!("snaprdy_c_roll_{}{part}", if left { "l" } else { "r" })
@@ -902,39 +897,30 @@ impl Controller {
             .filter(|rel| (45f32.to_radians()..135f32.to_radians()).contains(&rel.abs()))
             .map(|rel| rel > 0.0);
         if let Some(left) = roll {
-            if matches!(self.state, State::Idle | State::Start | State::Loop | State::Stop { .. })
-                && self.play(clips, &roll_clip(left, "1"), false, 0.15)
+            // From lying still, crawling or aiming prone (the gun stays in
+            // his hands and the aim comes back afterwards).
+            if matches!(self.state, State::Idle | State::Start | State::Loop | State::Stop { .. } | State::Aim)
+                && self.play_matched(rig, clips, &roll_clip(left, "_lp"), true, 0.15, true)
             {
-                self.state = State::Roll { left, stage: RollStage::Over };
+                self.state = State::Roll { left, rolled: 0.0 };
                 self.gait = Gait::Walk;
             }
         }
 
         match self.state {
-            State::Roll { left, stage } => {
+            State::Roll { left, rolled } => {
+                let rolled = rolled + dt;
+                self.state = State::Roll { left, rolled };
                 let held = roll == Some(left);
-                let done = self.player.finished() || self.player.progress() > 0.95;
-                if done {
-                    match stage {
-                        // Always on over onto his belly.
-                        RollStage::Over => {
-                            if self.play(clips, &roll_clip(left, "2"), false, 0.0) {
-                                self.state = State::Roll { left, stage: RollStage::Back };
-                            } else {
-                                self.enter_idle(clips);
-                            }
-                        }
-                        // On his belly: roll on while held.
-                        RollStage::Back if held && self.play(clips, &roll_clip(left, "1"), false, 0.0) => {
-                            self.state = State::Roll { left, stage: RollStage::Over };
-                        }
-                        RollStage::Back => {
-                            self.foot = Foot::L;
-                            self.enter_idle(clips);
-                            if moving {
-                                self.begin_moving(clips, gait, want_yaw);
-                            }
-                        }
+                let turn = clips.get(&roll_clip(left, "_lp")).map_or(1.2, |c| c.frame_count as f32 / crate::FPS);
+                let frame = self.player.progress() * turn * crate::FPS;
+                if !held && rolled >= turn * 0.8 && ROLL_BELLY.contains(&frame) {
+                    // Belly down: lie still, crawl on, or (aim held) the
+                    // prone aim takes over next tick.
+                    self.foot = Foot::L;
+                    self.enter_idle(clips);
+                    if moving && !input.aim {
+                        self.begin_moving(clips, gait, want_yaw);
                     }
                 }
             }

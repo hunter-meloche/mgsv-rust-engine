@@ -624,6 +624,7 @@ constexpr uint32_t kIdAttackBlockVtable = 208719; // VTABLE_AttackBlockHandler (
 constexpr uint32_t kIdModelDemand = 75782;        // BSModelDB::Demand (AE id)
 constexpr uint32_t kIdStringPoolGetEntry = 69161;  // BSStringPool::GetEntry<char> (AE id)
 constexpr uint32_t kIdPlayerControls = 400864;     // PlayerControls singleton (AE id; checked before use)
+constexpr uint32_t kIdLookupRefByHandle = 12332;  // LookupReferenceByHandle (AE id; diagnostics, checked before use)
 constexpr size_t kModelPath = 0x48;                // BGSProjectile TESModel (+0x40) model path (BSFixedString)
 constexpr const char* kBulletModel = "snake\\bullet.nif";  // empty model written by mgsv skyrim-export
 constexpr uintptr_t kLookupFormByID = 0x001E5860;
@@ -678,6 +679,7 @@ struct ProjectileData {
 };
 constexpr uint16_t kProjCanPickUp = 1 << 6, kProjSupersonic = 1 << 7, kProjNoAimCorrection = 1 << 10;
 constexpr uint16_t kProjTypeArrow = 1 << 6;
+constexpr float kArrowSpeedScale = 0.148f;  // launched speed / record speed (measured)
 
 using LaunchFn = uint32_t* (*)(uint32_t* handle, LaunchData* data);
 using LookupFn = void* (*)(uint32_t formId);
@@ -705,6 +707,20 @@ struct PendingShot {
 };
 
 SKSETaskInterface* g_tasks = nullptr;
+
+// Diagnostics (control file trackshot=1): one bullet followed through its
+// flight, logging how far along the aim ray it got and how far below it.
+using LookupRefFn = bool (*)(const uint32_t& handle, void*& out);
+LookupRefFn g_lookupRef = nullptr;
+std::atomic<int> g_trackShot{0};
+struct TrackedShot {
+    uint32_t handle = 0;
+    float origin[3] = {}, dir[3] = {};
+    std::chrono::steady_clock::time_point start;
+    float along = 0, drop = 0, t = 0;
+    int samples = 0;
+    std::atomic<bool> active{false};
+} g_tracked;
 std::mutex g_shotMutex;
 std::vector<PendingShot> g_pendingShots;
 std::atomic<int> g_shotsFired{0};
@@ -735,7 +751,8 @@ bool LoadAddressLibrary() {
     };
     uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
     uintptr_t launch = read(kIdProjectileLaunch), vt = read(kIdLaunchDataVtable), cam = read(kIdPlayerCamera), ab = read(kIdAttackBlockVtable),
-              demand = read(kIdModelDemand), entry = read(kIdStringPoolGetEntry), controls = read(kIdPlayerControls);
+              demand = read(kIdModelDemand), entry = read(kIdStringPoolGetEntry), controls = read(kIdPlayerControls),
+              lookupRef = read(kIdLookupRefByHandle);
     fclose(f);
     if (!launch || !vt) {
         Log("firing: ids missing from the database");
@@ -748,6 +765,7 @@ bool LoadAddressLibrary() {
     g_fire.modelDemand = demand ? reinterpret_cast<void*>(base + demand) : nullptr;
     g_fire.getEntry = entry ? reinterpret_cast<void*>(base + entry) : nullptr;
     g_fire.playerControls = controls ? reinterpret_cast<void**>(base + controls) : nullptr;
+    g_lookupRef = lookupRef ? reinterpret_cast<LookupRefFn>(base + lookupRef) : nullptr;
     Log("firing: %u ids; Projectile::Launch +%llX, LaunchData vtable +%llX, PlayerCamera +%llX", count,
         (unsigned long long)launch, (unsigned long long)vt, (unsigned long long)cam);
     return true;
@@ -806,6 +824,13 @@ void SetBulletModel() {
     Log("firing: bullet model %s", pooled);
 }
 
+// A float game / INI setting found by name (see FindFloatSetting).
+struct FloatSetting {
+    float* value = nullptr;
+    float original = 0;
+};
+bool SafeFindFloatSetting(const char* name, FloatSetting& out);
+
 bool SetUpFiring() {
     auto lookup = reinterpret_cast<LookupFn>(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)) + kLookupFormByID);
     void* bow = lookup(kHuntingBow);
@@ -852,6 +877,13 @@ bool SetUpFiring() {
     At<float>(g_fire.ammo, kAmmoDamage) = 0.0f;
     At<void*>(g_fire.ammo, kAmmoProjectile) = g_fire.projectile;
     SetBulletModel();
+    for (const char* name : {"fArrowMaxDistance", "fProjectileMaxDistance", "fArrowOptimalDistance", "fArrowSpeedMult",
+                             "fArrowGravityBase", "fArrowGravityMin", "fArrowGravityMult", "fArrowWeakGravity",
+                             "fArrowMinPower", "fArrowMinVelocity", "fArrowMinBowVelocity", "fProjectileDefaultTracerRange"}) {
+        FloatSetting f;
+        if (SafeFindFloatSetting(name, f)) Log("firing: game setting %s = %.3f", name, *f.value);
+        else Log("firing: game setting %s not found", name);
+    }
     Log("firing: bullet records ready (damage %d, no pick-up)", damage);
     return true;
 }
@@ -936,7 +968,12 @@ bool LaunchOne(void* player, const PendingShot& shot) {
         depth = (std::max)(depth, 0.0f) + 30.0f;
 
         auto& bullet = At<ProjectileData>(g_fire.projectile, kProjData);
-        bullet.speed = shot.speed * 70.0f;     // m/s -> units/s
+        // m/s -> units/s. Skyrim launches arrow projectiles at a fraction of
+        // the record's speed (measured with trackshot=1: 0.148 of it, at
+        // 450 and at 200 m/s), so the record asks for that much more: at the
+        // record's speed the MRS-4's rounds flew at 67 m/s and fell 4 m in
+        // 45 m.
+        bullet.speed = shot.speed * 70.0f / kArrowSpeedScale;
         bullet.gravity = shot.gravity / 9.81f;  // m/s^2 -> multiple of g
         float scaled = g_fire.damage * shot.lethal / 600.0f;
         At<uint16_t>(g_fire.weapon, kWeapDamage) = static_cast<uint16_t>(std::clamp(scaled + 0.5f, 0.0f, 65535.0f));
@@ -959,6 +996,15 @@ bool LaunchOne(void* player, const PendingShot& shot) {
         d.autoAim = false;
         uint32_t handle = 0;
         g_fire.launch(&handle, &d);
+        if (g_trackShot && g_lookupRef && handle && !g_tracked.active) {
+            g_tracked.handle = handle;
+            memcpy(g_tracked.origin, d.origin, sizeof d.origin);
+            memcpy(g_tracked.dir, dir, sizeof dir);
+            g_tracked.start = std::chrono::steady_clock::now();
+            g_tracked.along = g_tracked.drop = g_tracked.t = 0;
+            g_tracked.samples = 0;
+            g_tracked.active = true;
+        }
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
@@ -989,6 +1035,45 @@ public:
                     s.gravity, ok ? "ok" : "unavailable", ok ? dir[0] : 0, ok ? dir[1] : 0, ok ? dir[2] : 0);
             }
         }
+    }
+    void Dispose() override { delete this; }
+};
+
+// The tracked bullet's position, or false once it is gone. The reference
+// comes back with a reference taken (NiPointer), given back at once; it is
+// only used if its base object is the bullet projectile record.
+bool TrackedPosition(float* pos, bool* isBullet) {
+    __try {
+        void* ref = nullptr;
+        if (!g_lookupRef(g_tracked.handle, ref) || !ref) return false;
+        *isBullet = Readable(ref, 0x60) && At<void*>(ref, 0x40) == g_fire.projectile;
+        if (*isBullet) memcpy(pos, &At<float>(ref, kRefPosition), 3 * sizeof(float));
+        InterlockedDecrement(reinterpret_cast<volatile LONG*>(reinterpret_cast<char*>(ref) + 8));
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+class TrackTask : public TaskDelegate {
+public:
+    void Run() override {
+        if (!g_tracked.active) return;
+        float t = std::chrono::duration<float>(std::chrono::steady_clock::now() - g_tracked.start).count();
+        float pos[3];
+        bool isBullet = false;
+        if (!TrackedPosition(pos, &isBullet) || !isBullet || t > 10.0f) {
+            Log("track: bullet %s after %.3f s: last seen %.1f m along the aim, %.2f m below it (%d samples)",
+                isBullet || t > 10.0f ? "still flying" : "gone", t, g_tracked.along, g_tracked.drop, g_tracked.samples);
+            g_tracked.active = false;
+            return;
+        }
+        float rel[3] = {pos[0] - g_tracked.origin[0], pos[1] - g_tracked.origin[1], pos[2] - g_tracked.origin[2]};
+        float along = rel[0] * g_tracked.dir[0] + rel[1] * g_tracked.dir[1] + rel[2] * g_tracked.dir[2];
+        float lineZ = g_tracked.origin[2] + g_tracked.dir[2] * along;
+        g_tracked.along = along / 70.0f;
+        g_tracked.drop = (lineZ - pos[2]) / 70.0f;
+        if (g_tracked.samples++ % 3 == 0) Log("track: %.3f s: %.1f m along, %.2f m below the aim", t, g_tracked.along, g_tracked.drop);
     }
     void Dispose() override { delete this; }
 };
@@ -1467,6 +1552,7 @@ void PollControl(int curStance) {
         else if (k == "speed") g_control.speed = std::atoi(v.c_str());
         else if (k == "drive") g_control.drive = std::atoi(v.c_str());
         else if (k == "trace") g_control.trace = std::atoi(v.c_str());
+        else if (k == "trackshot") g_trackShot = std::atoi(v.c_str());
         else if (k == "body") g_control.body = std::atoi(v.c_str());
         else if (k == "reload") g_control.reload = std::atoi(v.c_str());
         else if (k == "dive") g_control.dive = std::atoi(v.c_str());
@@ -1869,10 +1955,6 @@ void RequestSneakSync(int sneak) {
 // so the object is the one in the exe's data whose +0x10 points at the
 // name string.
 
-struct FloatSetting {
-    float* value = nullptr;
-    float original = 0;
-};
 struct CameraSetting {
     const char* name;      // Skyrim INI setting
     const wchar_t* key;    // snake.ini key
@@ -2270,6 +2352,7 @@ void SnakeThread() {
             }
         }
         SnakeVec3 before = snakePos;
+        if (g_tracked.active && g_tasks) g_tasks->AddTask(new TrackTask());
         if (!g_snake.player_update(g_player, &in, nullptr, static_cast<float>(dt))) {
             Log("snake_player_update failed: %s", g_snake.last_error());
             g_enabled = false;

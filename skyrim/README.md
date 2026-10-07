@@ -22,7 +22,15 @@ controller decides when shots happen (MRS-4: 720 rpm full auto, 30-round
 magazine, reload, recoil); each shot is launched as a real Skyrim projectile
 on the main thread (SKSE task interface), so Skyrim handles hits, damage and
 reactions. Shots fly along the crosshair ray, starting at the depth of
-Snake's right hand, with MGSV's muzzle speed and drop (MRS-4 450 m/s).
+Snake's right hand, with MGSV's muzzle speed and drop (MRS-4 450 m/s and
+18 m/s2: 0.4 m low at 100 m; WU S.Pistol 200 m/s and 20 m/s2). Skyrim
+launches arrow projectiles at 0.148 of their record's speed (measured), so
+the record asks for that much more: before, the rounds flew at arrow speed
+(67 m/s) and fell 4 m in 45 m. Bullets expire at ~1.4 km (the record's
+range). The control file's `trackshot=1` follows the next bullet and logs
+how far along the aim it is and how far below it every few frames
+(`LookupReferenceByHandle`, AE id 12332, used only on a reference whose base
+is the bullet record).
 The bullet is a private in-memory copy of the vanilla Hunting Bow, Iron
 Arrow and arrow projectile records (no pick-up, `BulletDamage` in
 `snake.ini`, default 48: 4x the original 12, since it is a rifle round); the vanilla records are untouched. Its model is

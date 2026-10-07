@@ -265,8 +265,12 @@ body keeps its facing. Crouch gets him up into a crouch and the prone key
 rolling again turns him back over. He aims and shoots on his back with
 the prone aim grid's on-his-back columns (MGSV's prone grid spans +180 to
 -180 degrees; aimed 90 degrees or more off the way his head points its
-poses lie on the back, looking past his feet at 180): his feet turn toward
-where the camera looks, the aim stays in those columns, his lower body lies
+poses lie on the back, looking past his feet at 180, and twist down
+toward his side by 90): his body stays put while the aim pans through
+those columns, and aimed further round toward his head (80 degrees off
+it) he rolls over onto his belly toward that side with MGSV's half roll
+(`snaprdy_c_roll_l2` / `r2`), turning to face the aim meanwhile, and aims
+prone from there, as in MGSV. His lower body lies
 still or scoots, and lowering the gun leaves him on his back (the aim angle
 relaxes toward 180 degrees, not through the belly-down columns). Raising
 and lowering the gun also blends as solved poses now (a partly raised rig

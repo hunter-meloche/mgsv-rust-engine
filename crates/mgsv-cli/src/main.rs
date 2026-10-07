@@ -1726,8 +1726,8 @@ fn clip_trace(vfs: &Vfs, name: &str) -> Result<()> {
         let front = pose.rotations[chest] * fox_anim::Vec3::Z;
         let (dr, _) = rig.root(&clip, f as f32);
         println!(
-            "{f:>4}: front y {:+.2} root yaw {:+.0} | chest {:.2} waist {:.2} head {:.2} speed {speed:.2} m/s {}",
-            front.y,
+            "{f:>4}: front {:+.2} {:+.2} {:+.2} root yaw {:+.0} | chest {:.2} waist {:.2} head {:.2} speed {speed:.2} m/s {}",
+            front.x, front.y, front.z,
             {
                 let z = dr * fox_anim::Vec3::Z;
                 z.x.atan2(z.z).to_degrees()
@@ -1796,6 +1796,10 @@ fn stance_probe(vfs: &Vfs) -> Result<()> {
         ("roll left, let go", 0.5, Input { sprint: true, move_x: -1.0, ..Default::default() }),
         ("on his back", 1.5, Input::default()),
         ("back: aim", 2.5, Input { aim: true, ..Default::default() }),
+        ("back: pan to side", 2.0, Input { aim: true, ..Default::default() }),
+        ("back: pan back", 2.0, Input { aim: true, ..Default::default() }),
+        ("back: pan over", 1.5, Input { aim: true, ..Default::default() }),
+        ("back: pan round", 3.0, Input { aim: true, ..Default::default() }),
         ("back: aim, scoot", 1.5, Input { aim: true, move_y: 1.0, ..Default::default() }),
         ("back: aim, fire", 1.0, Input { aim: true, fire: true, ..Default::default() }),
         ("back: release", 1.0, Input::default()),
@@ -1806,6 +1810,11 @@ fn stance_probe(vfs: &Vfs) -> Result<()> {
         ("crouch: prone", 3.0, tap(Input::default(), false, true)),
         ("roll right, let go", 0.5, Input { sprint: true, move_x: 1.0, ..Default::default() }),
         ("on his back 2", 1.0, Input::default()),
+        ("back: aim ahead", 2.5, Input { aim: true, ..Default::default() }),
+        ("aim on belly", 1.0, Input { aim: true, ..Default::default() }),
+        ("lie still 2", 1.0, Input::default()),
+        ("roll right, let go", 0.5, Input { sprint: true, move_x: 1.0, ..Default::default() }),
+        ("on his back 2b", 1.0, Input::default()),
         ("roll off his back", 1.5, Input { sprint: true, move_x: 1.0, ..Default::default() }),
         ("settle", 2.0, Input::default()),
         ("roll right, let go", 0.5, Input { sprint: true, move_x: 1.0, ..Default::default() }),
@@ -1813,9 +1822,26 @@ fn stance_probe(vfs: &Vfs) -> Result<()> {
         ("back: stand", 2.5, tap(Input::default(), false, true)),
         ("stop", 1.0, Input::default()),
     ];
+    // The camera while aiming on his back (degrees off his yaw at the
+    // step's start, from and to): looking past his feet, panning round.
+    let pans: [(&str, f32, f32); 6] = [
+        ("back: aim", 180.0, 180.0),
+        ("back: pan to side", 180.0, 95.0),
+        ("back: pan back", 95.0, 200.0),
+        ("back: pan over", 200.0, 300.0),
+        ("back: pan round", 300.0, 400.0),
+        ("back: aim ahead", 0.0, 0.0),
+    ];
     let mut prev: Option<fox_anim::Pose> = None;
+    // (The base direction is taken at "back: aim" / "back: aim ahead"; the
+    // step after the last pan keeps the camera where it was.)
+    let (mut base, mut last_cam) = (0.0f32, None);
     for (label, secs, input) in steps {
         let n = (secs / dt).round() as usize;
+        let pan = pans.iter().find(|p| p.0 == label).map(|&(_, a, b)| (a, b));
+        if matches!(label, "back: aim" | "back: aim ahead") {
+            base = ctl.yaw;
+        }
         let (mut jump, mut min_speed, mut max_speed) = (0.0f32, f32::MAX, 0.0f32);
         let mut jump_at = String::new();
         let mut clips = Vec::new();
@@ -1825,6 +1851,12 @@ fn stance_probe(vfs: &Vfs) -> Result<()> {
             let mut i = input;
             if k > 0 {
                 (i.crouch, i.prone, i.switch_to, i.dive) = (false, false, None, false);
+            }
+            if let Some((a, b)) = pan {
+                i.camera_yaw = base + (a + (b - a) * k as f32 / n as f32).to_radians();
+                last_cam = Some(i.camera_yaw);
+            } else if let Some(c) = last_cam.filter(|_| label == "aim on belly") {
+                i.camera_yaw = c;
             }
             let before = ctl.position;
             ctl.update(&assets.rig, &assets.clips, &world, dt, &i);
@@ -1855,8 +1887,9 @@ fn stance_probe(vfs: &Vfs) -> Result<()> {
             }
         }
         println!(
-            "{label:<20} {:?} aiming {} shots {shots}: speed {min_speed:.2}..{max_speed:.2} m/s, joints up to {jump:.1} deg/tick ({jump_at}); {}",
+            "{label:<20} {:?} yaw {:+.0} aiming {} shots {shots}: speed {min_speed:.2}..{max_speed:.2} m/s, joints up to {jump:.1} deg/tick ({jump_at}); {}",
             ctl.stance,
+            ctl.yaw.to_degrees(),
             ctl.aiming(),
             clips.join(" > ")
         );

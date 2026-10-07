@@ -549,6 +549,9 @@ pub struct Controller {
     /// Lying on his back (stance Prone): still or scooting (`State::OnBack`)
     /// or aiming (`State::Aim`).
     on_back: bool,
+    /// Rolling over from his back onto his belly while aiming (a stance
+    /// change to prone): the body turns toward the aim meanwhile.
+    flipping: bool,
 }
 
 /// Aiming on his back, the prone aim grid's on-his-back columns: aimed 90
@@ -556,6 +559,10 @@ pub struct Controller {
 /// +180 to -180 degrees; past 90 degrees its poses lie on the back, looking
 /// along the body past his feet at 180).
 const BACK_AIM_MIN: f32 = 93.0;
+
+/// Aiming on his back, aimed this far round toward his head (degrees off
+/// the way it points) or further: he rolls over onto his belly.
+const BACK_FLIP: f32 = 80.0;
 
 /// Time to blend the aiming upper body from one stance's aim to the next.
 const AIM_STANCE_FADE: f32 = 0.3;
@@ -596,6 +603,7 @@ impl Controller {
             aim_slot_fade: None,
             change_ends_at: None,
             on_back: false,
+            flipping: false,
         })
     }
 
@@ -920,14 +928,16 @@ impl Controller {
         let target_w = if self.state == State::Aim { 1.0 } else { 0.0 };
         // On his back the arms travel far between aiming and lying still:
         // a little slower.
-        let aim_rate = if self.on_back { 4.0 } else { 6.0 };
+        let aim_rate = if self.on_back || self.flipping { 4.0 } else { 6.0 };
         self.aim_weight += (target_w - self.aim_weight).clamp(-aim_rate * dt, aim_rate * dt);
         // A reload raises the weapon even when not aiming (to the aim grid's
         // centre: the aim angles relax to straight ahead).
         let reloading = self.weapon().is_some_and(Armed::reloading);
         let ready = if reloading { 1.0 } else { 0.0 };
         self.ready_weight += (ready - self.ready_weight).clamp(-5.0 * dt, 5.0 * dt);
-        if self.state != State::Aim {
+        // (Not while rolling over onto his belly: the aim fades out where it
+        // was, rather than swinging through the grid's in-between poses.)
+        if self.state != State::Aim && !self.flipping {
             let relax = (-6.0 * dt).exp();
             // On his back toward aiming past his feet (180 degrees): toward
             // straight ahead it would pass the grid's belly-down columns.
@@ -985,15 +995,26 @@ impl Controller {
             }
             State::OnBack => self.lie_on_back(rig, clips, moving, want_yaw),
             State::Aim if self.on_back => {
-                // His feet turn toward where the camera looks; the aim grid's
-                // on-his-back columns take the rest.
-                let diff = wrap_angle(input.camera_yaw + std::f32::consts::PI - self.yaw);
-                self.yaw = wrap_angle(self.yaw + diff.clamp(-2.0 * dt, 2.0 * dt));
+                // His body stays put and the aim sweeps the grid's
+                // on-his-back columns: past his feet (180 degrees), then
+                // twisting down toward his side; aimed further round he
+                // rolls over onto his belly toward that side (MGSV's half
+                // roll from back to belly), and aims from there.
                 let aim = wrap_angle(input.camera_yaw - self.yaw);
                 let min = BACK_AIM_MIN.to_radians();
                 self.aim_yaw = if aim.abs() < min { min.copysign(aim) } else { aim };
                 self.aim_pitch = input.aim_pitch;
-                self.lie_on_back(rig, clips, moving, want_yaw);
+                let left = aim > 0.0;
+                if aim.abs() < BACK_FLIP.to_radians()
+                    && self.play_matched(rig, clips, &roll_clip(left, "2"), false, 0.2, true)
+                {
+                    self.on_back = false;
+                    self.flipping = true;
+                    self.state = State::Changing { to: Stance::Prone };
+                    self.gait = Gait::Idle;
+                } else {
+                    self.lie_on_back(rig, clips, moving, want_yaw);
+                }
             }
             State::Aim => {
                 // Body turns toward the camera; the rest is taken by the aim grid.
@@ -1037,9 +1058,16 @@ impl Controller {
                 self.play(clips, &name, true, 0.2);
             }
             State::Changing { to } => {
+                if self.flipping && input.aim {
+                    // Rolling over toward the aim: he comes round to face it,
+                    // as the prone aim turns him.
+                    let diff = wrap_angle(input.camera_yaw - self.yaw);
+                    self.yaw = wrap_angle(self.yaw + diff.clamp(-2.0 * dt, 2.0 * dt));
+                }
                 let landed = self.change_ends_at.is_some_and(|p| self.player.progress() >= p);
                 if self.player.finished() || self.player.progress() > 0.95 || landed {
                     self.change_ends_at = None;
+                    self.flipping = false;
                     self.stance = to;
                     self.foot = Foot::L;
                     // Still moving (a moving transition, or set off during

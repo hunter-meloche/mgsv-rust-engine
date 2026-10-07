@@ -1187,7 +1187,7 @@ void PlayShot(int weapon) {
 // stone (ROCKA) in interiors, soil (SOILA) outdoors. Volume: snake.ini
 // FoleyVolume (percent, default 100) for all of it, FootstepVolume (percent
 // of that, default 100) for the feet and the hands on the ground, and
-// RattleVolume (default 25) for the suit and weapon rattle, which played far
+// RattleVolume (default 10) for the suit and weapon rattle, which played far
 // louder than the rest of the game.
 
 struct FoleyVoice {
@@ -1198,7 +1198,7 @@ std::vector<FoleyVoice> g_foleyVoices;
 size_t g_foleyNext = 0;
 float g_foleyLevel = 1.0f;     // voice volume for foley (FoleyVolume over the master)
 float g_footstepLevel = 1.0f;  // FootstepVolume
-float g_rattleLevel = 0.25f;   // RattleVolume
+float g_rattleLevel = 0.10f;   // RattleVolume
 
 void SetUpFoley() {
     if (!g_audio || !g_snake.player_foley) return;
@@ -1213,7 +1213,7 @@ void SetUpFoley() {
     float master = GetPrivateProfileIntW(L"Snake", L"ShotVolume", 70, ini.c_str()) / 100.0f;
     float volume = GetPrivateProfileIntW(L"Snake", L"FoleyVolume", 100, ini.c_str()) / 100.0f;
     g_footstepLevel = GetPrivateProfileIntW(L"Snake", L"FootstepVolume", 100, ini.c_str()) / 100.0f;
-    g_rattleLevel = GetPrivateProfileIntW(L"Snake", L"RattleVolume", 25, ini.c_str()) / 100.0f;
+    g_rattleLevel = GetPrivateProfileIntW(L"Snake", L"RattleVolume", 10, ini.c_str()) / 100.0f;
     // The mastering voice carries ShotVolume; foley has its own level.
     g_foleyLevel = master > 0.01f ? volume / master : volume;
     for (int k = 0; k < 24; ++k) {

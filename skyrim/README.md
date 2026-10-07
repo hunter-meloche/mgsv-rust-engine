@@ -243,6 +243,13 @@ afterwards: sneaking, the crawl Sneak bonus, a low camera. The dive ends where i
 Skyrim's jump is off, so Space only dives. Standing still upright, Space
 still jumps. The control file's `dive=1` dives once.
 
+Crawling while aiming prone, the left hand leaves the gun and pulls him
+along the ground, as in MGSV's aimed crawl clips (`snapasr_c_fre0_wk_lp_*`),
+while the right hand keeps the gun on the aim: the aim (and the shots'
+kick) leave the left arm (the rig's `LArm` mask) to the crawl clip, fading
+over a quarter second as he sets off and stops (not during a reload, which
+needs the hand for the magazine).
+
 Rolling: prone (lying still, crawling or aiming), holding the dash key
 (Left Alt) and moving to Snake's side (45 - 135 degrees off his facing)
 rolls him that way, as in MGSV, with `snaprdy_c_roll_l_lp` / `r_lp`: a full

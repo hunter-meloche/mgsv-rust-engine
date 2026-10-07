@@ -552,6 +552,10 @@ pub struct Controller {
     /// Rolling over from his back onto his belly while aiming (a stance
     /// change to prone): the body turns toward the aim meanwhile.
     flipping: bool,
+    /// Crawling while aiming prone: how far the crawl clip has his left arm
+    /// (0 - 1). MGSV's aimed crawl pulls him along with the left hand on the
+    /// ground while the right drags the gun; the aim keeps the right arm.
+    crawl_hand: f32,
 }
 
 /// Aiming on his back, the prone aim grid's on-his-back columns: aimed 90
@@ -604,6 +608,7 @@ impl Controller {
             change_ends_at: None,
             on_back: false,
             flipping: false,
+            crawl_hand: 0.0,
         })
     }
 
@@ -933,6 +938,15 @@ impl Controller {
         // A reload raises the weapon even when not aiming (to the aim grid's
         // centre: the aim angles relax to straight ahead).
         let reloading = self.weapon().is_some_and(Armed::reloading);
+        // Crawling aimed: the left hand leaves the gun to crawl (not during
+        // a reload, which needs it for the magazine).
+        let crawling = self.state == State::Aim
+            && self.stance == Stance::Prone
+            && !self.on_back
+            && self.gait == Gait::Walk
+            && !reloading;
+        let crawl_target = if crawling { 1.0 } else { 0.0 };
+        self.crawl_hand += (crawl_target - self.crawl_hand).clamp(-4.0 * dt, 4.0 * dt);
         let ready = if reloading { 1.0 } else { 0.0 };
         self.ready_weight += (ready - self.ready_weight).clamp(-5.0 * dt, 5.0 * dt);
         // (Not while rolling over onto his belly: the aim fades out where it
@@ -1551,6 +1565,14 @@ impl Controller {
     /// holster, shot, reload.
     fn layered(&self, rig: &HumanRig, mut frame: fox_anim::RigFrame, raised: f32) -> Result<fox_anim::RigFrame, String> {
         if let (Some(w), Some(upper)) = (self.weapon(), rig.mask("Upper")) {
+            // Crawling aimed: the aim and the shots leave the left arm to the
+            // crawl clip.
+            let aim_mask: Vec<f32> = match rig.mask("LArm") {
+                Some(larm) if self.crawl_hand > 0.0 => {
+                    upper.iter().zip(larm).map(|(u, l)| u * (1.0 - l * self.crawl_hand)).collect()
+                }
+                _ => upper.to_vec(),
+            };
             let slot = stance_slot(self.stance);
             // The stance's aim pose, blended from the previous stance's just
             // after a stance change.
@@ -1572,7 +1594,7 @@ impl Controller {
             };
             if raised > 0.0 {
                 if let Some(aim) = aim_blended(self.aim_pitch + self.recoil * 0.5)? {
-                    frame = rig.layer(&frame, &aim, upper, raised);
+                    frame = rig.layer(&frame, &aim, &aim_mask, raised);
                 }
             }
             // Drawing or holstering (and a cut-short one fading out). MGSV's
@@ -1604,7 +1626,7 @@ impl Controller {
             if let (Some(t), Some(fire)) = (w.firing, &w.fire_clip) {
                 let reference = rig.sample_frame(fire, 0.0)?;
                 let now = rig.sample_frame(fire, t * crate::FPS)?;
-                frame = rig.add_delta(&frame, &reference, &now, upper, self.aim_weight);
+                frame = rig.add_delta(&frame, &reference, &now, &aim_mask, self.aim_weight);
             }
             // The reload, applied as its change from its first frame (every
             // reload clip starts and ends in its stance's aim pose): it

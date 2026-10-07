@@ -1725,6 +1725,9 @@ fn clip_trace(vfs: &Vfs, name: &str) -> Result<()> {
         // Chest front (+Z of the chest bone): down when on the belly, up on the back.
         let front = pose.rotations[chest] * fox_anim::Vec3::Z;
         let (dr, _) = rig.root(&clip, f as f32);
+        let (lh, rh) = (find("SKL_013_LHAND"), find("SKL_023_RHAND"));
+        let (l, r) = (pose.positions[lh], pose.positions[rh]);
+        print!("hands {:.2} m, L ({:+.2} {:+.2} {:+.2}) R ({:+.2} {:+.2} {:+.2}) | ", (l - r).length(), l.x, l.y, l.z, r.x, r.y, r.z);
         println!(
             "{f:>4}: front {:+.2} {:+.2} {:+.2} root yaw {:+.0} | chest {:.2} waist {:.2} head {:.2} speed {speed:.2} m/s {}",
             front.x, front.y, front.z,

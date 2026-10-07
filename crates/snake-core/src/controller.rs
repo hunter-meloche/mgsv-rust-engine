@@ -86,6 +86,13 @@ pub struct Input {
 /// `snapnon_c_idl_l`.
 pub const DIVE: &str = "snapdiv_s_rn_f_int";
 
+/// The dive's motion event where the landing slide ends (frame 50 of 133;
+/// name not resolved, found by the body: the chest is down at frame 32 and
+/// the slide stops here, after which the clip scoots forward and settles
+/// into the prone idle). Snake is prone from here: the dive ends, so he can
+/// aim, crawl or get up at once instead of after the whole clip.
+const EVENT_DIVE_LANDED: u32 = 0xafce_d2f7;
+
 /// A shot fired this tick, in world space.
 #[derive(Clone, Copy, Debug)]
 pub struct Shot {
@@ -492,6 +499,9 @@ pub struct Controller {
     /// After a stance change while aiming: the previous stance's aim grid
     /// slot and its remaining weight (the upper body blends across).
     aim_slot_fade: Option<(usize, f32)>,
+    /// The current stance change ends at this progress of its clip (the
+    /// dive's landing) instead of at its end.
+    change_ends_at: Option<f32>,
 }
 
 /// Time to blend the aiming upper body from one stance's aim to the next.
@@ -531,6 +541,7 @@ impl Controller {
             foley: Vec::new(),
             pending_switch: None,
             aim_slot_fade: None,
+            change_ends_at: None,
         })
     }
 
@@ -730,6 +741,10 @@ impl Controller {
         {
             self.state = State::Changing { to: Stance::Prone };
             self.gait = Gait::Idle;
+            self.change_ends_at = clips.get(DIVE).and_then(|clip| {
+                let frame = clip.events.iter().find(|e| e.name == EVENT_DIVE_LANDED)?.frames.first().copied()?;
+                Some(frame as f32 / clip.frame_count.max(1) as f32)
+            });
         }
 
         // Dashing while moving crouched rises straight into the dash (MGSV:
@@ -885,7 +900,9 @@ impl Controller {
                 self.play(clips, &name, true, 0.2);
             }
             State::Changing { to } => {
-                if self.player.finished() || self.player.progress() > 0.95 {
+                let landed = self.change_ends_at.is_some_and(|p| self.player.progress() >= p);
+                if self.player.finished() || self.player.progress() > 0.95 || landed {
+                    self.change_ends_at = None;
                     self.stance = to;
                     self.foot = Foot::L;
                     // Still moving (a moving transition, or set off during

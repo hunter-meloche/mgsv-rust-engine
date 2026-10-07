@@ -323,6 +323,9 @@ enum Cmd {
     /// through the player controller: per stretch, the speed, clip and the
     /// largest per-tick joint rotation.
     StanceProbe,
+    /// Development probe: a clip's body over time (every 4 frames): chest
+    /// and waist height, root speed, and the motion events at each frame.
+    ClipTrace { clip: String },
     /// Development probe: close-ups of Snake's hands on each weapon at its
     /// standing aim grid's centre (extracted/hands_<weapon>_<view>.png).
     HandView,
@@ -1039,6 +1042,7 @@ fn run() -> Result<()> {
         Cmd::WeaponProbe { clip } => weapon_probe(&vfs, &clip),
         Cmd::DrawProbe => draw_probe(&vfs),
         Cmd::StanceProbe => stance_probe(&vfs),
+        Cmd::ClipTrace { clip } => clip_trace(&vfs, &clip),
         Cmd::HandView => hand_view(&vfs),
         Cmd::FingerProbe { clips } => finger_probe(&vfs, &clips),
         Cmd::Play { frames, shot, auto, draw_test, shot_every, view_yaw } => {
@@ -1681,6 +1685,35 @@ fn hand_view(vfs: &Vfs) -> Result<()> {
     Ok(())
 }
 
+fn clip_trace(vfs: &Vfs, name: &str) -> Result<()> {
+    let (skel, rig) = snake_rig(vfs)?;
+    let clips = player_clip_library(vfs)?;
+    let clip = clips.get(name).with_context(|| format!("no clip {name}"))?;
+    let find = |n: &str| skel.find(fox_hash::str_code32(n.as_bytes())).unwrap();
+    let (chest, waist, head) = (find("SKL_002_CHEST"), find("SKL_000_WAIST"), find("SKL_004_HEAD"));
+    let mut f = 0u32;
+    while f <= clip.frame_count {
+        let pose = rig.pose(&skel, &clip, f as f32).map_err(anyhow::Error::msg)?;
+        let (_, d) = rig.root_motion(&clip, f as f32, (f as f32 + 1.0).min(clip.frame_count as f32));
+        let speed = d.length() * snake_core::FPS;
+        let ev: Vec<String> = clip
+            .events
+            .iter()
+            .filter(|e| e.frames.iter().any(|&x| (x as u32) >= f && (x as u32) < f + 4))
+            .map(|e| format!("{:08x}", e.name))
+            .collect();
+        println!(
+            "{f:>4}: chest {:.2} waist {:.2} head {:.2} speed {speed:.2} m/s {}",
+            pose.positions[chest].y,
+            pose.positions[waist].y,
+            pose.positions[head].y,
+            ev.join(" ")
+        );
+        f += 4;
+    }
+    Ok(())
+}
+
 fn stance_probe(vfs: &Vfs) -> Result<()> {
     use snake_core::Input;
     let assets = snake_runtime::SnakeAssets::load(vfs)?;
@@ -1711,6 +1744,15 @@ fn stance_probe(vfs: &Vfs) -> Result<()> {
         ("crouch-run: stand", 1.5, tap(run, true, false)),
         ("walk: prone", 4.5, tap(walk, false, true)),
         ("crawl: stand", 3.0, tap(run, false, true)),
+        ("run", 1.0, run),
+        ("dive, aim held", 2.5, Input { dive: true, aim: true, ..run }),
+        ("aim release, stand", 2.5, tap(Input::default(), false, true)),
+        ("run", 1.0, run),
+        ("dive", 0.05, Input { dive: true, ..run }),
+        ("let go", 2.5, Input::default()),
+        ("crouch", 2.5, tap(Input::default(), true, false)),
+        ("run", 1.5, run),
+        ("dive, keep running", 2.5, Input { dive: true, ..run }),
         ("stop", 1.0, Input::default()),
     ];
     let mut prev: Option<fox_anim::Pose> = None;
@@ -1719,10 +1761,11 @@ fn stance_probe(vfs: &Vfs) -> Result<()> {
         let (mut jump, mut min_speed, mut max_speed) = (0.0f32, f32::MAX, 0.0f32);
         let mut jump_at = String::new();
         let mut clips = Vec::new();
+        let mut last_clip = String::new();
         for k in 0..n {
             let mut i = input;
             if k > 0 {
-                (i.crouch, i.prone, i.switch_to) = (false, false, None);
+                (i.crouch, i.prone, i.switch_to, i.dive) = (false, false, None, false);
             }
             let before = ctl.position;
             ctl.update(&assets.rig, &assets.clips, &world, dt, &i);
@@ -1745,8 +1788,9 @@ fn stance_probe(vfs: &Vfs) -> Result<()> {
             }
             prev = Some(pose);
             let clip = ctl.clip_name().to_string();
-            if clips.last() != Some(&clip) {
-                clips.push(clip);
+            if last_clip != clip {
+                clips.push(format!("{clip}@{:.2}s", k as f32 * dt));
+                last_clip = clip;
             }
         }
         println!(

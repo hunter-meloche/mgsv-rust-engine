@@ -93,8 +93,12 @@ fn compose(a: (Quat, Vec3), b: (Quat, Vec3)) -> (Quat, Vec3) {
 #[derive(Clone)]
 pub struct MotionPlayer {
     current: Playing,
-    /// Previous clip and the fade progress (elapsed, duration) in seconds.
-    previous: Option<(Playing, f32, f32)>,
+    /// The current clip's fade in (elapsed, duration; seconds), if fading.
+    fade: Option<(f32, f32)>,
+    /// Clips still showing beneath it, oldest first, each with its own fade
+    /// in: a clip started while another was still fading in fades from the
+    /// whole blend, not just from the clip before it (which snapped).
+    previous: Vec<(Playing, Option<(f32, f32)>)>,
     /// Playback speed multiplier.
     pub speed: f32,
     /// Motion events of the current clip passed since the last
@@ -111,7 +115,8 @@ impl MotionPlayer {
                 time: 0.0,
                 looping,
             },
-            previous: None,
+            fade: None,
+            previous: Vec::new(),
             speed: 1.0,
             crossed: Vec::new(),
         }
@@ -137,7 +142,18 @@ impl MotionPlayer {
             looping,
         };
         let prev = std::mem::replace(&mut self.current, next);
-        self.previous = (fade > 0.0).then_some((prev, 0.0, fade));
+        if fade > 0.0 {
+            let prev_fade = self.fade.take();
+            self.previous.push((prev, prev_fade));
+            // A few layers at most: the oldest has (nearly) faded out.
+            if self.previous.len() > 3 {
+                self.previous.remove(0);
+            }
+            self.fade = Some((0.0, fade));
+        } else {
+            self.previous.clear();
+            self.fade = None;
+        }
     }
 
     /// Like [`MotionPlayer::play`], starting `time` (frames) into the clip.
@@ -165,9 +181,9 @@ impl MotionPlayer {
         !self.current.looping && self.current.time >= self.current.length()
     }
 
-    fn fade_weight(&self) -> f32 {
-        match &self.previous {
-            Some((_, elapsed, dur)) => (elapsed / dur).clamp(0.0, 1.0),
+    fn weight(fade: Option<(f32, f32)>) -> f32 {
+        match fade {
+            Some((elapsed, dur)) => (elapsed / dur).clamp(0.0, 1.0),
             None => 1.0,
         }
     }
@@ -176,28 +192,56 @@ impl MotionPlayer {
     pub fn advance(&mut self, rig: &HumanRig, dt: f32) -> (Quat, Vec3) {
         let frames = dt * FPS * self.speed;
         let cur = self.current.advance(rig, frames, &mut self.crossed);
-        let Some((prev, elapsed, dur)) = &mut self.previous else {
+        if self.previous.is_empty() {
+            self.fade = None;
             return cur;
-        };
-        let old = prev.advance(rig, frames, &mut Vec::new());
-        *elapsed += dt;
-        let w = (*elapsed / *dur).clamp(0.0, 1.0);
-        let done = *elapsed >= *dur;
-        if done {
-            self.previous = None;
         }
-        (old.0.slerp(cur.0, w), old.1.lerp(cur.1, w))
+        // Root motion blended like the pose: oldest first.
+        let mut acc: Option<(Quat, Vec3)> = None;
+        for (layer, fade) in self.previous.iter_mut() {
+            let m = layer.advance(rig, frames, &mut Vec::new());
+            let w = Self::weight(*fade);
+            acc = Some(match acc {
+                Some(a) => (a.0.slerp(m.0, w), a.1.lerp(m.1, w)),
+                None => m,
+            });
+            if let Some((elapsed, _)) = fade.as_mut() {
+                *elapsed += dt;
+            }
+        }
+        let w = Self::weight(self.fade);
+        let out = match acc {
+            Some(a) => (a.0.slerp(cur.0, w), a.1.lerp(cur.1, w)),
+            None => cur,
+        };
+        if let Some((elapsed, _)) = self.fade.as_mut() {
+            *elapsed += dt;
+        }
+        // A layer fully faded in hides everything older.
+        if Self::weight(self.fade) >= 1.0 {
+            self.previous.clear();
+            self.fade = None;
+        } else if let Some(k) = self.previous.iter().rposition(|(_, f)| Self::weight(*f) >= 1.0) {
+            self.previous.drain(..k);
+            self.previous[0].1 = None;
+        }
+        out
     }
 
     /// The blended rig frame at the current time.
     pub fn frame(&self, rig: &HumanRig) -> Result<RigFrame, String> {
         let cur = rig.sample_frame(&self.current.clip, self.current.time)?;
-        match &self.previous {
-            Some((prev, _, _)) => {
-                let old = rig.sample_frame(&prev.clip, prev.time)?;
-                Ok(rig.blend(&old, &cur, self.fade_weight()))
-            }
-            None => Ok(cur),
+        let mut acc: Option<RigFrame> = None;
+        for (layer, fade) in &self.previous {
+            let f = rig.sample_frame(&layer.clip, layer.time)?;
+            acc = Some(match acc {
+                Some(a) => rig.blend(&a, &f, Self::weight(*fade)),
+                None => f,
+            });
         }
+        Ok(match acc {
+            Some(a) => rig.blend(&a, &cur, Self::weight(self.fade)),
+            None => cur,
+        })
     }
 }

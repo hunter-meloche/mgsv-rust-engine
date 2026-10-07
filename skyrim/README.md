@@ -239,7 +239,7 @@ Dive: Space while running or dashing (standing or crouched, not aiming)
 plays MGSV's dive to prone, `snapdiv_s_rn_f_int`: 6.1 m in 4.4 s, about
 3 s at tempo 1.5. That variant ends exactly in the prone idle
 `snapnon_c_idl_l`; the plain `snapdiv_s_rn_f` ends mirrored. Snake is prone
-afterwards: sneaking, the crawl Sneak bonus, a low camera. While Snake moves,
+afterwards: sneaking, the crawl Sneak bonus, a low camera. The dive ends where its landing slide does (its motion event `afced2f7`, frame 50 of 133; the rest of the clip scoots forward and settles into the idle): from there Snake aims, crawls or gets up at once (about 1.1 s after Space at tempo 1.5), and blends into the prone idle with no input. Clips started while another is still fading in now fade from the whole blend (the motion player keeps a short stack of fades), so quick successions such as landing, crawl and aim do not snap. While Snake moves,
 Skyrim's jump is off, so Space only dives. Standing still upright, Space
 still jumps. The control file's `dive=1` dives once.
 

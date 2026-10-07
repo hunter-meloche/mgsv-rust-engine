@@ -546,7 +546,16 @@ pub struct Controller {
     /// The current stance change ends at this progress of its clip (the
     /// dive's landing) instead of at its end.
     change_ends_at: Option<f32>,
+    /// Lying on his back (stance Prone): still or scooting (`State::OnBack`)
+    /// or aiming (`State::Aim`).
+    on_back: bool,
 }
+
+/// Aiming on his back, the prone aim grid's on-his-back columns: aimed 90
+/// degrees or more off the way his head points (MGSV's prone grid spans
+/// +180 to -180 degrees; past 90 degrees its poses lie on the back, looking
+/// along the body past his feet at 180).
+const BACK_AIM_MIN: f32 = 93.0;
 
 /// Time to blend the aiming upper body from one stance's aim to the next.
 const AIM_STANCE_FADE: f32 = 0.3;
@@ -586,6 +595,7 @@ impl Controller {
             pending_switch: None,
             aim_slot_fade: None,
             change_ends_at: None,
+            on_back: false,
         })
     }
 
@@ -879,15 +889,16 @@ impl Controller {
         let changing = matches!(self.state, State::Changing { .. } | State::Roll { .. });
         self.update_handling(dt, (!changing).then_some(out));
         self.update_weapon(dt, input);
-        let aim_now = input.aim
-            && can_aim
-            && !matches!(self.state, State::Changing { .. } | State::Roll { .. } | State::OnBack);
+        let aim_now = input.aim && can_aim && !matches!(self.state, State::Changing { .. } | State::Roll { .. });
         if aim_now {
             if self.state != State::Aim {
                 // Bringing the gun up.
                 self.push_handling_foley();
             }
             self.state = State::Aim;
+        } else if self.state == State::Aim && self.on_back {
+            // Lower the weapon on his back: lying on his back again.
+            self.state = State::OnBack;
         } else if self.state == State::Aim {
             // Lower the weapon: back to plain locomotion.
             if moving {
@@ -907,7 +918,10 @@ impl Controller {
             self.aim_slot_fade = None;
         }
         let target_w = if self.state == State::Aim { 1.0 } else { 0.0 };
-        self.aim_weight += (target_w - self.aim_weight).clamp(-6.0 * dt, 6.0 * dt);
+        // On his back the arms travel far between aiming and lying still:
+        // a little slower.
+        let aim_rate = if self.on_back { 4.0 } else { 6.0 };
+        self.aim_weight += (target_w - self.aim_weight).clamp(-aim_rate * dt, aim_rate * dt);
         // A reload raises the weapon even when not aiming (to the aim grid's
         // centre: the aim angles relax to straight ahead).
         let reloading = self.weapon().is_some_and(Armed::reloading);
@@ -915,7 +929,14 @@ impl Controller {
         self.ready_weight += (ready - self.ready_weight).clamp(-5.0 * dt, 5.0 * dt);
         if self.state != State::Aim {
             let relax = (-6.0 * dt).exp();
-            self.aim_yaw *= relax;
+            // On his back toward aiming past his feet (180 degrees): toward
+            // straight ahead it would pass the grid's belly-down columns.
+            self.aim_yaw = if self.on_back {
+                let back = std::f32::consts::PI.copysign(self.aim_yaw);
+                back + (self.aim_yaw - back) * relax
+            } else {
+                self.aim_yaw * relax
+            };
             self.aim_pitch *= relax;
         }
 
@@ -933,6 +954,7 @@ impl Controller {
             {
                 self.state = State::Roll { left, rolled: 0.0 };
                 self.gait = Gait::Walk;
+                self.on_back = false;
             }
         }
 
@@ -948,6 +970,7 @@ impl Controller {
                 let settled = !held && rolled >= turn * 0.3;
                 if settled && roll_back_window(left).contains(&frame) {
                     self.state = State::OnBack;
+                    self.on_back = true;
                     self.play(clips, BACK_IDLE, true, 0.25);
                     self.gait = Gait::Idle;
                 } else if settled && ROLL_BELLY.contains(&frame) {
@@ -960,33 +983,17 @@ impl Controller {
                     }
                 }
             }
-            State::OnBack => {
-                if moving {
-                    // The scooting loop whose own movement is closest to the
-                    // wanted direction (relative to his body, which keeps
-                    // its facing).
-                    let rel = wrap_angle(want_yaw - self.yaw);
-                    let want = Vec3::new(rel.sin(), 0.0, rel.cos());
-                    let best = BACK_SCOOT
-                        .iter()
-                        .filter_map(|n| {
-                            let clip = clips.get(n)?;
-                            let (_, d) = rig.root_motion(&clip, 0.0, clip.frame_count as f32);
-                            Some((Vec3::new(d.x, 0.0, d.z).normalize_or_zero().dot(want), *n))
-                        })
-                        .max_by(|a, b| a.0.total_cmp(&b.0));
-                    if let Some((_, name)) = best {
-                        if name != self.player.current_name() {
-                            self.play(clips, name, true, 0.2);
-                        }
-                    }
-                    self.gait = Gait::Walk;
-                } else {
-                    if self.player.current_name() != BACK_IDLE {
-                        self.play(clips, BACK_IDLE, true, 0.25);
-                    }
-                    self.gait = Gait::Idle;
-                }
+            State::OnBack => self.lie_on_back(rig, clips, moving, want_yaw),
+            State::Aim if self.on_back => {
+                // His feet turn toward where the camera looks; the aim grid's
+                // on-his-back columns take the rest.
+                let diff = wrap_angle(input.camera_yaw + std::f32::consts::PI - self.yaw);
+                self.yaw = wrap_angle(self.yaw + diff.clamp(-2.0 * dt, 2.0 * dt));
+                let aim = wrap_angle(input.camera_yaw - self.yaw);
+                let min = BACK_AIM_MIN.to_radians();
+                self.aim_yaw = if aim.abs() < min { min.copysign(aim) } else { aim };
+                self.aim_pitch = input.aim_pitch;
+                self.lie_on_back(rig, clips, moving, want_yaw);
             }
             State::Aim => {
                 // Body turns toward the camera; the rest is taken by the aim grid.
@@ -1116,7 +1123,8 @@ impl Controller {
     fn change_stance(&mut self, rig: &HumanRig, clips: &ClipLibrary, to: Stance, moving: bool, gait: Gait) {
         // On his back: up to a crouch, or (the prone key, which from prone
         // stands him up) standing, with MGSV's get-up clips.
-        if self.state == State::OnBack {
+        if self.on_back && matches!(self.state, State::OnBack | State::Aim) {
+            self.on_back = false;
             let name = if to == Stance::Crouch { BACK_TO_CROUCH } else { BACK_TO_STAND };
             let to = if to == Stance::Crouch { Stance::Crouch } else { Stance::Stand };
             if self.play(clips, name, false, 0.2) {
@@ -1176,6 +1184,35 @@ impl Controller {
                 self.gait = Gait::Idle;
             }
             _ => self.stance = to,
+        }
+    }
+
+    /// Lying on his back: still, or scooting with the loop whose own
+    /// movement is closest to the wanted direction (relative to his body,
+    /// which keeps its facing).
+    fn lie_on_back(&mut self, rig: &HumanRig, clips: &ClipLibrary, moving: bool, want_yaw: f32) {
+        if moving {
+            let rel = wrap_angle(want_yaw - self.yaw);
+            let want = Vec3::new(rel.sin(), 0.0, rel.cos());
+            let best = BACK_SCOOT
+                .iter()
+                .filter_map(|n| {
+                    let clip = clips.get(n)?;
+                    let (_, d) = rig.root_motion(&clip, 0.0, clip.frame_count as f32);
+                    Some((Vec3::new(d.x, 0.0, d.z).normalize_or_zero().dot(want), *n))
+                })
+                .max_by(|a, b| a.0.total_cmp(&b.0));
+            if let Some((_, name)) = best {
+                if name != self.player.current_name() {
+                    self.play(clips, name, true, 0.2);
+                }
+            }
+            self.gait = Gait::Walk;
+        } else {
+            if self.player.current_name() != BACK_IDLE {
+                self.play(clips, BACK_IDLE, true, 0.25);
+            }
+            self.gait = Gait::Idle;
         }
     }
 
@@ -1460,9 +1497,20 @@ impl Controller {
     /// knees over between very different poses, such as rolling onto his
     /// back).
     pub fn pose(&self, rig: &HumanRig, skel: &Skeleton) -> Result<Pose, String> {
+        let raised = self.aim_weight.max(self.ready_weight).clamp(0.0, 1.0);
         let mut acc: Option<Pose> = None;
         for (base, w) in self.player.frames(rig)? {
-            let pose = rig.solve(skel, &self.layered(rig, base)?);
+            // The gun raised (aim or ready) blends in as solved poses too:
+            // fully lowered and fully raised, blended joint by joint (a
+            // partly raised rig frame flipped arms over, up to 108 degrees
+            // in a tick).
+            let pose = if raised <= 0.0 || raised >= 1.0 {
+                rig.solve(skel, &self.layered(rig, base, raised)?)
+            } else {
+                let low = rig.solve(skel, &self.layered(rig, base.clone(), 0.0)?);
+                let high = rig.solve(skel, &self.layered(rig, base, 1.0)?);
+                Pose::blend(skel, &low, &high, raised)
+            };
             acc = Some(match acc {
                 Some(a) => Pose::blend(skel, &a, &pose, w),
                 None => pose,
@@ -1471,8 +1519,9 @@ impl Controller {
         acc.ok_or_else(|| "no clip".to_string())
     }
 
-    /// `frame` with the weapon's layers: aim, draw / holster, shot, reload.
-    fn layered(&self, rig: &HumanRig, mut frame: fox_anim::RigFrame) -> Result<fox_anim::RigFrame, String> {
+    /// `frame` with the weapon's layers: the aim raised by `raised`, draw /
+    /// holster, shot, reload.
+    fn layered(&self, rig: &HumanRig, mut frame: fox_anim::RigFrame, raised: f32) -> Result<fox_anim::RigFrame, String> {
         if let (Some(w), Some(upper)) = (self.weapon(), rig.mask("Upper")) {
             let slot = stance_slot(self.stance);
             // The stance's aim pose, blended from the previous stance's just
@@ -1493,7 +1542,6 @@ impl Controller {
                     (aim, _) => aim,
                 })
             };
-            let raised = self.aim_weight.max(self.ready_weight);
             if raised > 0.0 {
                 if let Some(aim) = aim_blended(self.aim_pitch + self.recoil * 0.5)? {
                     frame = rig.layer(&frame, &aim, upper, raised);

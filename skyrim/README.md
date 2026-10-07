@@ -262,8 +262,15 @@ loop whose own movement is closest to the wanted direction plays, and his
 body keeps its facing. Crouch gets him up into a crouch and the prone key
 (which from prone stands him up) standing, with MGSV's get-up clips
 (`snapasr_p_fre_p2q` / `p2s`, turning to face the way his feet pointed);
-rolling again turns him back over. There is no aiming on his back yet (no
-aim grid for it). Cross-fades between clips now blend the solved poses
+rolling again turns him back over. He aims and shoots on his back with
+the prone aim grid's on-his-back columns (MGSV's prone grid spans +180 to
+-180 degrees; aimed 90 degrees or more off the way his head points its
+poses lie on the back, looking past his feet at 180): his feet turn toward
+where the camera looks, the aim stays in those columns, his lower body lies
+still or scoots, and lowering the gun leaves him on his back (the aim angle
+relaxes toward 180 degrees, not through the belly-down columns). Raising
+and lowering the gun also blends as solved poses now (a partly raised rig
+frame flipped an arm over, 108 degrees in a tick). Cross-fades between clips now blend the solved poses
 joint by joint, each joint relative to its parent, instead of the rig
 frames: blending IK targets and poles between very different poses (onto
 and off his back) flipped elbows over (up to 178 degrees in one tick).

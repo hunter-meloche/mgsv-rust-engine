@@ -1737,7 +1737,7 @@ fn clip_trace(vfs: &Vfs, name: &str) -> Result<()> {
             pose.positions[head].y,
             ev.join(" ")
         );
-        f += 4;
+        f += std::env::var("CLIP_STEP").ok().and_then(|v| v.parse().ok()).unwrap_or(4);
     }
     Ok(())
 }
@@ -1795,6 +1795,10 @@ fn stance_probe(vfs: &Vfs) -> Result<()> {
         ("lie still", 1.0, Input::default()),
         ("roll left, let go", 0.5, Input { sprint: true, move_x: -1.0, ..Default::default() }),
         ("on his back", 1.5, Input::default()),
+        ("back: aim", 2.5, Input { aim: true, ..Default::default() }),
+        ("back: aim, scoot", 1.5, Input { aim: true, move_y: 1.0, ..Default::default() }),
+        ("back: aim, fire", 1.0, Input { aim: true, fire: true, ..Default::default() }),
+        ("back: release", 1.0, Input::default()),
         ("scoot forward", 1.5, Input { move_y: 1.0, ..Default::default() }),
         ("scoot left", 1.5, Input { move_x: -1.0, ..Default::default() }),
         ("scoot back", 1.5, Input { move_y: -1.0, ..Default::default() }),
@@ -1816,6 +1820,7 @@ fn stance_probe(vfs: &Vfs) -> Result<()> {
         let mut jump_at = String::new();
         let mut clips = Vec::new();
         let mut last_clip = String::new();
+        let mut shots = 0usize;
         for k in 0..n {
             let mut i = input;
             if k > 0 {
@@ -1824,6 +1829,8 @@ fn stance_probe(vfs: &Vfs) -> Result<()> {
             let before = ctl.position;
             ctl.update(&assets.rig, &assets.clips, &world, dt, &i);
             let speed = (ctl.position - before).length() / dt;
+            let shot_pose = ctl.pose(&assets.rig, &assets.skel).map_err(anyhow::Error::msg)?;
+            shots += ctl.take_shots(&shot_pose, &world).len();
             if k > 5 {
                 min_speed = min_speed.min(speed);
                 max_speed = max_speed.max(speed);
@@ -1848,7 +1855,7 @@ fn stance_probe(vfs: &Vfs) -> Result<()> {
             }
         }
         println!(
-            "{label:<20} {:?} aiming {}: speed {min_speed:.2}..{max_speed:.2} m/s, joints up to {jump:.1} deg/tick ({jump_at}); {}",
+            "{label:<20} {:?} aiming {} shots {shots}: speed {min_speed:.2}..{max_speed:.2} m/s, joints up to {jump:.1} deg/tick ({jump_at}); {}",
             ctl.stance,
             ctl.aiming(),
             clips.join(" > ")

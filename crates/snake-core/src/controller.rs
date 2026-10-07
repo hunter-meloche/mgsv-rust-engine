@@ -453,6 +453,29 @@ enum State {
     },
     /// Weapon raised: strafing locomotion, body follows the camera.
     Aim,
+    /// Rolling sideways while prone (dash + left or right).
+    Roll {
+        left: bool,
+        stage: RollStage,
+    },
+}
+
+/// MGSV's prone roll (`snaprdy_c_roll_*`) in half turns: `1` turns Snake
+/// from his belly onto his back, `2` from his back onto his belly, 0.6 m
+/// sideways each. Each ends exactly where the other starts (the poses
+/// match to millimetres), so a held roll chains them; `_lp` matches
+/// neither (it is not part of this roll). A roll is always a full turn,
+/// ending on his belly.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RollStage {
+    /// `1`: onto his back.
+    Over,
+    /// `2`: back onto his belly.
+    Back,
+}
+
+fn roll_clip(left: bool, part: &str) -> String {
+    format!("snaprdy_c_roll_{}{part}", if left { "l" } else { "r" })
 }
 
 /// Crossfade time between locomotion loops (seconds).
@@ -680,6 +703,21 @@ impl Controller {
     /// the current pose (a start or another loop rarely ends where the loop
     /// begins; entering at frame 0 rewinds the stride, visibly).
     fn play_loop_matched(&mut self, rig: &HumanRig, clips: &ClipLibrary, name: &str) -> bool {
+        self.play_matched(rig, clips, name, true, FADE, false)
+    }
+
+    /// Play `name` from its frame closest to the current pose: by the hands
+    /// and feet, or (`whole_body`) by every joint too, which tells lying on
+    /// the belly from lying on the back.
+    fn play_matched(
+        &mut self,
+        rig: &HumanRig,
+        clips: &ClipLibrary,
+        name: &str,
+        looping: bool,
+        fade: f32,
+        whole_body: bool,
+    ) -> bool {
         let Some(clip) = clips.get(name) else { return false };
         if name == self.player.current_name() {
             return true;
@@ -689,7 +727,7 @@ impl Controller {
             let mut best = f32::MAX;
             for f in 0..clip.frame_count {
                 if let Ok(frame) = rig.sample_frame(&clip, f as f32) {
-                    let d = rig.target_distance(&cur, &frame);
+                    let d = if whole_body { rig.pose_distance(&cur, &frame, 0.3) } else { rig.target_distance(&cur, &frame) };
                     if d < best {
                         best = d;
                         start = f as f32;
@@ -697,7 +735,7 @@ impl Controller {
                 }
             }
         }
-        self.player.play_at(name, clip, true, FADE, start);
+        self.player.play_at(name, clip, looping, fade, start);
         true
     }
 
@@ -764,7 +802,7 @@ impl Controller {
         }
 
         // Stance changes.
-        if !matches!(self.state, State::Changing { .. }) {
+        if !matches!(self.state, State::Changing { .. } | State::Roll { .. }) {
             let target = if input.prone {
                 Some(if self.stance == Stance::Prone {
                     Stance::Stand
@@ -816,10 +854,10 @@ impl Controller {
         // Not while changing stance: the draw and holster are laid onto the
         // stance's aim, and the stance is only settled at the end (drawing
         // while crouching down raised the arms to standing height).
-        let changing = matches!(self.state, State::Changing { .. });
+        let changing = matches!(self.state, State::Changing { .. } | State::Roll { .. });
         self.update_handling(dt, (!changing).then_some(out));
         self.update_weapon(dt, input);
-        let aim_now = input.aim && can_aim && !matches!(self.state, State::Changing { .. });
+        let aim_now = input.aim && can_aim && !matches!(self.state, State::Changing { .. } | State::Roll { .. });
         if aim_now {
             if self.state != State::Aim {
                 // Bringing the gun up.
@@ -857,7 +895,49 @@ impl Controller {
             self.aim_pitch *= relax;
         }
 
+        // Rolling, as in MGSV: prone, dash held and moving to Snake's side
+        // (45 - 135 degrees off his facing; left is positive).
+        let roll = (self.stance == Stance::Prone && input.sprint && moving)
+            .then(|| wrap_angle(want_yaw - self.yaw))
+            .filter(|rel| (45f32.to_radians()..135f32.to_radians()).contains(&rel.abs()))
+            .map(|rel| rel > 0.0);
+        if let Some(left) = roll {
+            if matches!(self.state, State::Idle | State::Start | State::Loop | State::Stop { .. })
+                && self.play(clips, &roll_clip(left, "1"), false, 0.15)
+            {
+                self.state = State::Roll { left, stage: RollStage::Over };
+                self.gait = Gait::Walk;
+            }
+        }
+
         match self.state {
+            State::Roll { left, stage } => {
+                let held = roll == Some(left);
+                let done = self.player.finished() || self.player.progress() > 0.95;
+                if done {
+                    match stage {
+                        // Always on over onto his belly.
+                        RollStage::Over => {
+                            if self.play(clips, &roll_clip(left, "2"), false, 0.0) {
+                                self.state = State::Roll { left, stage: RollStage::Back };
+                            } else {
+                                self.enter_idle(clips);
+                            }
+                        }
+                        // On his belly: roll on while held.
+                        RollStage::Back if held && self.play(clips, &roll_clip(left, "1"), false, 0.0) => {
+                            self.state = State::Roll { left, stage: RollStage::Over };
+                        }
+                        RollStage::Back => {
+                            self.foot = Foot::L;
+                            self.enter_idle(clips);
+                            if moving {
+                                self.begin_moving(clips, gait, want_yaw);
+                            }
+                        }
+                    }
+                }
+            }
             State::Aim => {
                 // Body turns toward the camera; the rest is taken by the aim grid.
                 let diff = wrap_angle(input.camera_yaw - self.yaw);

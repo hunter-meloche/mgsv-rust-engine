@@ -326,6 +326,9 @@ enum Cmd {
     /// Development probe: a clip's body over time (every 4 frames): chest
     /// and waist height, root speed, and the motion events at each frame.
     ClipTrace { clip: String },
+    /// Development probe: the frame of clip B closest to frame F of clip A
+    /// (F = -1: A's last frame), by hands and feet and by the whole body.
+    ClipMatch { a: String, frame: f32, b: String },
     /// Development probe: close-ups of Snake's hands on each weapon at its
     /// standing aim grid's centre (extracted/hands_<weapon>_<view>.png).
     HandView,
@@ -1043,6 +1046,23 @@ fn run() -> Result<()> {
         Cmd::DrawProbe => draw_probe(&vfs),
         Cmd::StanceProbe => stance_probe(&vfs),
         Cmd::ClipTrace { clip } => clip_trace(&vfs, &clip),
+        Cmd::ClipMatch { a, frame, b } => {
+            let (_, rig) = snake_rig(&vfs)?;
+            let clips = player_clip_library(&vfs)?;
+            let ca = clips.get(&a).context("no clip A")?;
+            let cb = clips.get(&b).context("no clip B")?;
+            let f = if frame < 0.0 { ca.frame_count as f32 } else { frame };
+            let fa = rig.sample_frame(&ca, f).map_err(anyhow::Error::msg)?;
+            let mut rows = Vec::new();
+            for k in 0..=cb.frame_count {
+                let fb = rig.sample_frame(&cb, k as f32).map_err(anyhow::Error::msg)?;
+                rows.push((k, rig.target_distance(&fa, &fb), rig.pose_distance(&fa, &fb, 0.3)));
+            }
+            let best_t = rows.iter().min_by(|x, y| x.1.total_cmp(&y.1)).unwrap();
+            let best_w = rows.iter().min_by(|x, y| x.2.total_cmp(&y.2)).unwrap();
+            println!("{a}@{f} -> {b}: hands/feet best frame {} ({:.3}), whole body best frame {} ({:.3})", best_t.0, best_t.1, best_w.0, best_w.2);
+            Ok(())
+        }
         Cmd::HandView => hand_view(&vfs),
         Cmd::FingerProbe { clips } => finger_probe(&vfs, &clips),
         Cmd::Play { frames, shot, auto, draw_test, shot_every, view_yaw } => {
@@ -1702,8 +1722,16 @@ fn clip_trace(vfs: &Vfs, name: &str) -> Result<()> {
             .filter(|e| e.frames.iter().any(|&x| (x as u32) >= f && (x as u32) < f + 4))
             .map(|e| format!("{:08x}", e.name))
             .collect();
+        // Chest front (+Z of the chest bone): down when on the belly, up on the back.
+        let front = pose.rotations[chest] * fox_anim::Vec3::Z;
+        let (dr, _) = rig.root(&clip, f as f32);
         println!(
-            "{f:>4}: chest {:.2} waist {:.2} head {:.2} speed {speed:.2} m/s {}",
+            "{f:>4}: front y {:+.2} root yaw {:+.0} | chest {:.2} waist {:.2} head {:.2} speed {speed:.2} m/s {}",
+            front.y,
+            {
+                let z = dr * fox_anim::Vec3::Z;
+                z.x.atan2(z.z).to_degrees()
+            },
             pose.positions[chest].y,
             pose.positions[waist].y,
             pose.positions[head].y,
@@ -1753,6 +1781,14 @@ fn stance_probe(vfs: &Vfs) -> Result<()> {
         ("crouch", 2.5, tap(Input::default(), true, false)),
         ("run", 1.5, run),
         ("dive, keep running", 2.5, Input { dive: true, ..run }),
+        ("stop", 1.0, Input::default()),
+        ("roll left (held)", 2.5, Input { sprint: true, move_x: -1.0, ..Default::default() }),
+        ("released", 1.5, Input::default()),
+        ("roll right (tap)", 0.25, Input { sprint: true, move_x: 1.0, ..Default::default() }),
+        ("released", 1.5, Input::default()),
+        ("crawl", 1.0, run),
+        ("crawl into roll", 1.5, Input { sprint: true, move_x: 1.0, ..Default::default() }),
+        ("side, no dash", 1.5, Input { move_x: -1.0, ..Default::default() }),
         ("stop", 1.0, Input::default()),
     ];
     let mut prev: Option<fox_anim::Pose> = None;

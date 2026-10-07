@@ -2200,9 +2200,9 @@ void SnakeThread() {
             g_cameraDrop = g_cameraDrop + (target - g_cameraDrop) * k;
         }
         // Dashing from a crouch stands Snake up (he rises into the dash);
-        // prone he keeps crawling.
+        // prone the dash key rolls him sideways (with left or right) and
+        // otherwise he keeps crawling (snake.dll decides).
         if (in.sprint && cur.stance == 1 && want == 1) wantStance = want = 0;
-        if (in.sprint && cur.stance == 2) in.sprint = false;
         bool risingIntoDash = in.sprint && cur.stance == 1 && want == 0;
         if (want != cur.stance && !risingIntoDash) {
             if (want == 2) in.prone = true;                         // stand/crouch -> prone

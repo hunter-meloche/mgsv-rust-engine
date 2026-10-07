@@ -354,6 +354,23 @@ impl HumanRig {
         out
     }
 
+    /// Distance between two frames over the whole body: the IK targets
+    /// distance (metres) plus every rotation's angle (radians) scaled by
+    /// `per_radian`. Unlike [`HumanRig::target_distance`] it tells apart
+    /// poses whose hands and feet match but whose body faces another way
+    /// (lying on the belly or on the back).
+    pub fn pose_distance(&self, a: &RigFrame, b: &RigFrame, per_radian: f32) -> f32 {
+        let turn: f32 = a
+            .values
+            .iter()
+            .zip(&b.values)
+            .zip(&self.quat_segments)
+            .filter(|(_, q)| **q)
+            .map(|((x, y), _)| Quat::from_array(*x).normalize().angle_between(Quat::from_array(*y).normalize()))
+            .sum();
+        self.target_distance(a, b) + turn * per_radian
+    }
+
     /// Summed distance between the IK targets (hands, feet) of two frames:
     /// how far apart two poses are where it shows most.
     pub fn target_distance(&self, a: &RigFrame, b: &RigFrame) -> f32 {

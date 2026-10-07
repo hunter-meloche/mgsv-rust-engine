@@ -243,6 +243,8 @@ afterwards: sneaking, the crawl Sneak bonus, a low camera. The dive ends where i
 Skyrim's jump is off, so Space only dives. Standing still upright, Space
 still jumps. The control file's `dive=1` dives once.
 
+Rolling: prone, holding the dash key (Left Alt) and moving to Snake's side (45 - 135 degrees off his facing) rolls him that way, as in MGSV. MGSV's roll comes in half turns: `snaprdy_c_roll_l1` / `r1` turn him from his belly onto his back, `l2` / `r2` back onto his belly, 0.6 m sideways each; each ends exactly where the other starts, so a held roll chains them with no blend (`_lp` matches neither and is not used). Every roll is a full turn and ends on his belly; then he crawls on or lies still. No stance change, aiming or drawing during a roll. The plugin no longer drops the dash key while prone.
+
 Tempo: `MoveSpeedScale` in snake.ini (percent, default 150) sets the
 tempo of all of Snake's motion: his controller advances by 1.5 x the real
 time step, so every animation plays half again as fast, and through root

@@ -1,11 +1,18 @@
 # MGSV Rust Engine
 
-A Rust reimplementation of the Fox Engine runtime behind *Metal Gear Solid V:
-The Phantom Pain* (PC), built from reverse-engineering research. Like the
+> **Unofficial fan project.** Not affiliated with, endorsed by or connected to
+> Konami, Kojima Productions, Bethesda Softworks, ZeniMax Media or Microsoft.
+> This repository contains **no game code, data or assets**. To use it you
+> need your own legally purchased copies of the games. See the
+> [legal notice](#legal-notice).
+
+An independent, open-source engine written in Rust that can read and run
+the data of *Metal Gear Solid V: The Phantom Pain* (PC). It is written from
+scratch, based on research into the game's file formats and engine behaviour.
+Like the
 [Skate 3 Rust Engine](https://github.com/SK8-ENGINE/skate-3-rust-engine), it
-runs on **your own copy of the game**: the engine reads the original archives
-and runs the game's own Lua scripts and data at runtime. No game code, data
-or assets are included in this repository.
+runs on **your own installed copy of the game**: at runtime it reads the
+game's original archives and runs the game's own Lua scripts and data.
 
 The first part to reach a playable state is **Snake himself**: MGSV's player
 movement, animation, aiming, weapons and sounds, packaged as a library. The
@@ -19,9 +26,10 @@ Single-player only: MGO and the online features are out of scope.
 
 ### Engine
 
-- **Archives.** Every retail archive mounts and reads: QAR `.dat` with both
-  decryption layers, `.fpk`/`.fpkd` packages, patch priority, and hash name
-  resolution through community dictionaries.
+- **Archives.** Every retail archive mounts and reads: QAR `.dat` (including
+  the format's two XOR obfuscation layers, which are part of the file format,
+  not DRM), `.fpk`/`.fpkd` packages, patch priority, and hash name resolution
+  through community dictionaries.
 - **Game data formats.** Every retail file parses for each of these formats:
   - `.fox2` DataSets: 75,967 files.
   - `.fmdl` models: 14,555 files, with skeletons, skinned meshes and
@@ -198,6 +206,10 @@ This does four things:
   `Data\SKSE\Plugins\snake_sounds`.
 - Leaves Skyrim's own records and files untouched.
 
+The exported files are converted from Konami's copyrighted assets on your own
+machine, for your personal use. **Don't share or upload them**, for example
+on Nexus Mods or in a mod pack. See the [legal notice](#legal-notice).
+
 Run it again after every rebuild. It rewrites `snake.ini` with the defaults.
 
 ### 5. Play
@@ -241,7 +253,7 @@ rewritten into Windows paths.
 | Path | Contents |
 | --- | --- |
 | `crates/fox-hash` | CityHash64 v1.0.x, `StrCode32/64`, QAR path hashing |
-| `crates/fox-archive` | QAR (`.dat`) and FPK/FPKD readers, decryption, game-install VFS |
+| `crates/fox-archive` | QAR (`.dat`) and FPK/FPKD readers (format de-obfuscation), game-install VFS |
 | `crates/fox-data` | Game formats: `.fox2`, `.fmdl`, `.mtar`/`.gani`, `.frig`, `.fcnp`, `.ftex`, Wwise banks |
 | `crates/fox-lua` | Lua 5.1 host for the game's scripts; native modules; mission loading |
 | `crates/fox-anim` | Clip sampling, rig solve with IK, skinning |
@@ -266,7 +278,13 @@ rewritten into Windows paths.
 * Derived metadata (identifier names, file-format layouts, constant values,
   API signatures) may be committed under `re/api/` and `docs/`.
 * The retail executable carries a protector layer. This project does not
-  analyse, modify or bypass it; analysis is limited to the engine's own code.
+  analyse, modify or bypass it, or any other copy protection or anti-tamper
+  measure; analysis is limited to the engine's own code. The game files on
+  disk are never modified.
+* Nothing here may help anyone obtain or run the games without owning them,
+  or touch online services: single-player only, no online features.
+* Converted or extracted game files (the `skyrim-export` output, anything in
+  `extracted/`) are never committed, attached to issues or published.
 
 ## Reverse engineering
 
@@ -286,9 +304,11 @@ code is licensed under the [GNU General Public License version 3 only](LICENSE)
 commercially. If you distribute a modified version or a binary, you must make
 the corresponding source available under GPLv3 and keep the required notices.
 
-Third-party material keeps its own license, including the dictionaries in
-`dictionaries/` (MIT; GzsTool and FoxTool). This license grants no rights to Konami's
-game code, data, assets or trademarks.
+Third-party material keeps its own license, including the name dictionaries
+in `dictionaries/` (MIT: GzsTool and FoxTool; GPL-3.0-or-later: Fox Engine
+MTAR Tools). The license covers this project's own code only. It grants no
+rights to the games or to anything in them: code, data, assets, characters or
+trademarks.
 
 ## Credits
 
@@ -303,7 +323,55 @@ dictionary work of the MGSV modding community. Binary analysis uses
 [SKSE64](https://skse.silverlock.org/) and the
 [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444).
 
-This is an unofficial project, not affiliated with or endorsed by Konami or
-Bethesda. *Metal Gear Solid V* and *Fox Engine* are trademarks of Konami
-Digital Entertainment; *The Elder Scrolls V: Skyrim* is a trademark of
-ZeniMax Media.
+## Legal notice
+
+**Unofficial and unaffiliated.** This is a non-commercial fan project. It is
+not affiliated with, endorsed, sponsored or approved by Konami Digital
+Entertainment, Kojima Productions, Bethesda Softworks, ZeniMax Media or
+Microsoft. Nothing here is official, and none of those companies is
+responsible for it.
+
+**No game content is distributed.** This repository, and its full history,
+contains only original source code, documentation and community-made lists
+of file and bone names. It contains no code, executables, archives, models,
+textures, animations, audio, scripts or other data from *Metal Gear Solid V*
+or *Skyrim*, and none is made available anywhere by this project.
+
+**You need your own copies.** The software does nothing without a legally
+purchased, installed copy of *Metal Gear Solid V: The Phantom Pain* (and, for
+the Skyrim plugin, of *The Elder Scrolls V: Skyrim Special Edition*).
+Everything it reads, converts or plays comes from your own installation, and
+stays on your own computer.
+
+**Converted files are for personal use only.** Files the tools produce from
+your installation are derived from the rights holders' copyrighted works.
+That includes the `mgsv skyrim-export` output in Skyrim's `Data` folder and
+anything in `extracted/`. Don't share, upload or redistribute them in any
+form.
+
+**No circumvention, no piracy, no online play.** The project does not
+include, analyse, disable or bypass any copy protection, DRM or anti-tamper
+measure, and does not modify the games' files on disk. It cannot be used to
+play the games without owning them. It is single-player only and does not
+connect to, emulate or interfere with any online service.
+
+**Independent implementation.** The engine is new code, written to work
+with game data the user already owns. Research notes describe file formats
+and engine behaviour; no decompiled code is published.
+
+**Trademarks.** *Metal Gear*, *Metal Gear Solid*, *Metal Gear Solid V: The
+Phantom Pain* and *Fox Engine* are trademarks or registered trademarks of
+Konami Digital Entertainment Co., Ltd. *The Elder Scrolls*, *Skyrim* and
+*Bethesda* are trademarks or registered trademarks of ZeniMax Media Inc. All
+other trademarks belong to their respective owners. These names are used
+only to identify the games this software works with. No logos or official
+artwork are used.
+
+**No warranty.** The software is provided "as is", without warranty of any
+kind (see sections 15 and 16 of the [license](LICENSE)). Use it at your own
+risk; back up your saves before using mods.
+
+**Rights holders.** If you represent a rights holder and have a concern
+about anything in this repository, please open an issue (or contact the
+maintainers privately through the repository host). It will be reviewed and,
+where appropriate, removed promptly.

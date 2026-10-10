@@ -2,8 +2,9 @@
 //
 // The retail executable carries a protector layer in `.xdata` (117 MB, RWX,
 // holds the PE entry point). The engine itself lives in `.xtext` as plain
-// x64 code. We drop the protector block so auto-analysis only spends time on
-// engine code; we never analyse, modify or bypass the protector.
+// x64 code. We drop the protector block from the local analysis database so
+// auto-analysis only spends time on engine code; we never analyse, modify or
+// bypass the protector, and the executable on disk is not changed.
 //@category MGSV
 
 import ghidra.app.script.GhidraScript;

@@ -27,7 +27,7 @@ them, in the same way the Skate 3 project grew around its data formats.
 | --- | --- |
 | `.xtext` (34 MB, RX) | Engine code, plaintext. Analysed with Ghidra. |
 | `.edata` / `.data2` | Read-only data / data (strings, vtables, tables) |
-| `.xdata` (117 MB, RWX) | Protector layer; contains the PE entry point. Removed before analysis (`re/ghidra/PrepareMgsv.java`) and never touched. |
+| `.xdata` (117 MB, RWX) | Protector layer; contains the PE entry point. Left out of the local analysis database (`re/ghidra/PrepareMgsv.java` drops the block before auto-analysis) and never analysed, modified or bypassed; the executable on disk is not changed. |
 | `.ecode` | Exception directory (`.pdata`), ~141k function entries |
 
 * Image base `0x140000000`, no relocations.

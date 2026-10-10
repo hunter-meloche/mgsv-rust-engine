@@ -69,6 +69,7 @@ typedef struct {
     float reload_progress;
     int32_t unlimited;
     float head_height; /* Snake's head above his feet (m) */
+    float raised;      /* how far the weapon is raised (aiming or reloading), 0..1 */
 } SnakeStatus;
 
 /* Last error on this thread (empty string if none). */

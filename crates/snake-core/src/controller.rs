@@ -675,6 +675,11 @@ impl Controller {
         self.state == State::Aim
     }
 
+    /// How far the weapon is raised (aiming or reloading), 0 - 1.
+    pub fn raised(&self) -> f32 {
+        self.aim_weight.max(self.ready_weight).clamp(0.0, 1.0)
+    }
+
     fn push_handling_foley(&mut self) {
         use crate::foley::{Foley, FoleyKind};
         let action = self.foley_action();

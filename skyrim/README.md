@@ -79,9 +79,20 @@ camera is untouched. Each clavicle takes the world orientation of its
 third-person counterpart (Skyrim's first-person spine is posed very
 differently), so the rifle points where you look, held low on the right.
 Snake's own arms replace Skyrim's (see Snake's body below). Guns and flash
-attach to the first-person hand as separate copies of the meshes (`*_1p.nif`; Skyrim caches models by path). With the pistol the
-shoulders drop 10 units so the two-handed grip does not cover the
-crosshair. The WU S.Pistol's textures ship without `.ftex` headers
+attach to the first-person hand as separate copies of the meshes (`*_1p.nif`; Skyrim caches models by path). With the pistol
+raised, both shoulders shift together each frame so the gun lands at a
+fixed place from the first-person camera node (`kPistolView`: 1 right, 40
+ahead, 2.5 down, in the camera's frame): just right of and below the
+crosshair with its sights in view, both hands on it, at any pitch. The aim
+already points it along the view, so it is a shift only (also turning the
+arms made them flicker out of view), eased in with the raise and capped at
+15 units (mid-draw the gun is still at the holster); lowered, the
+shoulders drop 10 units as before. A reload keeps the shift it started
+with, relative to the camera, so the reload plays out in view. Before, the
+shoulders simply dropped 10 units and the pistol sat off the bottom of the
+screen. The control file's `vmx` / `vmy` / `vmz` move it live and
+`viewmodel=0` turns it off. The first-person arms are always drawn
+(NiAVObject flag bit 11): their bounds stay where the mesh was loaded. The WU S.Pistol's textures ship without `.ftex` headers
 (only the two largest mips exist); the export rebuilds them from the
 `.ftexs` parts (`Ftex::from_parts`: chunk table at offset 0, square size,
 format from the slot). Keys **1** / **2** switch between the MRS-4 and the

@@ -162,6 +162,8 @@ pub struct SnakeStatus {
     pub unlimited: i32,
     /// Height of Snake's head above his feet (metres; standing ~1.6, prone ~0.4).
     pub head_height: f32,
+    /// How far the weapon is raised (aiming or reloading), 0 - 1.
+    pub raised: f32,
 }
 
 /// Loaded assets, shared by every player created from it.
@@ -636,6 +638,7 @@ pub unsafe extern "C" fn snake_player_status(p: *const SnakePlayer, out: *mut Sn
             .find(fox_hash::str_code32(b"SKL_004_HEAD"))
             .and_then(|i| p.pose.positions.get(i))
             .map_or(0.0, |v| v.y),
+        raised: c.raised(),
     };
 }
 

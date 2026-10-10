@@ -26,6 +26,7 @@
 #include <cstdarg>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <atomic>
 #include <map>
 #include <mutex>
@@ -1471,6 +1472,8 @@ struct PoseBuffer {
     int magPlace[4] = {};
     SnakeVec3 magPos[4] = {};
     SnakeQuat magRot[4] = {{0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}};
+    float raised = 0;  // how far the weapon is raised (aiming or reloading)
+    bool reloading = false;
     uint64_t seq = 0;
 } g_pose;
 
@@ -1521,6 +1524,10 @@ struct Control {
     float aimYaw = 0;    // aim this many degrees left of the camera (to see Snake's front or side)
     bool dump = false;   // log the camera once (diagnostics)
     int probe = 0;       // 1: log the player's process / character controller objects once
+    int viewModel = 1;   // first person: hold the raised pistol in front of the camera
+    // Where (camera space, Skyrim units: right, forward, up) the raised
+    // pistol's origin sits in first person; NaN = the built-in default.
+    float viewX = NAN, viewY = NAN, viewZ = NAN;
 };
 Control g_control;
 
@@ -1554,6 +1561,10 @@ void PollControl(int curStance) {
         else if (k == "trace") g_control.trace = std::atoi(v.c_str());
         else if (k == "trackshot") g_trackShot = std::atoi(v.c_str());
         else if (k == "body") g_control.body = std::atoi(v.c_str());
+        else if (k == "viewmodel") g_control.viewModel = std::atoi(v.c_str());
+        else if (k == "vmx") g_control.viewX = static_cast<float>(std::atof(v.c_str()));
+        else if (k == "vmy") g_control.viewY = static_cast<float>(std::atof(v.c_str()));
+        else if (k == "vmz") g_control.viewZ = static_cast<float>(std::atof(v.c_str()));
         else if (k == "reload") g_control.reload = std::atoi(v.c_str());
         else if (k == "dive") g_control.dive = std::atoi(v.c_str());
         else if (k == "tempo") g_control.tempo = static_cast<float>(std::atof(v.c_str()));
@@ -2552,8 +2563,12 @@ void SnakeThread() {
             gunPlace[i] = g_snake.retarget_weapon_place(g_retarget, g_player, i, &gunPos[i], &gunRot[i]);
             magPlace[i] = g_snake.retarget_magazine_place(g_retarget, g_player, i, &magPos[i], &magRot[i]);
         }
+        SnakeStatus raisedStatus{};
+        g_snake.player_status(g_player, &raisedStatus);
         {
             std::lock_guard<std::mutex> lock(g_pose.m);
+            g_pose.raised = raisedStatus.raised;
+            g_pose.reloading = raisedStatus.reloading != 0;
             g_pose.rot = rot;
             g_pose.tr = tr;
             g_pose.has = has;
@@ -2598,6 +2613,8 @@ SnakeQuat g_hookGunRot[4] = {{0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0,
 int g_hookMagPlace[4] = {};
 SnakeVec3 g_hookMagPos[4] = {};
 SnakeQuat g_hookMagRot[4] = {{0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}, {0, 0, 0, 1}};
+float g_hookRaised = 0;
+bool g_hookReloading = false;
 
 // ---- Snake's gun model ---------------------------------------------------------
 //
@@ -2907,6 +2924,7 @@ struct BodySlot {
     std::atomic<bool> queued{false};
     bool failed = false;
     std::vector<void*> hidden;  // Skyrim nodes we hid (restored when Snake mode ends)
+    void* alwaysDrawn = nullptr;  // the node last marked always drawn
 };
 BodySlot g_bodies[2] = {{"snake\\snake_body.nif"}, {"snake\\snake_arms_1p.nif"}};  // per view (0 third person, 1 first)
 
@@ -3074,6 +3092,17 @@ void ShowBody(int view, void* root, bool snake) {
     }
     if (!body) return;
     SetHidden(body, !snake);
+    if (view == 1 && b.alwaysDrawn != body) {
+        // The arms' bounds stay where the mesh was loaded: held up in front
+        // of the camera (the pistol's view model) they were culled whenever
+        // the view looked level or up. NiAVObject kAlwaysDraw (bit 11).
+        std::function<void(void*)> mark = [&](void* n) {
+            At<uint32_t>(n, kAvFlags) |= 1u << 11;
+            if (void* node = AsNode(n)) ForEachChild(node, mark);
+        };
+        mark(body);
+        b.alwaysDrawn = body;
+    }
     if (snake) {
         // Skyrim re-shows parts it (re)attaches, so hide every frame.
         ForEachChild(root, [&](void* c) {
@@ -3152,6 +3181,42 @@ void* g_cachedRoot1p = nullptr;
 std::vector<void*> g_nodes1p;
 std::vector<std::array<float, 3>> g_rest1p;  // clavicle local positions as loaded
 constexpr float kFirstPersonPistolDrop = 10.0f;  // Skyrim units (~14 cm)
+
+struct CameraNode {
+    void* root = nullptr;
+    void* node = nullptr;
+    float baseZ = 0;
+};
+CameraNode g_cameraNodes[2];  // third person, first person
+
+// First person, the pistol raised: the aim poses hold it two-handed at eye
+// level for the over-the-shoulder camera, so in first person it covered the
+// crosshair, and the old fix (shoulders 10 units down) put it off the
+// bottom of the screen. Instead both shoulders shift together each frame so
+// the gun lands at a fixed place from the first-person camera node, in the
+// camera's frame (right, forward, up; Skyrim units, tuned by eye): just
+// right of and below the crosshair, sights in view, at any pitch. The aim
+// already points it along the view, so it is a shift only (turning the
+// arms as well made them flicker out of view). Blended with how far the
+// gun is raised; lowered, the old 10 units down. During a reload the shift
+// it started with is kept (relative to the camera), so the reload plays out
+// in view rather than the gun staying put while the shoulders swing.
+constexpr float kPistolView[3] = {1.0f, 40.0f, -2.5f};
+constexpr float kPistolShiftMax = 15.0f;  // Skyrim units (aimed it is a few)
+
+// The camera's world rotation (columns: right, forward, up). (Its position
+// is not in the first-person skeleton's space while the hook runs; its
+// rotation is.)
+bool CameraRotation(float* rot) {
+    if (!g_fire.camera) return false;
+    void* cam = *g_fire.camera;
+    if (!cam || !Readable(cam, kCameraRoot + 8)) return false;
+    void* root = At<void*>(cam, kCameraRoot);
+    if (!root || !Readable(root, kWorldScale + 4)) return false;
+    memcpy(rot, &At<float>(root, kWorldRot), 9 * sizeof(float));
+    float fy = rot[1] * rot[1] + rot[4] * rot[4] + rot[7] * rot[7];
+    return fy > 0.5f && fy < 2.0f;
+}
 
 bool IsArmBone(const std::string& n) {
     for (const char* part : {"Clavicle", "UpperArm", "Upperarm", "Forearm", "Hand", "Finger"})
@@ -3258,6 +3323,8 @@ void ApplySnake(void* player, float delta) {
             memcpy(g_hookMagPlace, g_pose.magPlace, sizeof g_hookMagPlace);
             memcpy(g_hookMagPos, g_pose.magPos, sizeof g_hookMagPos);
             memcpy(g_hookMagRot, g_pose.magRot, sizeof g_hookMagRot);
+            g_hookRaised = g_pose.raised;
+            g_hookReloading = g_pose.reloading;
             g_appliedSeq = g_pose.seq;
         }
     }
@@ -3290,6 +3357,10 @@ void ApplySnake(void* player, float delta) {
             }
             size_t n1 = (std::min)(g_nodes1p.size(), g_hookRot.size());
             WritePose(g_nodes1p, n1, false);
+            float cameraRot[9];
+            bool cameraOk = CameraRotation(cameraRot);
+            float raised = (std::min)((std::max)(g_hookRaised, 0.0f), 1.0f);
+            bool viewModel = g_control.viewModel && cameraOk && g_cameraNodes[1].node;
             for (size_t i = 0; i < n1 && i < g_nodes.size(); ++i) {
                 void* node = g_nodes1p[i];
                 void* third = g_nodes[i];
@@ -3303,11 +3374,12 @@ void ApplySnake(void* player, float delta) {
                     for (int b = 0; b < 3; ++b)  // r = pw^T tw
                         r[a * 3 + b] = pw[0 * 3 + a] * tw[0 * 3 + b] + pw[1 * 3 + a] * tw[1 * 3 + b] + pw[2 * 3 + a] * tw[2 * 3 + b];
                 // Two-handed pistol aim holds the gun at eye level, so in
-                // first person the hands would cover the crosshair: lower the
-                // shoulders (world -Z) for the pistol; the aim direction is kept.
-                float dropBy = (g_hookGunPlace[1] == 1 ? kFirstPersonPistolDrop : 0.0f) - g_cameraDrop;
-                dropBy /= At<float>(parent, kWorldScale);
-                float drop[3] = {0, 0, -dropBy}, local[3];
+                // first person the hands would cover the crosshair: lowered,
+                // the shoulders drop; raised, they shift (see kPistolView).
+                float drop[3] = {0, 0, g_cameraDrop}, local[3];
+                if (g_hookGunPlace[1] == 1)
+                    drop[2] -= kFirstPersonPistolDrop * (viewModel ? 1.0f - raised : 1.0f);
+                for (float& d : drop) d /= At<float>(parent, kWorldScale);
                 float* lp = &At<float>(node, kLocalPos);
                 for (int a = 0; a < 3; ++a)  // local = pw^T drop
                     local[a] = pw[0 * 3 + a] * drop[0] + pw[1 * 3 + a] * drop[1] + pw[2 * 3 + a] * drop[2];
@@ -3318,6 +3390,52 @@ void ApplySnake(void* player, float delta) {
             void* hand1p = nullptr;
             for (size_t i = 0; i < n1; ++i)
                 if (g_boneNames[i] == kRightHand) hand1p = g_nodes1p[i];
+            if (viewModel && hand1p && g_hookGunPlace[1] == 1) {
+                // The shift (world) that puts the gun at kPistolView from
+                // the camera node, or during a reload the camera-relative
+                // one it started with.
+                static float held[3];  // camera frame
+                float delta[3];
+                if (g_hookReloading) {
+                    MatVec(cameraRot, held, delta);
+                } else {
+                    const float* hr = &At<float>(hand1p, kWorldRot);
+                    const float* hp = &At<float>(hand1p, kWorldPos);
+                    float hs = At<float>(hand1p, kWorldScale);
+                    float off[3] = {g_hookGunPos[1].x * hs, g_hookGunPos[1].y * hs, g_hookGunPos[1].z * hs}, gp[3], want[3];
+                    MatVec(hr, off, gp);
+                    float view[3] = {std::isnan(g_control.viewX) ? kPistolView[0] : g_control.viewX,
+                                     std::isnan(g_control.viewY) ? kPistolView[1] : g_control.viewY,
+                                     std::isnan(g_control.viewZ) ? kPistolView[2] : g_control.viewZ};
+                    MatVec(cameraRot, view, want);
+                    const float* ep = &At<float>(g_cameraNodes[1].node, kWorldPos);
+                    // Eased in, and at most kPistolShiftMax: mid-draw the gun
+                    // is still at the holster, and the full shift would
+                    // sweep the arms across the view.
+                    float len = 0;
+                    for (int k = 0; k < 3; ++k) {
+                        delta[k] = ep[k] + want[k] - (hp[k] + gp[k]);
+                        len += delta[k] * delta[k];
+                    }
+                    len = std::sqrt(len);
+                    float scale = raised * raised * (len > kPistolShiftMax ? kPistolShiftMax / len : 1.0f);
+                    for (float& d : delta) d *= scale;
+                    for (int a = 0; a < 3; ++a)  // held = cameraRot^T delta
+                        held[a] = cameraRot[0 * 3 + a] * delta[0] + cameraRot[1 * 3 + a] * delta[1] + cameraRot[2 * 3 + a] * delta[2];
+                }
+                for (size_t i = 0; i < n1; ++i) {
+                    void* node = g_nodes1p[i];
+                    if (!node || g_boneNames[i].find("Clavicle") == std::string::npos) continue;
+                    void* parent = At<void*>(node, kParent);
+                    if (!parent) continue;
+                    const float* pw = &At<float>(parent, kWorldRot);
+                    float ps = At<float>(parent, kWorldScale);
+                    float* lp = &At<float>(node, kLocalPos);
+                    for (int a = 0; a < 3; ++a)  // local += pw^T delta
+                        lp[a] += (pw[0 * 3 + a] * delta[0] + pw[1 * 3 + a] * delta[1] + pw[2 * 3 + a] * delta[2]) / (ps > 0 ? ps : 1.0f);
+                }
+                WriteWorlds(g_nodes1p, n1);
+            }
             PlaceGun(1, hand1p, nullptr);
             ShowBody(1, root1p, g_control.body != 0);
         }
@@ -3341,12 +3459,6 @@ bool SafeApply(void* self, float delta) {
 // [Cam1]" (under the first-person NPC Root, 120.5 up). In Snake mode both
 // are lowered with Snake's head (crouched, prone); their own heights come
 // back when it ends.
-struct CameraNode {
-    void* root = nullptr;
-    void* node = nullptr;
-    float baseZ = 0;
-};
-CameraNode g_cameraNodes[2];  // third person, first person
 
 void PlaceCameras(void* player, float drop) {
     const char* names[2] = {"Camera3rd [Cam3]", "Camera1st [Cam1]"};

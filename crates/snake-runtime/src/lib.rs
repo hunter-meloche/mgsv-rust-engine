@@ -156,6 +156,10 @@ pub struct WeaponDef {
     clips: snake_core::WeaponClips<'static>,
     /// Where it rides when not in the hands.
     holster: Option<Holster>,
+    /// The point of the gun (its frame, metres) held at the hand's
+    /// connection point. The pistol's origin is on its bore line, and held
+    /// there the right hand closed round the slide; its grip is lower.
+    grip: [f32; 3],
     color: [f32; 3],
 }
 
@@ -197,6 +201,7 @@ pub const WEAPONS: [WeaponDef; 2] = [
             holster: Some("snapasr_s_fre0_ed"),
         },
         holster: Some(Holster::Cnp("SKL_300_ASRROOT", "CNP_ASRROOT")),
+        grip: [0.0, 0.0, 0.0],
         color: [0.22, 0.22, 0.22],
     },
     // WU S.Pistol (tranquilizer).
@@ -224,6 +229,9 @@ pub const WEAPONS: [WeaponDef; 2] = [
             holster: Some("snaphg01_s_fre0_ed"),
         },
         holster: Some(Holster::Enclosed("SKL_534_RHOL_HLP")),
+        // The web of the hand under the slide's rear, the fist round the
+        // grip (checked with `mgsv hand-view`).
+        grip: [0.0, -0.03, -0.02],
         color: [0.28, 0.27, 0.25],
     },
 ];
@@ -290,6 +298,7 @@ pub fn load_weapon(
         muzzle,
     )
     .map_err(anyhow::Error::msg)?;
+    weapon_rig.grip = fox_anim::Vec3::from(def.grip);
     if def.magazine.is_some() {
         if let Ok(ammo) = cnp(&gun_cnp, "CNP_AMMO") {
             weapon_rig.magazine = Some(snake_core::MagazineRig {

@@ -160,6 +160,12 @@ identity. Calibrating it on the centre pose of the rifle aim grid (frame 12 of
 `snapasr_s_fre_pose_25`, where the rifle points straight ahead) makes every
 grid pose land on exact authored angles (yaw +90/+45/0/-45/-90, pitch
 +75/+37.5/0/-37.5/-75) with the off hand on the gun's fore grip (5.5 cm).
+The rifle's root is at its grip, but the WU S.Pistol's (`hg01_main3_aw0`)
+is on its bore line (rear sight 4.9 cm above it, grip down to 7.2 cm
+below): held at the root, the right hand closed round the slide. The
+connection point holds the pistol's grip instead, (0, -0.03, -0.02) in the
+gun frame (`WeaponDef::grip`, checked with `mgsv hand-view`): the web of
+the hand under the slide's rear, the fist round the grip.
 
 ## Aim pose grids
 

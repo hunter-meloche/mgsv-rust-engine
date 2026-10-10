@@ -288,6 +288,9 @@ pub struct WeaponRig {
     pub hand_offset: (Quat, Vec3),
     /// Gun frame relative to the hand connection point.
     pub hand_to_gun: Quat,
+    /// The point of the gun (gun frame) held at the hand's connection point:
+    /// the grip, below the gun's origin on its bore line.
+    pub grip: Vec3,
     /// Muzzle position in the gun frame (from the gun's `.fcnp`).
     pub muzzle: Vec3,
 }
@@ -342,6 +345,7 @@ impl WeaponRig {
             hand_bone,
             hand_offset,
             hand_to_gun,
+            grip: Vec3::ZERO,
             muzzle,
         };
         for (slot, name) in names.grids.iter().enumerate() {
@@ -415,7 +419,7 @@ impl WeaponRig {
             pose.positions[self.hand_bone],
         );
         let rot = hr * self.hand_offset.0 * self.hand_to_gun;
-        (rot, hp + hr * self.hand_offset.1)
+        (rot, hp + hr * self.hand_offset.1 - rot * self.grip)
     }
 
     /// The gun's transform in its holster in the pose's space, if it has one.

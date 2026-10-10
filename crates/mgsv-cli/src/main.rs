@@ -1674,6 +1674,45 @@ fn hand_view(vfs: &Vfs) -> Result<()> {
     let find = |n: &str| assets.skel.find(fox_hash::str_code32(n.as_bytes())).unwrap();
     let (lh, rh) = (find("SKL_013_LHAND"), find("SKL_023_RHAND"));
     for (wi, w) in assets.weapons.iter().enumerate() {
+        // The calibrated hand-to-gun rotation against the nearest
+        // axis-aligned one (a fixed axis swap, as a connection point would
+        // give).
+        {
+            let m = fox_anim::glam::Mat3::from_quat(w.rig.hand_offset.0 * w.rig.hand_to_gun);
+            let mut best = (f32::MAX, fox_anim::Quat::IDENTITY);
+            for a in 0..24 {
+                // the 24 rotations of the cube
+                let (ax, ay) = (a % 6, a / 6);
+                let axes = [Vec3::X, Vec3::NEG_X, Vec3::Y, Vec3::NEG_Y, Vec3::Z, Vec3::NEG_Z];
+                let x = axes[ax];
+                let ys: Vec<Vec3> = axes.iter().copied().filter(|v| v.dot(x).abs() < 0.5).collect();
+                let y = ys[ay % ys.len()];
+                let q = fox_anim::Quat::from_mat3(&fox_anim::glam::Mat3::from_cols(x, y, x.cross(y)));
+                let d = q.angle_between(fox_anim::Quat::from_mat3(&m));
+                if d < best.0 {
+                    best = (d, q);
+                }
+            }
+            let resid = best.1.inverse() * fox_anim::Quat::from_mat3(&m);
+            let (axis, angle) = resid.to_axis_angle();
+            println!("{}: hand-to-gun cols X {:.2?} Y {:.2?} Z {:.2?}; nearest axis swap {:.1} deg off (about {:.2?})",
+                w.name, m.x_axis, m.y_axis, m.z_axis, best.0.to_degrees(), axis, );
+            let _ = angle;
+        }
+        let mut wrig = w.rig.clone();
+        if std::env::var("HAND_SNAP").is_ok() {
+            // Diagnostics: the nearest axis swap instead of the calibrated rotation.
+            let m = fox_anim::Quat::from_mat3(&fox_anim::glam::Mat3::from_cols(-Vec3::Y, Vec3::Z, -Vec3::X));
+            wrig.hand_to_gun = wrig.hand_offset.0.inverse() * m;
+        }
+        if let Ok(g) = std::env::var("GRIP") {
+            // Diagnostics: try a grip point (gun frame, metres) "x,y,z".
+            let v: Vec<f32> = g.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+            if v.len() == 3 {
+                wrig.grip = Vec3::new(v[0], v[1], v[2]);
+            }
+        }
+        println!("{}: grip {:?}", w.name, wrig.grip);
         let grid = w.rig.grids[0].as_ref().context("no grid")?;
         let clip = assets.clips.get(&grid.clip).context("no grid clip")?;
         let frame = w.rig.aim_frame(&assets.rig, grid, &clip, 0.0, 0.0).map_err(anyhow::Error::msg)?;
@@ -1685,18 +1724,19 @@ fn hand_view(vfs: &Vfs) -> Result<()> {
                 tris.extend(mesh.indices.chunks_exact(3).map(|t| ([vs[t[0] as usize], vs[t[1] as usize], vs[t[2] as usize]], *color)));
             }
         }
-        let (gr, gp) = w.rig.gun_transform(&pose);
+        let (gr, gp) = wrig.gun_transform(&pose);
         let skinned = w.model.skin(&w.rest);
         for (m, vs) in w.model.meshes.iter().zip(&skinned) {
             let vs: Vec<Vec3> = vs.iter().map(|v| gp + gr * *v).collect();
             tris.extend(m.indices.chunks_exact(3).map(|t| ([vs[t[0] as usize], vs[t[1] as usize], vs[t[2] as usize]], Vec3::new(0.15, 0.15, 0.2))));
         }
-        let focus = (pose.positions[lh] + pose.positions[rh]) * 0.5;
-        let views = [("left", Vec3::new(1.0, 0.1, 0.2)), ("right", Vec3::new(-1.0, 0.1, 0.2)), ("below", Vec3::new(0.3, -1.0, 0.4)), ("front", Vec3::new(0.2, 0.2, 1.0))];
+        let close = std::env::var("HAND_CLOSE").is_ok();
+        let focus = if close { gp } else { (pose.positions[lh] + pose.positions[rh]) * 0.5 };
+        let views = [("left", Vec3::new(1.0, 0.1, 0.2)), ("right", Vec3::new(-1.0, 0.1, 0.2)), ("below", Vec3::new(0.3, -1.0, 0.4)), ("front", Vec3::new(0.2, 0.2, 1.0)), ("behind", Vec3::new(-0.15, 0.2, -1.0))];
         for (label, dir) in views {
             let mut r = crate::raster::Raster::new(480, 480);
             r.clear(Vec3::new(0.3, 0.4, 0.5), Vec3::new(0.3, 0.4, 0.5));
-            let eye = focus + dir.normalize() * 0.55;
+            let eye = focus + dir.normalize() * if close { 0.3 } else { 0.55 };
             let vp = Mat4::perspective_rh(45f32.to_radians(), 1.0, 0.02, 10.0) * Mat4::look_at_rh(eye, focus, Vec3::Y);
             r.draw(&vp, Some(dir.normalize()), tris.iter().copied());
             crate::raster::save_png(&r, std::path::Path::new(&format!("extracted/hands_{wi}_{label}.png")))?;

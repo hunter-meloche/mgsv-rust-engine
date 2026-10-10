@@ -174,6 +174,9 @@ To check that it reads your install:
 WASD, Shift dash, C crouch, Z prone, right mouse aim, left mouse fire, R
 reload, Esc quit. There's no Skyrim needed for this step.
 
+<img width="1429" height="804" alt="image" src="https://github.com/user-attachments/assets/15b7b020-59df-4e62-804a-fd368bdc11fd" />
+
+
 ### 3. Build the Skyrim plugin
 
 The plugin builds against the SKSE64 source that ships with SKSE, found in

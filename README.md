@@ -175,6 +175,7 @@ WASD, Shift dash, C crouch, Z prone, right mouse aim, left mouse fire, R
 reload, Esc quit. There's no Skyrim needed for this step.
 
 <img width="1429" height="804" alt="image" src="https://github.com/user-attachments/assets/15b7b020-59df-4e62-804a-fd368bdc11fd" />
+<img width="1429" height="799" alt="image" src="https://github.com/user-attachments/assets/1064e7b2-4072-47e1-af54-2ed77c421f2b" />
 
 
 ### 3. Build the Skyrim plugin

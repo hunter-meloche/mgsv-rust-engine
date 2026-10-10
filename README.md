@@ -22,6 +22,9 @@ loaded straight from your MGSV install.
 
 Single-player only: MGO and the online features are out of scope.
 
+<img width="3840" height="2160" alt="201A3A~1" src="https://github.com/user-attachments/assets/0ba6d3d2-a663-42ed-8c59-3505f29178a9" />
+
+
 ## What works so far
 
 ### Engine

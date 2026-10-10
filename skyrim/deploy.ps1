@@ -37,7 +37,7 @@ MoveSpeedScale=150
 ; Gunshot volume in percent.
 ShotVolume=70
 ; Footsteps, suit and weapon rattle, dive landing (MGSV's own sounds), percent.
-FoleyVolume=100
+FoleyVolume=25
 ; Footsteps and hands on the ground while crawling, percent of FoleyVolume.
 FootstepVolume=100
 ; Suit and weapon rattle (with each step, raising and switching weapons),

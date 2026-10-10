@@ -1271,7 +1271,8 @@ void PlayShot(int weapon) {
 // played through a pool of voices here (each keeps its copy of the samples
 // while it plays). The surface is MGSV's footstep symbol for the ground:
 // stone (ROCKA) in interiors, soil (SOILA) outdoors. Volume: snake.ini
-// FoleyVolume (percent, default 100) for all of it, FootstepVolume (percent
+// FoleyVolume (percent, default 25: at full level it drowned out the rest
+// of the game) for all of it, FootstepVolume (percent
 // of that, default 100) for the feet and the hands on the ground, and
 // RattleVolume (default 10) for the suit and weapon rattle, which played far
 // louder than the rest of the game.
@@ -1297,7 +1298,7 @@ void SetUpFoley() {
     f.nAvgBytesPerSec = 48000 * 4;
     std::wstring ini = PluginDir() + L"\\snake.ini";
     float master = GetPrivateProfileIntW(L"Snake", L"ShotVolume", 70, ini.c_str()) / 100.0f;
-    float volume = GetPrivateProfileIntW(L"Snake", L"FoleyVolume", 100, ini.c_str()) / 100.0f;
+    float volume = GetPrivateProfileIntW(L"Snake", L"FoleyVolume", 25, ini.c_str()) / 100.0f;
     g_footstepLevel = GetPrivateProfileIntW(L"Snake", L"FootstepVolume", 100, ini.c_str()) / 100.0f;
     g_rattleLevel = GetPrivateProfileIntW(L"Snake", L"RattleVolume", 10, ini.c_str()) / 100.0f;
     // The mastering voice carries ShotVolume; foley has its own level.
